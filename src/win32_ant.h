@@ -52,7 +52,10 @@
 #endif
 
 /// Vulkan
-#define MAX_VULKAN_APP_NAME 60 
+#define MAX_VULKAN_APP_NAME 60
+#define ANT_VULKAN_INSTANCE_EXTENSION_COUNT_LIMIT 16
+#define ANT_VULKAN_INSTANCE_LAYER_COUNT_LIMIT     16
+#define ANT_VULKAN_DEVICE_EXTENSION_COUNT_LIMIT   16
 
 
 struct vulkan_application
@@ -62,16 +65,29 @@ struct vulkan_application
 	VkDevice device;
 	VkSurfaceKHR surface;
 
-	const char* layers[16];
-	const char* extensions[16];
+	VkSwapchainKHR swapchain;
+	VkImage* swapchain_images;
+	uint32 swapchain_image_count;
+	VkImageView* swapchain_image_views;
+	uint32 swapchain_image_view_count;
+	VkFormat swapchain_image_format;
+	VkExtent2D swapchain_extent;
+
+	const char* layers[ANT_VULKAN_INSTANCE_LAYER_COUNT_LIMIT];
+	const char* extensions[ANT_VULKAN_INSTANCE_EXTENSION_COUNT_LIMIT];
 
 	uint32 layer_count;
 	uint32 extension_count;
 
+	const char* device_extensions[ANT_VULKAN_DEVICE_EXTENSION_COUNT_LIMIT];
+	uint32 device_extension_count;
+
 	VkDebugUtilsMessengerEXT debug_messenger;
 
 	bool has_compute_queue;
+	bool has_separate_present_queue;
 	VkQueue gfx_queue;
+	VkQueue present_queue;
 	VkQueue transfer_queue;
 	VkQueue compute_queue;
 };
