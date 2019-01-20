@@ -6,6 +6,8 @@
 #define VK_USE_PLATFORM_WIN32_KHR
 #include <vulkan/vulkan.h>
 
+#include <new>
+
 #include "ant.h"
 
 #include "utils/utility_defines.h"
@@ -20,6 +22,10 @@
 	
 	#ifndef ANT_ASSERTION_ENABLED
 	#define ANT_ASSERTION_ENABLED
+	#endif
+
+	#ifndef ANT_VULKAN_ENABLE_VALIDATION_LAYERS
+	#define ANT_VULKAN_ENABLE_VALIDATION_LAYERS
 	#endif
 
 #endif
@@ -49,3 +55,23 @@
 #define MAX_VULKAN_APP_NAME 60 
 
 
+struct vulkan_application
+{
+	VkInstance instance;
+	VkPhysicalDevice physical_device;
+	VkDevice device;
+	VkSurfaceKHR surface;
+
+	const char* layers[16];
+	const char* extensions[16];
+
+	uint32 layer_count;
+	uint32 extension_count;
+
+	VkDebugUtilsMessengerEXT debug_messenger;
+
+	bool has_compute_queue;
+	VkQueue gfx_queue;
+	VkQueue transfer_queue;
+	VkQueue compute_queue;
+};

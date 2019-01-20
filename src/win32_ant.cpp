@@ -11,6 +11,8 @@ global_variable bool running = false;
 global_variable const char* application_name = "APP";
 global_variable uint32 application_version = 0;
 
+
+// TODO(soimn): refactor logging system
 [[maybe_unused]]
 internal void
 Win32Log(const char* message)
@@ -87,105 +89,98 @@ VulkanValidateLayerSupport(HANDLE vulkanInitHeap, const char** req_layers, uint3
 	VkLayerProperties* layer_properties = (VkLayerProperties*)HeapAlloc(vulkanInitHeap,
 																		HEAP_ZERO_MEMORY,
 																		extension_count * sizeof(VkLayerProperties));
+	Assert(layer_properties != NULL);
 
-	if (layer_properties == NULL)
+
+	result = vkEnumerateInstanceLayerProperties(&extension_count, layer_properties);
+
+	if (result != VK_SUCCESS)
 	{
-		WIN32LOG_ERROR("Failed to allocate memory for layer properties in VulkanValidateLayerSupport");
+		switch (result)
+		{
+			case VK_SUCCESS:
+			break;
+
+			case VK_ERROR_OUT_OF_HOST_MEMORY:
+				WIN32LOG_ERROR("VK_ERROR_OUT_OF_HOST_MEMORY");
+			break;
+
+			case VK_ERROR_OUT_OF_DEVICE_MEMORY:
+				WIN32LOG_ERROR("VK_ERROR_OUT_OF_DEVICE_MEMORY");
+			break;
+
+			default:
+				Assert(false);
+			break;
+		}
 	}
 
 	else
 	{
+		foundAllLayers = true; // NOTE(soimn): this assignment is necessary for the validation, since it is optimistic
 
-		result = vkEnumerateInstanceLayerProperties(&extension_count, layer_properties);
-
-		if (result != VK_SUCCESS)
+		for (char** current_layer = (char**)req_layers;
+			current_layer < (char**)req_layers + req_layer_count;
+			++current_layer)
 		{
-			switch (result)
+			bool foundLayer = false;
+
+			for (VkLayerProperties* current_property = layer_properties;
+				current_property < layer_properties + extension_count;
+				++current_property)
 			{
-				case VK_SUCCESS:
-				break;
-
-				case VK_ERROR_OUT_OF_HOST_MEMORY:
-					WIN32LOG_ERROR("VK_ERROR_OUT_OF_HOST_MEMORY");
-				break;
-
-				case VK_ERROR_OUT_OF_DEVICE_MEMORY:
-					WIN32LOG_ERROR("VK_ERROR_OUT_OF_DEVICE_MEMORY");
-				break;
-
-				default:
-					Assert(false);
-				break;
-			}
-		}
-
-		else
-		{
-			foundAllLayers = true; // NOTE(soimn): this assignment is necessary for the validation, since it is optimistic
-
-			for (char** current_layer = (char**)req_layers;
-				current_layer < (char**)req_layers + req_layer_count;
-				++current_layer)
-			{
-				bool foundLayer = false;
-
-				for (VkLayerProperties* current_property = layer_properties;
-					current_property < layer_properties + extension_count;
-					++current_property)
+				if (strcompare(*current_layer, current_property->layerName))
 				{
-					if (strcompare(*current_layer, current_property->layerName))
-					{
-						foundLayer = true;
-						break;
-					}
-				}
-
-				if (foundLayer)
-				{
-					continue;
-				}
-
-				else
-				{
-					{
-						const char* error_prefix = "VulkanValidateLayerSupport failed to find the ";
-						const char* error_suffix = " layer.";
-
-						uint32 error_prefix_length = strlength(error_prefix);
-						uint32 error_suffix_length = strlength(error_suffix);
-						uint32 layer_name_length = strlength(*current_layer);
-						uint32 error_message_length = error_prefix_length + error_suffix_length + layer_name_length;
-
-						char* error_message = (char*)HeapAlloc(vulkanInitHeap, HEAP_ZERO_MEMORY, (error_message_length + 1) * sizeof(char));
-
-						memcpy(error_message, error_prefix, error_prefix_length);
-						memcpy(error_message + error_prefix_length, *current_layer, layer_name_length);
-						memcpy(error_message + error_prefix_length + layer_name_length, error_suffix, error_suffix_length);
-						error_message[error_message_length] = '\0';
-
-						WIN32LOG_ERROR(error_message);
-
-						HeapFree(vulkanInitHeap, 0, error_message);
-					}
-
-					foundAllLayers = false;
+					foundLayer = true;
 					break;
 				}
 			}
+
+			if (foundLayer)
+			{
+				continue;
+			}
+
+			else
+			{
+				{
+					const char* error_prefix = "VulkanValidateLayerSupport failed to find the ";
+					const char* error_suffix = " layer.";
+
+					uint32 error_prefix_length = strlength(error_prefix);
+					uint32 error_suffix_length = strlength(error_suffix);
+					uint32 layer_name_length = strlength(*current_layer);
+					uint32 error_message_length = error_prefix_length + error_suffix_length + layer_name_length;
+
+					char* error_message = (char*)HeapAlloc(vulkanInitHeap, HEAP_ZERO_MEMORY, (error_message_length + 1) * sizeof(char));
+
+					memcpy(error_message, error_prefix, error_prefix_length);
+					memcpy(error_message + error_prefix_length, *current_layer, layer_name_length);
+					memcpy(error_message + error_prefix_length + layer_name_length, error_suffix, error_suffix_length);
+					error_message[error_message_length] = '\0';
+
+					WIN32LOG_ERROR(error_message);
+
+					HeapFree(vulkanInitHeap, 0, error_message);
+				}
+
+				foundAllLayers = false;
+				break;
+			}
 		}
-		
-		HeapFree(vulkanInitHeap, 0, layer_properties);
 	}
+		
+	HeapFree(vulkanInitHeap, 0, layer_properties);
 
 	return foundAllLayers;
 }
 
 internal bool
-VulkanValidateExtensionSupport(HANDLE vulkanInitHeap, const char** req_extensions, uint32 req_extension_count)
+VulkanValidateInstanceExtensionSupport(HANDLE vulkanInitHeap, const char** req_extensions, uint32 req_extension_count)
 {
 	uint32 extension_count;
 	VkResult result;
-	bool foundAllExtensions = true;
+	bool foundAllExtensions = false;
 
 	result = vkEnumerateInstanceExtensionProperties(NULL, &extension_count, NULL);
 	Assert(!result);
@@ -194,7 +189,7 @@ VulkanValidateExtensionSupport(HANDLE vulkanInitHeap, const char** req_extension
 	extension_properties = (VkExtensionProperties*) HeapAlloc(vulkanInitHeap,
 															  HEAP_ZERO_MEMORY,
 															  extension_count * sizeof(VkExtensionProperties));
-	Assert(!extension_properties);
+	Assert(extension_properties != NULL);
 
 	result = vkEnumerateInstanceExtensionProperties(NULL, &extension_count, extension_properties);
 
@@ -226,11 +221,13 @@ VulkanValidateExtensionSupport(HANDLE vulkanInitHeap, const char** req_extension
 
 	else
 	{
+		bool foundExtension = false;
+
 		for (char** req_extension = (char**)req_extensions;
 			 req_extension < req_extensions + req_extension_count;
 			 ++req_extension)
 		{
-			bool foundExtension = false;
+			foundExtension = false;
 
 			for (VkExtensionProperties* extension_property = extension_properties;
 				 extension_property < extension_properties + extension_count;
@@ -251,7 +248,7 @@ VulkanValidateExtensionSupport(HANDLE vulkanInitHeap, const char** req_extension
 			else
 			{
 				{
-					const char* error_message_prefix = "VulkanValidateExtensionSupport failed. \n\n"
+					const char* error_message_prefix = "VulkanValidateInstanceExtensionSupport failed. \n\n"
 													   "Failed to validate all extensions.\n"
 													   "The extension ";
 					const char* error_message_suffix = " was not found.";
@@ -275,9 +272,13 @@ VulkanValidateExtensionSupport(HANDLE vulkanInitHeap, const char** req_extension
 					HeapFree(vulkanInitHeap, 0, error_message);
 				}
 
-				foundAllExtensions = false;
 				break;
 			}
+		}
+
+		if (foundExtension)
+		{
+			foundAllExtensions = true;
 		}
 	}
 
@@ -344,8 +345,95 @@ VulkanCreateInstance(const char* app_name, uint32 app_version,
 	return instance;
 }
 
+// TODO(soimn): tune score weights
+internal int
+VulkanRatePhysicalDeviceSuitability(HANDLE vulkanInitHeap, VkPhysicalDevice device,
+									VkSurfaceKHR surface)
+{
+	int score = 0;
+	bool invalid = false;
+
+	VkPhysicalDeviceProperties properties;
+	VkPhysicalDeviceFeatures features;
+
+	vkGetPhysicalDeviceProperties(device, &properties);
+	vkGetPhysicalDeviceFeatures(device, &features);
+
+	{
+		uint32 queue_family_count;
+		vkGetPhysicalDeviceQueueFamilyProperties(device, &queue_family_count, NULL);
+
+		VkQueueFamilyProperties* queue_family_properties =
+			(VkQueueFamilyProperties*)HeapAlloc(vulkanInitHeap, HEAP_ZERO_MEMORY, queue_family_count * sizeof(VkQueueFamilyProperties));
+		Assert(queue_family_properties != NULL);
+
+		vkGetPhysicalDeviceQueueFamilyProperties(device, &queue_family_count, queue_family_properties);
+
+		bool hasGFXQueues	   = false;
+		bool hasComputeQueues  = false;
+		bool hasTransferQueues = false;
+
+		uint32 gfx_capable_family_count = 0;
+		uint32* gfx_capable_families = (uint32*)HeapAlloc(vulkanInitHeap, HEAP_ZERO_MEMORY, queue_family_count * sizeof(uint32));
+		Assert(gfx_capable_families != NULL);
+		
+
+		for (VkQueueFamilyProperties* it = queue_family_properties;
+			 it < queue_family_properties + queue_family_count;
+			 ++it)
+		{
+			if (it->queueFlags & VK_QUEUE_GRAPHICS_BIT)
+			{
+				hasGFXQueues = true;
+				gfx_capable_families[gfx_capable_family_count++] = (uint32)(it - queue_family_properties);
+			}
+
+			if (it->queueFlags & VK_QUEUE_COMPUTE_BIT)
+				hasComputeQueues = true;
+
+			if (it->queueFlags & VK_QUEUE_TRANSFER_BIT)
+				hasTransferQueues = true;
+		}
+
+		// TODO(soimn): remove the requirement of supporting transfer queues in order to effectivize integrated graphics
+		if (!hasGFXQueues || !hasTransferQueues)
+			invalid = true;
+
+		if (hasComputeQueues)
+			score += 250;
+
+		VkBool32 supports_presentation = false;
+
+		for (uint32 i = 0; i < gfx_capable_family_count; ++i)
+		{
+			vkGetPhysicalDeviceSurfaceSupportKHR(device, i, surface, &supports_presentation);
+
+			if (supports_presentation)
+				break;
+		}
+
+		if (!supports_presentation)
+			invalid = true;
+
+		HeapFree(vulkanInitHeap, 0, queue_family_properties);
+	}
+
+	if (properties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU)
+		score += 1000;
+
+	score += properties.limits.maxImageDimension2D;
+
+	if (!features.geometryShader)
+		invalid = true;
+
+	if (invalid)
+		score = 0;
+
+	return score;
+}
+
 internal VkPhysicalDevice
-VulkanGetPhysicalDevice(HANDLE vulkanInitHeap, VkInstance instance)
+VulkanGetPhysicalDevice(HANDLE vulkanInitHeap, VkInstance instance, VkSurfaceKHR surface)
 {
 	VkPhysicalDevice device = VK_NULL_HANDLE;
 	
@@ -357,75 +445,365 @@ VulkanGetPhysicalDevice(HANDLE vulkanInitHeap, VkInstance instance)
 
 	VkPhysicalDevice* physical_devices = (VkPhysicalDevice*)HeapAlloc(vulkanInitHeap, HEAP_ZERO_MEMORY,
 																	   device_count * sizeof(VkPhysicalDevice));
-	if (physical_devices == NULL)
+	Assert(physical_devices != NULL);
+
+	result = vkEnumeratePhysicalDevices(instance, &device_count, physical_devices);
+	
+	if (result != VK_SUCCESS)
 	{
-		WIN32LOG_ERROR("Failed to allocate memory for the list of devices in VulkanGetPhysicalDevice");
+		switch(result)
+		{
+			case VK_INCOMPLETE:
+				WIN32LOG_ERROR("VK_INCOMPLETE");
+			break;
+
+			case VK_ERROR_OUT_OF_HOST_MEMORY:
+				WIN32LOG_ERROR("VK_ERROR_OUT_OF_HOST_MEMORY");
+			break;
+
+			case VK_ERROR_OUT_OF_DEVICE_MEMORY:
+				WIN32LOG_ERROR("VK_ERROR_OUT_OF_DEVICE_MEMORY");
+			break;
+
+			case VK_ERROR_INITIALIZATION_FAILED:
+				WIN32LOG_ERROR("VK_ERROR_INITIALIZATION_FAILED");
+			break;
+
+			default:
+				Assert(false);
+			break;
+		}
 	}
 
 	else
 	{
-		result = vkEnumeratePhysicalDevices(instance, &device_count, physical_devices);
-		
-		if (result != VK_SUCCESS)
+		if (0 < device_count)
 		{
-			switch(result)
+			uint32 most_suitable_device = 0;
+			uint32 most_suitable_device_score = 0;
+
+			for (VkPhysicalDevice* it = physical_devices;
+				 it < physical_devices + device_count;
+				 ++it)
 			{
-				case VK_INCOMPLETE:
-					WIN32LOG_ERROR("VK_INCOMPLETE");
-				break;
+				uint32 device_suitability = VulkanRatePhysicalDeviceSuitability(vulkanInitHeap, *it, surface);
 
-				case VK_ERROR_OUT_OF_HOST_MEMORY:
-					WIN32LOG_ERROR("VK_ERROR_OUT_OF_HOST_MEMORY");
-				break;
+				if (device_suitability > most_suitable_device_score)
+				{
+					most_suitable_device = (uint32)(it - physical_devices);
+					most_suitable_device_score = device_suitability;
+				}
+			}
+			
+			if (0 < most_suitable_device_score)
+			{
+				device = physical_devices[most_suitable_device];
+			}
 
-				case VK_ERROR_OUT_OF_DEVICE_MEMORY:
-					WIN32LOG_ERROR("VK_ERROR_OUT_OF_DEVICE_MEMORY");
-				break;
-
-				case VK_ERROR_INITIALIZATION_FAILED:
-					WIN32LOG_ERROR("VK_ERROR_INITIALIZATION_FAILED");
-				break;
-
-				default:
-					Assert(false);
-				break;
+			else
+			{
+				WIN32LOG_ERROR("Vulkan compatible devices found, however no devices compatible with the requirements of the game were found");
 			}
 		}
 
 		else
 		{
-			if (0 < device_count)
+			WIN32LOG_ERROR("VulkanGetPhysicalDevice found no vulkan compatible devices");
+		}
+	}
+
+	HeapFree(vulkanInitHeap, 0, physical_devices);
+
+	return device;
+}
+
+struct queue_family_info {
+	int32 gfx_family;
+	int32 compute_family;
+	int32 transfer_family;
+};
+
+// TODO(soimn): cleanup
+internal queue_family_info
+VulkanGetSuitableQueueFamilies(HANDLE vulkanInitHeap, VkPhysicalDevice device, VkSurfaceKHR surface)
+{
+	queue_family_info family_info = {-1, -1, -1};
+
+	uint32 queue_family_count;
+	vkGetPhysicalDeviceQueueFamilyProperties(device, &queue_family_count, NULL);
+
+	VkQueueFamilyProperties* queue_family_properties = (VkQueueFamilyProperties*)HeapAlloc(vulkanInitHeap, HEAP_ZERO_MEMORY,
+																						   queue_family_count * sizeof(VkQueueFamilyProperties));
+	Assert(queue_family_properties != NULL);
+
+	vkGetPhysicalDeviceQueueFamilyProperties(device, &queue_family_count, queue_family_properties);
+
+	for (VkQueueFamilyProperties* it = queue_family_properties;
+		 it < queue_family_properties + queue_family_count;
+		 ++it)
+	{
+		uint32 index = (uint32)(it - queue_family_properties);
+
+		if (it->queueCount != 0)
+		{
+			VkBool32 current_family_supports_presentation = false;
+
+			if (it->queueFlags & VK_QUEUE_GRAPHICS_BIT
+				&& family_info.gfx_family == -1)
 			{
-				// TODO(soimn): find most capable device instead of returning the first available
-				device = physical_devices[0];
+				vkGetPhysicalDeviceSurfaceSupportKHR(device, index, surface,
+													 &current_family_supports_presentation);
+
+				if (current_family_supports_presentation)
+					family_info.gfx_family = index;
 			}
 
-			else
+			if (it->queueCount != 0 && it->queueFlags == VK_QUEUE_COMPUTE_BIT)
 			{
-				WIN32LOG_ERROR("VulkanGetPhysicalDevice found no vulkan compatible devices");
+				family_info.compute_family = index;
 			}
+
+			if (it->queueFlags & VK_QUEUE_TRANSFER_BIT)
+			{
+				if (family_info.transfer_family == -1)
+				{
+					if (index == (uint32)family_info.gfx_family)
+					{
+						if (it->queueCount > 1)
+						{
+							family_info.transfer_family = index;
+						}
+					}
+
+					else
+					{
+						family_info.transfer_family = index;
+					}
+				}
+
+				else
+				{
+					if (family_info.gfx_family == family_info.transfer_family)
+					{
+						family_info.transfer_family = index;
+					}
+				}
+			}
+		}
+	}
+
+	HeapFree(vulkanInitHeap, 0, queue_family_properties);
+
+	return family_info;
+}
+
+internal VkDevice
+VulkanCreateDevice(VkPhysicalDevice physical_device, queue_family_info family_info,
+				   const char** extension_names, uint32 extension_count,
+				   VkQueue* gfx_queue, VkQueue* compute_queue,
+				   VkQueue* transfer_queue)
+{
+	VkDevice device = VK_NULL_HANDLE;
+
+	VkDeviceQueueCreateInfo queue_create_info[3] = {};
+	const float priorities[3] = {1.0f, 1.0f, 1.0f};
+	uint32 queue_create_info_count = 0;
+
+	++queue_create_info_count;
+	queue_create_info[0].sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+    queue_create_info[0].pNext = NULL;
+    queue_create_info[0].flags = 0;
+    queue_create_info[0].queueFamilyIndex = family_info.gfx_family;
+    queue_create_info[0].queueCount = 1;
+    queue_create_info[0].pQueuePriorities = &priorities[0];
+
+	if (family_info.transfer_family == family_info.gfx_family)
+	{
+		queue_create_info[0].queueCount = 2;
+	}
+
+	else
+	{
+		++queue_create_info_count;
+		queue_create_info[1].sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+		queue_create_info[1].pNext = NULL;
+		queue_create_info[1].flags = 0;
+		queue_create_info[1].queueFamilyIndex = family_info.transfer_family;
+		queue_create_info[1].queueCount = 1;
+		queue_create_info[1].pQueuePriorities = &priorities[1];
+	}
+
+	if (family_info.compute_family != -1)
+	{
+		++queue_create_info_count;
+		queue_create_info[2].sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+		queue_create_info[2].pNext = NULL;
+		queue_create_info[2].flags = 0;
+		queue_create_info[2].queueFamilyIndex = family_info.compute_family;
+		queue_create_info[2].queueCount = 1;
+		queue_create_info[2].pQueuePriorities = &priorities[2];
+	}
+
+	VkDeviceCreateInfo device_create_info = {};
+    device_create_info.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
+    device_create_info.pNext = NULL;
+    device_create_info.flags = 0;
+    device_create_info.queueCreateInfoCount = queue_create_info_count;
+    device_create_info.pQueueCreateInfos = queue_create_info;
+    device_create_info.enabledExtensionCount = extension_count;
+    device_create_info.ppEnabledExtensionNames = extension_names;
+    device_create_info.pEnabledFeatures = NULL;
+
+	VkResult result = vkCreateDevice(physical_device, &device_create_info, NULL, &device);
+	if (result != VK_SUCCESS)
+	{
+		switch(result)
+		{
+			case VK_ERROR_OUT_OF_HOST_MEMORY:
+				WIN32LOG_ERROR("VK_ERROR_OUT_OF_HOST_MEMORY");
+			break;
+
+			case VK_ERROR_OUT_OF_DEVICE_MEMORY:
+				WIN32LOG_ERROR("VK_ERROR_OUT_OF_DEVICE_MEMORY");
+			break;
+
+			case VK_ERROR_INITIALIZATION_FAILED:
+				WIN32LOG_ERROR("VK_ERROR_INITIALIZATION_FAILED");
+			break;
+
+			case VK_ERROR_EXTENSION_NOT_PRESENT:
+				WIN32LOG_ERROR("VK_ERROR_EXTENSION_NOT_PRESENT");
+			break;
+
+			case VK_ERROR_FEATURE_NOT_PRESENT:
+				WIN32LOG_ERROR("VK_ERROR_FEATURE_NOT_PRESENT");
+			break;
+
+			case VK_ERROR_TOO_MANY_OBJECTS:
+				WIN32LOG_ERROR("VK_ERROR_TOO_MANY_OBJECTS");
+			break;
+
+			case VK_ERROR_DEVICE_LOST:
+				WIN32LOG_ERROR("VK_ERROR_DEVICE_LOST");
+			break;
+
+			default:
+				Assert(false);
+			break;
+		}
+	}
+	
+	else
+	{
+		uint32 transfer_index = 0;
+		if (family_info.transfer_family == family_info.gfx_family)
+		{
+			transfer_index = 1;
+		}
+
+		vkGetDeviceQueue(device, family_info.gfx_family, 0, gfx_queue);
+		vkGetDeviceQueue(device, family_info.transfer_family, transfer_index, transfer_queue);
+
+		if (family_info.compute_family != -1)
+		{
+			vkGetDeviceQueue(device, family_info.compute_family, 0, compute_queue);
+		}
+
+		else
+		{
+			compute_queue = VK_NULL_HANDLE;
 		}
 	}
 
 	return device;
 }
 
-struct vulkan_application
+internal VKAPI_ATTR VkBool32 VKAPI_CALL
+VulkanDebugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT message_severity,
+					VkDebugUtilsMessageTypeFlagsEXT message_type,
+					const VkDebugUtilsMessengerCallbackDataEXT* callback_data,
+					void* user_data)
 {
-	VkInstance instance;
-	VkPhysicalDevice physical_device;
-	VkDevice device;
+	if (message_severity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT)
+	{
+		WIN32LOG_ERROR(callback_data->pMessage);
+	}
 
-	// TODO(soimn): consider dynamically allocating instead
-	const char* layers[16];
-	const char* extensions[16];
+    return VK_FALSE;
+}
 
-	uint32 layer_count;
-	uint32 extension_count;
-};
+internal void
+VulkanSetupDebugMessenger(VkInstance instance, VkDebugUtilsMessengerEXT* debug_messenger)
+{
+	VkDebugUtilsMessengerCreateInfoEXT create_info = {};
+	create_info.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
+
+	create_info.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT
+								  | VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT
+								  | VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT
+								  | VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT;
+
+	create_info.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT
+							  | VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT
+							  | VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
+
+	create_info.pfnUserCallback = &VulkanDebugCallback;
+	create_info.pUserData = NULL;
+
+	PFN_vkCreateDebugUtilsMessengerEXT create_debug_messenger =
+		(PFN_vkCreateDebugUtilsMessengerEXT) vkGetInstanceProcAddr(instance, "vkCreateDebugUtilsMessengerEXT");
+	
+	if (create_debug_messenger)
+	{
+		create_debug_messenger(instance, &create_info, NULL, debug_messenger);
+	}
+
+	else
+	{
+		WIN32LOG_ERROR("Could not get the address of the function \"vkCreateDebugUtilsMessengerEXT\".\n"
+					   "Debug messages from Vulkan are disabled.");
+	}
+}
+
+internal VkSurfaceKHR
+VulkanCreateSurface(HINSTANCE processInstance, HWND windowHandle, VkInstance instance)
+{
+	VkSurfaceKHR surface = VK_NULL_HANDLE;
+
+	VkWin32SurfaceCreateInfoKHR create_info = {};
+	create_info.sType	  = VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR;
+	create_info.pNext	  = NULL;
+	create_info.flags	  = 0;
+	create_info.hinstance = processInstance;
+	create_info.hwnd	  = windowHandle;
+
+	VkResult result = vkCreateWin32SurfaceKHR(instance, &create_info, NULL, &surface);
+	if (result != VK_SUCCESS)
+	{
+		switch(result)
+		{
+			case VK_ERROR_OUT_OF_HOST_MEMORY:
+				WIN32LOG_ERROR("VK_ERROR_OUT_OF_HOST_MEMORY");
+			break;
+
+			case VK_ERROR_OUT_OF_DEVICE_MEMORY:
+				WIN32LOG_ERROR("VK_ERROR_OUT_OF_DEVICE_MEMORY");
+			break;
+
+			default:
+				Assert(false);
+			break;
+		}
+	}
+
+	return surface;
+}
+
 
 internal bool
-Win32InitVulkan(vulkan_application* application, const char* app_name, uint32 app_version)
+Win32InitVulkan(vulkan_application* application, HINSTANCE processInstance,
+				HWND windowHandle, const char* app_name,
+				uint32 app_version)
 {
 	bool succeeded = false;
 
@@ -450,10 +828,12 @@ Win32InitVulkan(vulkan_application* application, const char* app_name, uint32 ap
 		application->layers[application->layer_count++] = "VK_LAYER_LUNARG_standard_validation";
 		#endif
 
-		bool extensions_supported = VulkanValidateExtensionSupport(vulkanInitHeap, application->extensions, application->extension_count);
-		bool layers_supported     = VulkanValidateLayerSupport(vulkanInitHeap, application->layers, application->layer_count);
+		bool instance_extensions_supported = VulkanValidateInstanceExtensionSupport(vulkanInitHeap, application->extensions, application->extension_count);
+		bool layers_supported			   = VulkanValidateLayerSupport(vulkanInitHeap, application->layers, application->layer_count);
 
-		if (layers_supported && extensions_supported)
+		// TODO(soimn): setup debug message callback
+		
+		if (layers_supported && instance_extensions_supported)
 		{
 			application->instance = VulkanCreateInstance(app_name, app_version,
 														 application->layers, application->layer_count,
@@ -461,11 +841,40 @@ Win32InitVulkan(vulkan_application* application, const char* app_name, uint32 ap
 
 			if (application->instance != VK_NULL_HANDLE)
 			{
-				application->physical_device = VulkanGetPhysicalDevice(vulkanInitHeap, application->instance);
+				#ifdef ANT_VULKAN_ENABLE_VALIDATION_LAYERS
+				VulkanSetupDebugMessenger(application->instance, &application->debug_messenger);
+				#endif
 
-				// TODO(soimn): setup debug message callback
+				application->surface = VulkanCreateSurface(processInstance, windowHandle, application->instance);
 
-				succeeded = true;
+				if (application->surface != VK_NULL_HANDLE)
+				{
+					application->physical_device = VulkanGetPhysicalDevice(vulkanInitHeap, application->instance, application->surface);
+
+					if (application->physical_device != VK_NULL_HANDLE)
+					{
+						queue_family_info family_info = VulkanGetSuitableQueueFamilies(vulkanInitHeap, application->physical_device, application->surface);
+						application->has_compute_queue = (family_info.compute_family != -1);
+
+						if (family_info.gfx_family != -1 && family_info.transfer_family != -1)
+						{
+
+							application->device = VulkanCreateDevice(application->physical_device, family_info, NULL, 0,
+																	 &application->gfx_queue, &application->compute_queue,
+																	 &application->transfer_queue);
+							
+							if (application->device != VK_NULL_HANDLE)
+							{
+								succeeded = true;
+							}
+						}
+
+						else
+						{
+							WIN32LOG_ERROR("Physical device does not support graphics and transfer queues");
+						}
+					}
+				}
 			}
 		}
 
@@ -473,6 +882,21 @@ Win32InitVulkan(vulkan_application* application, const char* app_name, uint32 ap
 	}
 
 	return succeeded;
+}
+
+internal void
+Win32CleanupVulkan(vulkan_application* application)
+{
+	#ifdef ANT_VULKAN_ENABLE_VALIDATION_LAYERS
+	{
+		PFN_vkDestroyDebugUtilsMessengerEXT destroy_debug_messenger = (PFN_vkDestroyDebugUtilsMessengerEXT) vkGetInstanceProcAddr(application->instance, "vkDestroyDebugUtilsMessengerEXT");
+		destroy_debug_messenger(application->instance, application->debug_messenger, NULL);
+	}
+	#endif
+
+	vkDestroySurfaceKHR(application->instance, application->surface, NULL);
+	vkDestroyInstance(application->instance, NULL);
+	vkDestroyDevice(application->device, NULL);
 }
 
 LRESULT CALLBACK Win32MainWindowProc(HWND windowHandle, UINT msgCode,
@@ -565,10 +989,9 @@ int CALLBACK WinMain(HINSTANCE instance,
 				// Raw input
 				bool input_ready = Win32InitRawInput();
 
-				// TODO(soimn): consider moving this to persistent memory
 				// Vulkan
-				vulkan_application application;
-				bool vulkan_ready = Win32InitVulkan(&application, application_name, application_version);
+				vulkan_application* application = new(memory.persistent_memory) vulkan_application();
+				bool vulkan_ready = Win32InitVulkan(application, instance, windowHandle, application_name, application_version);
 
 				if (input_ready && vulkan_ready)
 				{
@@ -591,6 +1014,8 @@ int CALLBACK WinMain(HINSTANCE instance,
 						}
 					}
 				}
+
+				Win32CleanupVulkan(application);
 			}
 
 			else
@@ -619,3 +1044,5 @@ int CALLBACK WinMain(HINSTANCE instance,
  *	- Setup Vulkan
  *	- Implement hot reloading
  */
+
+// NOTE(soimn): Vulkan is currently setup only for gpu support
