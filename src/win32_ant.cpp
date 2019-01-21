@@ -7,11 +7,6 @@
 // TODO(soimn): delegate responsibility, to the game, to confirm the quit message, in case saving is due or the game needs to halt the player
 global_variable bool running = false;
 
-// TODO(soimn): consider moving / changing this
-global_variable const char* application_name = "APP";
-global_variable uint32 application_version = 0;
-
-
 // TODO(soimn): refactor logging system
 [[maybe_unused]]
 internal void
@@ -75,6 +70,10 @@ Win32HandleRawInput(UINT msgCode, WPARAM wParam,
 	WIN32LOG_DEBUG("Input!");
 }
 
+
+///
+/// VULKAN
+///
 
 internal bool
 VulkanValidateLayerSupport(HANDLE vulkanInitHeap, const char** req_layers, uint32 req_layer_count)
@@ -1297,7 +1296,7 @@ VulkanCreateSwapchainImages(uint8* memory_stack_ptr, VkFormat swapchain_image_fo
 			create_info.subresourceRange.baseArrayLayer = 0;
 			create_info.subresourceRange.layerCount = 1;
 
-			result = vkCreateImageView(device, &create_info, NULL, swapchain_image_views);
+			result = vkCreateImageView(device, &create_info, NULL, &swapchain_image_views[i]);
 			
 			if (result != VK_SUCCESS)
 			{
@@ -1328,7 +1327,7 @@ VulkanCreateSwapchainImages(uint8* memory_stack_ptr, VkFormat swapchain_image_fo
 }
 
 internal bool
-Win32InitVulkan(game_memory* memory, vulkan_application* application,
+Win32InitVulkan(game_memory* memory, win32_vulkan_application* application,
 				HINSTANCE processInstance, HWND windowHandle,
 				const char* app_name, uint32 app_version)
 {
@@ -1429,6 +1428,7 @@ Win32InitVulkan(game_memory* memory, vulkan_application* application,
 
 				memory->persistent_stack_ptr += successfully_created_swapchain_images * (sizeof(VkImage) + sizeof(VkImageView));
 
+				application->initialized = true;
 				succeeded = true;
 			}
 
@@ -1447,27 +1447,79 @@ Win32InitVulkan(game_memory* memory, vulkan_application* application,
 
 // TODO(soimn): Check if the function properly cleans up the resources on initialization failure
 internal void
-Win32CleanupVulkan(vulkan_application* application)
+Win32CleanupVulkan(win32_vulkan_application* application)
 {
-	for (VkImageView* it = application->swapchain_image_views;
-		 it < application->swapchain_image_views + application->swapchain_image_view_count;
-		 ++it)
+	if (application->initialized)
 	{
-		vkDestroyImageView(application->device, *it, NULL);
+		for (VkImageView* it = application->swapchain_image_views;
+			 it < application->swapchain_image_views + application->swapchain_image_view_count;
+			 ++it)
+		{
+			vkDestroyImageView(application->device, *it, NULL);
+		}
+
+		vkDestroySwapchainKHR(application->device, application->swapchain, NULL);
+		vkDestroyDevice(application->device, NULL);
+
+		#ifdef ANT_VULKAN_ENABLE_VALIDATION_LAYERS
+		{
+			PFN_vkDestroyDebugUtilsMessengerEXT destroy_debug_messenger = (PFN_vkDestroyDebugUtilsMessengerEXT) vkGetInstanceProcAddr(application->instance, "vkDestroyDebugUtilsMessengerEXT");
+			destroy_debug_messenger(application->instance, application->debug_messenger, NULL);
+		}
+		#endif
+
+		vkDestroySurfaceKHR(application->instance, application->surface, NULL);
+		vkDestroyInstance(application->instance, NULL);
+	}
+}
+
+///
+///
+///
+
+
+// TODO(soimn): get path of DLL and improve name checking thing
+internal win32_game_code
+Win32LoadGameCode()
+{
+	win32_game_code game_code = {};
+	local_persist PCHAR application_name = CONCAT(APPLICATION_NAME, ".dll");
+	local_persist PCHAR application_temp_name = CONCAT(APPLICATION_NAME, "_temp.dll");
+
+	CopyFileExA(application_name,
+				application_temp_name,
+				NULL, NULL, NULL, NULL);
+
+	game_code.module = LoadLibraryExA(application_temp_name, NULL, DONT_RESOLVE_DLL_REFERENCES);
+
+	if (game_code.module != NULL)
+	{
+		game_code.game_init_func = (game_init_function*) GetProcAddress(game_code.module, "GameInit");
+		game_code.game_update_func = (game_update_function*) GetProcAddress(game_code.module, "GameUpdate");
+
+		game_code.is_valid = game_code.game_init_func && game_code.game_update_func;
 	}
 
-	vkDestroySwapchainKHR(application->device, application->swapchain, NULL);
-
-	#ifdef ANT_VULKAN_ENABLE_VALIDATION_LAYERS
+	if (!game_code.is_valid)
 	{
-		PFN_vkDestroyDebugUtilsMessengerEXT destroy_debug_messenger = (PFN_vkDestroyDebugUtilsMessengerEXT) vkGetInstanceProcAddr(application->instance, "vkDestroyDebugUtilsMessengerEXT");
-		destroy_debug_messenger(application->instance, application->debug_messenger, NULL);
+		game_code.game_init_func = &GameInitStub;
+		game_code.game_update_func = &GameUpdateStub;
 	}
-	#endif
 
-	vkDestroySurfaceKHR(application->instance, application->surface, NULL);
-	vkDestroyInstance(application->instance, NULL);
-	vkDestroyDevice(application->device, NULL);
+	return game_code;
+}
+
+internal void
+Win32UnloadGameCode(win32_game_code* game_code)
+{
+	if (game_code->module)
+	{
+		FreeLibrary(game_code->module);
+	}
+
+	game_code->is_valid = false;
+	game_code->game_init_func = &GameInitStub;
+	game_code->game_update_func = &GameUpdateStub;
 }
 
 LRESULT CALLBACK Win32MainWindowProc(HWND windowHandle, UINT msgCode,
@@ -1493,7 +1545,6 @@ LRESULT CALLBACK Win32MainWindowProc(HWND windowHandle, UINT msgCode,
 
 	return result;
 }
-
 
 /*
  *	ENTRY POINT
@@ -1523,14 +1574,14 @@ int CALLBACK WinMain(HINSTANCE instance,
 	windowClass.lpfnWndProc = &Win32MainWindowProc;
 	windowClass.hInstance = instance;
 	windowClass.hbrBackground = 0;
-	windowClass.lpszClassName = "win32_ant";
+	windowClass.lpszClassName = APPLICATION_NAME;
 
 	if (RegisterClassExA(&windowClass))
 	{
 		windowHandle =
 			CreateWindowExA(windowClass.style,
 						    windowClass.lpszClassName,
-						    application_name,
+						    APPLICATION_NAME,
 						    WS_VISIBLE | WS_OVERLAPPEDWINDOW,
 						    CW_USEDEFAULT,
 						    CW_USEDEFAULT,
@@ -1563,11 +1614,14 @@ int CALLBACK WinMain(HINSTANCE instance,
 				bool input_ready = Win32InitRawInput();
 
 				// Vulkan
-				vulkan_application* application = new(memory.persistent_memory) vulkan_application();
-				memory.persistent_stack_ptr += sizeof(vulkan_application);
-				bool vulkan_ready = Win32InitVulkan(&memory, application, instance, windowHandle, application_name, application_version);
+				win32_vulkan_application* application = new(memory.persistent_memory) win32_vulkan_application();
+				memory.persistent_stack_ptr += sizeof(win32_vulkan_application);
+				bool vulkan_ready = Win32InitVulkan(&memory, application, instance, windowHandle, APPLICATION_NAME, APPLICATION_VERSION);
 
-				if (input_ready && vulkan_ready)
+				// Game code
+				win32_game_code game_code = Win32LoadGameCode();
+
+				if (input_ready && vulkan_ready && game_code.is_valid)
 				{
 					running = true;
 
@@ -1577,14 +1631,29 @@ int CALLBACK WinMain(HINSTANCE instance,
 						MSG message;
 						while (PeekMessage(&message, windowHandle, 0, 0, PM_REMOVE))
 						{
-// 							if (message.message == WM_INPUT)
-// 							{
-// 								Win32HandleRawInput(message.message, message.wParam,
-// 													message.lParam);
-// 							}
+							if (message.message == WM_INPUT)
+							{
+								Win32HandleRawInput(message.message, message.wParam,
+													message.lParam);
+							}
 							
 							Win32MainWindowProc(message.hwnd, message.message,
 												message.wParam, message.lParam);
+
+							FILETIME new_game_code_timestamp = {};
+							BOOL succeeded = GetFileTime(CONCAT(APPLICATION_NAME, ".dll"), NULL, NULL, &new_game_code_timestamp);
+
+							if (succeeded && CompareFileTime(&game_code.timestamp, &new_game_code_timestamp) == -1)
+							{
+								Win32UnloadGameCode(&game_code);
+								game_code = Win32LoadGameCode();
+								game_code.timestamp = new_game_code_timestamp;
+
+								if (!game_code.is_valid)
+								{
+									WIN32LOG_FATAL("Could not load game code");
+								}
+							}
 						}
 					}
 				}
@@ -1615,8 +1684,8 @@ int CALLBACK WinMain(HINSTANCE instance,
  *	- Setup game input abstraction supporting future rebinding of keys
  *	- Setup file read, write, ...
  *	- Setup audio
- *	- Setup Vulkan
  *	- Implement hot reloading
+ *	- Setup graphics pipeline
  */
 
 // NOTE(soimn): Vulkan is currently setup only for gpu support

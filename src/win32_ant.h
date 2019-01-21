@@ -57,9 +57,9 @@
 #define ANT_VULKAN_INSTANCE_LAYER_COUNT_LIMIT     16
 #define ANT_VULKAN_DEVICE_EXTENSION_COUNT_LIMIT   16
 
-
-struct vulkan_application
+struct win32_vulkan_application
 {
+	bool initialized;
 	VkInstance instance;
 	VkPhysicalDevice physical_device;
 	VkDevice device;
@@ -90,4 +90,26 @@ struct vulkan_application
 	VkQueue present_queue;
 	VkQueue transfer_queue;
 	VkQueue compute_queue;
+};
+
+/// Game
+
+typedef GAME_INIT_FUNCTION(game_init_function);
+GAME_INIT_FUNCTION(GameInitStub)
+{
+}
+
+typedef GAME_UPDATE_FUNCTION(game_update_function);
+GAME_UPDATE_FUNCTION(GameUpdateStub)
+{
+}
+
+struct win32_game_code
+{
+	FILETIME timestamp;
+	HMODULE module;
+	bool is_valid;
+
+	game_init_function* game_init_func;
+	game_update_function* game_update_func;
 };

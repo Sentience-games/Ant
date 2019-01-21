@@ -16,3 +16,6 @@
 #define MAX(x, y) ((x) < (y) ? (y) : (x))
 #define MIN(x, y) ((x) > (y) ? (y) : (x))
 #define CLAMP(min, x, max) ((x) < min ? min : (max < (x) ? max : (x)))
+
+#define CONCAT_(x, y) x##y
+#define CONCAT(x, y) CONCAT_(x, y)
