@@ -1236,8 +1236,8 @@ VulkanCreateSwapchain(HANDLE vulkanInitHeap, queue_family_info family_info,
 internal uint32
 VulkanCreateSwapchainImages(uint8* memory_stack_ptr, VkFormat swapchain_image_format,
 							VkDevice device, VkSwapchainKHR swapchain,
-							VkImage* swapchain_images, uint32* swapchain_image_count,
-							VkImageView* swapchain_image_views, uint32* swapchain_image_view_count)
+							VkImage** swapchain_images, uint32* swapchain_image_count,
+							VkImageView** swapchain_image_views, uint32* swapchain_image_view_count)
 {
 	bool succeeded = false;
 
@@ -1247,9 +1247,9 @@ VulkanCreateSwapchainImages(uint8* memory_stack_ptr, VkFormat swapchain_image_fo
 									 &image_count, NULL);
 	Assert(!result);
 
-	swapchain_images = (VkImage*) memory_stack_ptr;
+	*swapchain_images = (VkImage*) memory_stack_ptr;
 	*swapchain_image_count = image_count;
-	swapchain_image_views =
+	*swapchain_image_views =
 		(VkImageView*) memory_stack_ptr + image_count * sizeof(VkImage);
 
 	*swapchain_image_view_count = image_count;
