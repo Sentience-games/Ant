@@ -1236,8 +1236,8 @@ VulkanCreateSwapchain(HANDLE vulkanInitHeap, queue_family_info family_info,
 internal uint32
 VulkanCreateSwapchainImages(uint8* memory_stack_ptr, VkFormat swapchain_image_format,
 							VkDevice device, VkSwapchainKHR swapchain,
-							VkImage** swapchain_images, uint32* swapchain_image_count,
-							VkImageView** swapchain_image_views, uint32* swapchain_image_view_count)
+							VkImage*& swapchain_images, uint32* swapchain_image_count,
+							VkImageView*& swapchain_image_views, uint32* swapchain_image_view_count)
 {
 	bool succeeded = false;
 
@@ -1247,9 +1247,9 @@ VulkanCreateSwapchainImages(uint8* memory_stack_ptr, VkFormat swapchain_image_fo
 									 &image_count, NULL);
 	Assert(!result);
 
-	*swapchain_images = (VkImage*) memory_stack_ptr;
+	swapchain_images = (VkImage*) memory_stack_ptr;
 	*swapchain_image_count = image_count;
-	*swapchain_image_views =
+	swapchain_image_views =
 		(VkImageView*) memory_stack_ptr + image_count * sizeof(VkImage);
 
 	*swapchain_image_view_count = image_count;
@@ -1287,10 +1287,10 @@ VulkanCreateSwapchainImages(uint8* memory_stack_ptr, VkFormat swapchain_image_fo
 			create_info.image = swapchain_images[i];
 			create_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
 			create_info.format = swapchain_image_format;
-			create_info.components.r = VK_COMPONENT_SWIZZLE_INDENTITY;
-			create_info.components.g = VK_COMPONENT_SWIZZLE_INDENTITY;
-			create_info.components.b = VK_COMPONENT_SWIZZLE_INDENTITY;
-			create_info.components.a = VK_COMPONENT_SWIZZLE_INDENTITY;
+			create_info.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
+			create_info.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
+			create_info.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
+			create_info.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
 			create_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 			create_info.subresourceRange.baseMipLevel = 0;
 			create_info.subresourceRange.levelCount = 1;
@@ -1412,24 +1412,17 @@ Win32InitVulkan(game_memory* memory, vulkan_application* application,
 					break;
 
 				application->swapchain = VulkanCreateSwapchain(vulkanInitHeap, family_info,
-															   application->physical_device, application->swapchain,
+															   application->physical_device, application->surface,
 															   application->device, &application->swapchain_image_format,
 															   &application->swapchain_extent);
 
 				if (application->swapchain == VK_NULL_HANDLE)
 					break;
 
-				if (memory->persistent_stack_ptr + image_count * (sizeof(VkImage) + sizeof(VkImageView))
-					>= (uint8*)memory->persistent_memory + memory->persistent_size)
-				{
-					WIN32LOG_ERROR("Could not allocate memory for Vulkan images & image views");
-					break;
-				}
-
 				uint32 successfully_created_swapchain_images = VulkanCreateSwapchainImages(memory->persistent_stack_ptr, application->swapchain_image_format,
-																						   application->device, application->surface,
-																						   &application->swapchain_images, &application->swapchain_image_count,
-																						   &application->swapchain_image_views, &application->swapchain_image_view_count);
+																						   application->device, application->swapchain,
+																						   application->swapchain_images, &application->swapchain_image_count,
+																						   application->swapchain_image_views, &application->swapchain_image_view_count);
 
 				if (successfully_created_swapchain_images == 0)
 					break;
