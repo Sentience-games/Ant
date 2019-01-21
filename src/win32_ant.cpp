@@ -998,7 +998,7 @@ VulkanChooseSwapchainPresentMode(VkPresentModeKHR* available_modes, uint32 avail
 
 internal VkExtent2D
 VulkanChooseSwapchainSwapExtent(VkSurfaceCapabilitiesKHR capabilities,
-								uint32 preferred_width = 2560, uint32 preferred_height = 1440)
+								uint32 preferred_width = 0, uint32 preferred_height = 0)
 {
 	VkExtent2D extent = {preferred_width, preferred_height};
 
@@ -1008,10 +1008,18 @@ VulkanChooseSwapchainSwapExtent(VkSurfaceCapabilitiesKHR capabilities,
 	}
 
 	else
-	{
-		extent = {CLAMP(capabilities.minImageExtent.width, extent.width, capabilities.maxImageExtent.width),
-				  CLAMP(capabilities.minImageExtent.height, extent.height, capabilities.maxImageExtent.height)};
+	{	
+		if (preferred_width == 0 || preferred_height == 0)
+		{
+			extent = {capabilities.maxImageExtent.width,
+					  capabilities.maxImageExtent.height};
+		}
 
+		else
+		{
+			extent = {CLAMP(capabilities.minImageExtent.width, extent.width, capabilities.maxImageExtent.width),
+					  CLAMP(capabilities.minImageExtent.height, extent.height, capabilities.maxImageExtent.height)};
+		}
 	}
 
 	return extent;
@@ -1225,67 +1233,98 @@ VulkanCreateSwapchain(HANDLE vulkanInitHeap, queue_family_info family_info,
 	return swapchain;
 }
 
-internal bool
-VulkanCreateSwapchainImages(game_memory* memory, vulkan_application* application)
+internal uint32
+VulkanCreateSwapchainImages(uint8* memory_stack_ptr, VkFormat swapchain_image_format,
+							VkDevice device, VkSwapchainKHR swapchain,
+							VkImage* swapchain_images, uint32* swapchain_image_count,
+							VkImageView* swapchain_image_views, uint32* swapchain_image_view_count)
 {
 	bool succeeded = false;
 
 	uint32 image_count;
 	VkResult result;
-	result = vkGetSwapchainImagesKHR(application->device, application->swapchain,
+	result = vkGetSwapchainImagesKHR(device, swapchain,
 									 &image_count, NULL);
 	Assert(!result);
 
-	if (memory->persistent_stack_ptr + image_count * (sizeof(VkImage) + sizeof(VkImageView))
-		< (uint8*)memory->persistent_memory + memory->persistent_size)
+	swapchain_images = (VkImage*) memory_stack_ptr;
+	*swapchain_image_count = image_count;
+	swapchain_image_views =
+		(VkImageView*) memory_stack_ptr + image_count * sizeof(VkImage);
+
+	*swapchain_image_view_count = image_count;
+
+	result = vkGetSwapchainImagesKHR(device, swapchain,
+									 &image_count, (VkImage*) memory_stack_ptr);
+
+	if(result != VK_SUCCESS)
 	{
-		application->swapchain_images = (VkImage*) memory->persistent_stack_ptr;
-		application->swapchain_image_count = image_count;
-		application->swapchain_image_views =
-			(VkImageView*) memory->persistent_stack_ptr + image_count * sizeof(VkImage);
-
-		application->swapchain_image_view_count = image_count;
-
-		memory->persistent_stack_ptr += image_count * (sizeof(VkImage) + sizeof(VkImageView));
-
-		result = vkGetSwapchainImagesKHR(application->device, application->swapchain,
-										 &image_count, (VkImage*)memory->persistent_stack_ptr);
-
-		if(result != VK_SUCCESS)
+		switch(result)
 		{
-			switch(result)
-			{
-				case VK_ERROR_OUT_OF_HOST_MEMORY:
-					WIN32LOG_ERROR("VK_ERROR_OUT_OF_HOST_MEMORY");
-				break;
+			case VK_ERROR_OUT_OF_HOST_MEMORY:
+				WIN32LOG_ERROR("VK_ERROR_OUT_OF_HOST_MEMORY");
+			break;
 
-				case VK_ERROR_OUT_OF_DEVICE_MEMORY:
-					WIN32LOG_ERROR("VK_ERROR_OUT_OF_DEVICE_MEMORY");
-				break;
-				
-				default:
-					Assert(false);
-				break;
-			}
-		}
-
-		else
-		{
-			for (uint32 i = 0; i < image_count; ++i)
-			{
-				
-			}
-
-			succeeded = true;
+			case VK_ERROR_OUT_OF_DEVICE_MEMORY:
+				WIN32LOG_ERROR("VK_ERROR_OUT_OF_DEVICE_MEMORY");
+			break;
+			
+			default:
+				Assert(false);
+			break;
 		}
 	}
-	
+
 	else
 	{
-		WIN32LOG_ERROR("Could not allocate memory for swapchain images");
+		uint32 i = 0;
+		for (; i < image_count; ++i)
+		{
+			VkImageViewCreateInfo create_info = {};
+			create_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+			create_info.pNext = NULL;
+			create_info.flags = 0;
+			create_info.image = swapchain_images[i];
+			create_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
+			create_info.format = swapchain_image_format;
+			create_info.components.r = VK_COMPONENT_SWIZZLE_INDENTITY;
+			create_info.components.g = VK_COMPONENT_SWIZZLE_INDENTITY;
+			create_info.components.b = VK_COMPONENT_SWIZZLE_INDENTITY;
+			create_info.components.a = VK_COMPONENT_SWIZZLE_INDENTITY;
+			create_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+			create_info.subresourceRange.baseMipLevel = 0;
+			create_info.subresourceRange.levelCount = 1;
+			create_info.subresourceRange.baseArrayLayer = 0;
+			create_info.subresourceRange.layerCount = 1;
+
+			result = vkCreateImageView(device, &create_info, NULL, swapchain_image_views);
+			
+			if (result != VK_SUCCESS)
+			{
+				switch(result)
+				{
+					case VK_ERROR_OUT_OF_HOST_MEMORY:
+						WIN32LOG_ERROR("VK_ERROR_OUT_OF_HOST_MEMORY");
+					break;
+
+					case VK_ERROR_OUT_OF_DEVICE_MEMORY:
+						WIN32LOG_ERROR("VK_ERROR_OUT_OF_DEVICE_MEMORY");
+					break;
+
+					default:
+						Assert(false);
+					break;
+				}
+
+				break;
+			}
+		}
+
+		if (i == image_count)
+			succeeded = true;
 	}
 
-	return succeeded;
+	return (succeeded ? image_count : 0);
 }
 
 internal bool
@@ -1305,91 +1344,107 @@ Win32InitVulkan(game_memory* memory, vulkan_application* application,
 
 	else
 	{
-		application->extension_count = 0;
-		application->layer_count = 0;
-
-		application->extensions[application->extension_count++] = VK_KHR_SURFACE_EXTENSION_NAME;
-		application->extensions[application->extension_count++] = VK_KHR_WIN32_SURFACE_EXTENSION_NAME;
-
-		#ifdef ANT_VULKAN_ENABLE_VALIDATION_LAYERS
-		application->extensions[application->extension_count++] = VK_EXT_DEBUG_UTILS_EXTENSION_NAME;
-		application->layers[application->layer_count++] = "VK_LAYER_LUNARG_standard_validation";
-		#endif
-
-		Assert(application->extension_count <= ANT_VULKAN_INSTANCE_EXTENSION_COUNT_LIMIT);
-		Assert(application->layer_count <= ANT_VULKAN_INSTANCE_LAYER_COUNT_LIMIT);
-
-		bool instance_extensions_supported = VulkanValidateInstanceExtensionSupport(vulkanInitHeap, application->extensions, application->extension_count);
-		bool layers_supported			   = VulkanValidateLayerSupport(vulkanInitHeap, application->layers, application->layer_count);
-
-		// TODO(soimn): setup debug message callback
-		
-		if (layers_supported && instance_extensions_supported)
+		do
 		{
+			application->extension_count = 0;
+			application->layer_count = 0;
+
+			application->extensions[application->extension_count++] = VK_KHR_SURFACE_EXTENSION_NAME;
+			application->extensions[application->extension_count++] = VK_KHR_WIN32_SURFACE_EXTENSION_NAME;
+
+			#ifdef ANT_VULKAN_ENABLE_VALIDATION_LAYERS
+			application->extensions[application->extension_count++] = VK_EXT_DEBUG_UTILS_EXTENSION_NAME;
+			application->layers[application->layer_count++] = "VK_LAYER_LUNARG_standard_validation";
+			#endif
+
+			Assert(application->extension_count <= ANT_VULKAN_INSTANCE_EXTENSION_COUNT_LIMIT);
+			Assert(application->layer_count <= ANT_VULKAN_INSTANCE_LAYER_COUNT_LIMIT);
+
+			bool instance_extensions_supported = VulkanValidateInstanceExtensionSupport(vulkanInitHeap, application->extensions, application->extension_count);
+			bool layers_supported			   = VulkanValidateLayerSupport(vulkanInitHeap, application->layers, application->layer_count);
+
+			// TODO(soimn): setup debug message callback
+			
+			if (!(layers_supported && instance_extensions_supported))
+				break;
+
 			application->instance = VulkanCreateInstance(app_name, app_version,
 														 application->layers, application->layer_count,
 														 application->extensions, application->extension_count);
 
-			if (application->instance != VK_NULL_HANDLE)
+			if (application->instance == VK_NULL_HANDLE)
+				break;
+
+			#ifdef ANT_VULKAN_ENABLE_VALIDATION_LAYERS
+			VulkanSetupDebugMessenger(application->instance, &application->debug_messenger);
+			#endif
+
+			application->surface = VulkanCreateSurface(processInstance, windowHandle, application->instance);
+
+			if (application->surface == VK_NULL_HANDLE)
+				break;
+
+			application->device_extensions[application->device_extension_count++] = VK_KHR_SWAPCHAIN_EXTENSION_NAME;
+
+			Assert(application->device_extension_count <= ANT_VULKAN_DEVICE_EXTENSION_COUNT_LIMIT);
+
+			application->physical_device = VulkanGetPhysicalDevice(vulkanInitHeap, application->instance,
+																   application->surface, application->device_extensions,
+																   application->device_extension_count);
+
+			if (application->physical_device == VK_NULL_HANDLE)
+				break;
+
+			queue_family_info family_info = VulkanGetSuitableQueueFamilies(vulkanInitHeap, application->physical_device, application->surface);
+			application->has_compute_queue = (family_info.compute_family != -1);
+			application->has_separate_present_queue = (family_info.gfx_family != family_info.present_family);
+
+			if (family_info.gfx_family != -1 && family_info.transfer_family != -1)
 			{
-				#ifdef ANT_VULKAN_ENABLE_VALIDATION_LAYERS
-				VulkanSetupDebugMessenger(application->instance, &application->debug_messenger);
-				#endif
 
-				application->surface = VulkanCreateSurface(processInstance, windowHandle, application->instance);
+				application->device = VulkanCreateDevice(application->physical_device, family_info,
+														 application->device_extensions, application->device_extension_count,
+														 &application->gfx_queue, &application->present_queue,
+														 &application->compute_queue, &application->transfer_queue,
+														 application->has_separate_present_queue);
+				
+				if (application->device == VK_NULL_HANDLE)
+					break;
 
-				if (application->surface != VK_NULL_HANDLE)
+				application->swapchain = VulkanCreateSwapchain(vulkanInitHeap, family_info,
+															   application->physical_device, application->swapchain,
+															   application->device, &application->swapchain_image_format,
+															   &application->swapchain_extent);
+
+				if (application->swapchain == VK_NULL_HANDLE)
+					break;
+
+				if (memory->persistent_stack_ptr + image_count * (sizeof(VkImage) + sizeof(VkImageView))
+					>= (uint8*)memory->persistent_memory + memory->persistent_size)
 				{
-					application->device_extensions[application->device_extension_count++] = VK_KHR_SWAPCHAIN_EXTENSION_NAME;
-
-					Assert(application->device_extension_count <= ANT_VULKAN_DEVICE_EXTENSION_COUNT_LIMIT);
-
-					application->physical_device = VulkanGetPhysicalDevice(vulkanInitHeap, application->instance,
-																		   application->surface, application->device_extensions,
-																		   application->device_extension_count);
-
-					if (application->physical_device != VK_NULL_HANDLE)
-					{
-						queue_family_info family_info = VulkanGetSuitableQueueFamilies(vulkanInitHeap, application->physical_device, application->surface);
-						application->has_compute_queue = (family_info.compute_family != -1);
-						application->has_separate_present_queue = (family_info.gfx_family != family_info.present_family);
-
-						if (family_info.gfx_family != -1 && family_info.transfer_family != -1)
-						{
-
-							application->device = VulkanCreateDevice(application->physical_device, family_info,
-																	 application->device_extensions, application->device_extension_count,
-																	 &application->gfx_queue, &application->present_queue,
-																	 &application->compute_queue, &application->transfer_queue,
-																	 application->has_separate_present_queue);
-							
-							if (application->device != VK_NULL_HANDLE)
-							{
-								application->swapchain = VulkanCreateSwapchain(vulkanInitHeap, family_info,
-																			   application->physical_device, application->surface,
-																			   application->device, &application->swapchain_image_format,
-																			   &application->swapchain_extent);
-
-								if (application->swapchain != VK_NULL_HANDLE)
-								{
-									bool successfully_created_swapchain_images = VulkanCreateSwapchainImages(memory, application);
-
-									if (successfully_created_swapchain_images)
-									{
-										succeeded = true;
-									}
-								}
-							}
-						}
-
-						else
-						{
-							WIN32LOG_ERROR("Physical device does not support graphics and transfer queues");
-						}
-					}
+					WIN32LOG_ERROR("Could not allocate memory for Vulkan images & image views");
+					break;
 				}
+
+				uint32 successfully_created_swapchain_images = VulkanCreateSwapchainImages(memory->persistent_stack_ptr, application->swapchain_image_format,
+																						   application->device, application->surface,
+																						   &application->swapchain_images, &application->swapchain_image_count,
+																						   &application->swapchain_image_views, &application->swapchain_image_view_count);
+
+				if (successfully_created_swapchain_images == 0)
+					break;
+
+				memory->persistent_stack_ptr += successfully_created_swapchain_images * (sizeof(VkImage) + sizeof(VkImageView));
+
+				succeeded = true;
+			}
+
+			else
+			{
+				WIN32LOG_ERROR("Physical device does not support graphics and transfer queues");
 			}
 		}
+		while(0);
 
 		HeapDestroy(vulkanInitHeap);
 	}
@@ -1397,9 +1452,17 @@ Win32InitVulkan(game_memory* memory, vulkan_application* application,
 	return succeeded;
 }
 
+// TODO(soimn): Check if the function properly cleans up the resources on initialization failure
 internal void
 Win32CleanupVulkan(vulkan_application* application)
 {
+	for (VkImageView* it = application->swapchain_image_views;
+		 it < application->swapchain_image_views + application->swapchain_image_view_count;
+		 ++it)
+	{
+		vkDestroyImageView(application->device, *it, NULL);
+	}
+
 	vkDestroySwapchainKHR(application->device, application->swapchain, NULL);
 
 	#ifdef ANT_VULKAN_ENABLE_VALIDATION_LAYERS
