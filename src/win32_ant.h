@@ -14,6 +14,24 @@
 #include "utils/assert.h"
 #include "utils/cstring.h"
 
+/// Debug
+
+enum DEBUG_LOG_CATEGORY
+{
+	DEBUG_LOG_ERROR,
+	DEBUG_LOG_WARNING,
+	DEBUG_LOG_INFO,
+	DEBUG_LOG_DEBUG,
+
+	DEBUG_LOG_CATEGORY_COUNT
+};
+
+global_variable
+const char* debug_log_category_table[DEBUG_LOG_CATEGORY_COUNT] = {"ERROR",
+																  "WARNING",
+																  "INFO",
+																  "DEBUG"};
+
 #ifdef ANT_DEBUG
 	
 	#ifndef ANT_CONSOLE_ENABLED
@@ -31,24 +49,20 @@
 #endif
 
 // TODO(soimn): engineer debugging systems such that the clean-up functions in WinMain are called at engine failure
-#ifdef ANT_CONSOLE_ENABLED
-#define WIN32LOG_FATAL(message)\
-	Win32Log(message),\
-	MessageBoxA(NULL, message, NULL, MB_OK | MB_ICONERROR),\
-	running = false
 
-#define WIN32LOG_ERROR(message)\
-	Win32Log(message),\
-	MessageBoxA(NULL, message, NULL, MB_OK | MB_ICONERROR)
-#else
 #define WIN32LOG_FATAL(message) MessageBoxA(NULL, message, NULL, MB_OK | MB_ICONERROR), running = false
+
+#ifdef ANT_CONSOLE_ENABLED
+#define WIN32LOG_ERROR(message)\
+	Win32DebugLog(DEBUG_LOG_ERROR, __FUNCTION__, __LINE__, message)
+#else
 #define WIN32LOG_ERROR(message) MessageBoxA(NULL, message, NULL, MB_OK | MB_ICONERROR)
 #endif
 
 #if defined(ANT_CONSOLE_ENABLED) && defined(ANT_DEBUG)
-#define WIN32LOG_DEBUG(message) Win32Log(message)
+#define WIN32LOG_DEBUG(message) Win32DebugLog(DEBUG_LOG_DEBUG, __FUNCTION__, __LINE__, message)
 #else
-#define WIN32LOG_DEBUG(message) Win32Log(message)
+#define WIN32LOG_DEBUG(message)
 #endif
 
 /// Vulkan
@@ -103,6 +117,19 @@ typedef GAME_UPDATE_FUNCTION(game_update_function);
 GAME_UPDATE_FUNCTION(GameUpdateStub)
 {
 }
+
+#define ANT_MAX_GAME_NAME_LENGTH 128
+
+struct win32_game_info
+{
+	const char* name;
+	const uint32 version;
+
+	const char* dll_path;
+
+	HANDLE dll_handle;
+	const char* loaded_dll_path;
+};
 
 struct win32_game_code
 {
