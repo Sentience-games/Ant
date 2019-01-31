@@ -97,7 +97,7 @@ strconcat (const char* cstring_1, const char* cstring_2, char* dest_str, int des
 
 		if (result == str_1_length)
 		{
-			result += strcopy(cstring_2, dest_str + str_1_length, MIN(dest_capacity - str_1_length, str_2_length));
+			result += strcopy(cstring_2, dest_str + str_1_length, MIN(dest_capacity - str_1_length, str_2_length + 1));
 		}
 	}
 
