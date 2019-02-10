@@ -1,6 +1,40 @@
-#ifdef VK_DEVICE_LEVEL_FUNCTION
-VK_DEVICE_LEVEL_FUNCTION(vkGetInstanceProcAddr);
+#ifdef VK_EXPORTED_FUNCTION
+VK_EXPORTED_FUNCTION(vkGetInstanceProcAddr);
+#endif
 
+#ifdef VK_GLOBAL_LEVEL_FUNCTION
+VK_GLOBAL_LEVEL_FUNCTION(vkCreateInstance);
+VK_GLOBAL_LEVEL_FUNCTION(vkEnumerateInstanceExtensionProperties);
+VK_GLOBAL_LEVEL_FUNCTION(vkEnumerateInstanceLayerProperties);
+#endif
+
+#ifdef VK_INSTANCE_LEVEL_FUNCTION
+VK_INSTANCE_LEVEL_FUNCTION(vkDestroyInstance);
+
+#ifdef PLATFORM_WINDOWS
+VK_INSTANCE_LEVEL_FUNCTION(vkCreateWin32SurfaceKHR);
+#endif
+
+VK_INSTANCE_LEVEL_FUNCTION(vkGetPhysicalDeviceSurfaceSupportKHR);
+VK_INSTANCE_LEVEL_FUNCTION(vkGetPhysicalDeviceSurfaceCapabilitiesKHR);
+VK_INSTANCE_LEVEL_FUNCTION(vkGetPhysicalDeviceSurfaceFormatsKHR);
+VK_INSTANCE_LEVEL_FUNCTION(vkGetPhysicalDeviceSurfacePresentModesKHR);
+VK_INSTANCE_LEVEL_FUNCTION(vkDestroySurfaceKHR);
+VK_INSTANCE_LEVEL_FUNCTION(vkCreateDevice);
+VK_INSTANCE_LEVEL_FUNCTION(vkEnumeratePhysicalDevices);
+VK_INSTANCE_LEVEL_FUNCTION(vkGetPhysicalDeviceProperties);
+VK_INSTANCE_LEVEL_FUNCTION(vkGetPhysicalDeviceFeatures);
+VK_INSTANCE_LEVEL_FUNCTION(vkGetPhysicalDeviceQueueFamilyProperties);
+VK_INSTANCE_LEVEL_FUNCTION(vkGetDeviceProcAddr);
+VK_INSTANCE_LEVEL_FUNCTION(vkEnumerateDeviceExtensionProperties);
+#endif
+
+#ifdef VK_DEVICE_LEVEL_FUNCTION
+VK_DEVICE_LEVEL_FUNCTION(vkGetDeviceQueue);
+VK_DEVICE_LEVEL_FUNCTION(vkDestroyDevice);
+VK_DEVICE_LEVEL_FUNCTION(vkDeviceWaitIdle);
+VK_DEVICE_LEVEL_FUNCTION(vkCreateSwapchainKHR);
+VK_DEVICE_LEVEL_FUNCTION(vkDestroySwapchainKHR);
 VK_DEVICE_LEVEL_FUNCTION(vkCreateSemaphore);
 VK_DEVICE_LEVEL_FUNCTION(vkCreateCommandPool);
 VK_DEVICE_LEVEL_FUNCTION(vkCreateDescriptorPool);
@@ -15,7 +49,6 @@ VK_DEVICE_LEVEL_FUNCTION(vkCreateImage);
 VK_DEVICE_LEVEL_FUNCTION(vkCreateImageView);
 VK_DEVICE_LEVEL_FUNCTION(vkCreateDescriptorSetLayout);
 VK_DEVICE_LEVEL_FUNCTION(vkCreateSampler);
-
 VK_DEVICE_LEVEL_FUNCTION(vkAllocateCommandBuffers);
 VK_DEVICE_LEVEL_FUNCTION(vkBeginCommandBuffer);
 VK_DEVICE_LEVEL_FUNCTION(vkCmdPipelineBarrier);
@@ -46,9 +79,9 @@ VK_DEVICE_LEVEL_FUNCTION(vkCmdCopyBufferToImage);
 VK_DEVICE_LEVEL_FUNCTION(vkAllocateDescriptorSets);
 VK_DEVICE_LEVEL_FUNCTION(vkUpdateDescriptorSets);
 VK_DEVICE_LEVEL_FUNCTION(vkCmdBindDescriptorSets);
+VK_DEVICE_LEVEL_FUNCTION(vkGetSwapchainImagesKHR);
 VK_DEVICE_LEVEL_FUNCTION(vkAcquireNextImageKHR);
 VK_DEVICE_LEVEL_FUNCTION(vkQueuePresentKHR);
-
 VK_DEVICE_LEVEL_FUNCTION(vkDestroyBuffer);
 VK_DEVICE_LEVEL_FUNCTION(vkDestroyFence);
 VK_DEVICE_LEVEL_FUNCTION(vkDestroyShaderModule);

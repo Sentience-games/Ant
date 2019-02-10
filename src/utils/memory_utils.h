@@ -40,8 +40,9 @@ inline void*
 PushArray_(memory_arena* arena, memory_index size, uint8 alignment, memory_index count)
 {
 	void* result = {};
-	uint8 padding = ALIGNOFFSET(arena->push_ptr + size, alignment);
-	memory_index total_size = count * (size + padding) + alignment - 1;
+	uint8 adjustment = ALIGNOFFSET(arena->push_ptr + size, alignment);
+	uint8 padding = ALIGNOFFSET(ALIGN(arena->push_ptr, alignment) + size, alignment);
+	memory_index total_size = adjustment + count * (size + padding);
 
 	if (total_size < arena->remaining_space)
 	{
@@ -60,3 +61,4 @@ PushArray_(memory_arena* arena, memory_index size, uint8 alignment, memory_index
 
 #define PushStruct(arena, type) (type*) PushSize_(arena, sizeof(type), alignof(type))
 #define PushArray(arena, type, count) (type*) PushArray_(arena, sizeof(type), alignof(type), count) 
+#define PushSize(arena, size, alignment) PushSize_(arena, (size), (alignment))

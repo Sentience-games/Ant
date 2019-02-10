@@ -2,10 +2,7 @@
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
-
-#define VK_USE_PLATFORM_WIN32_KHR
-#define VK_NO_PROTOTYPES
-#include <vulkan/vulkan.h>
+#undef WIN32_LEAN_AND_MEAN
 
 #ifdef ANT_DEBUG
 	
@@ -17,9 +14,23 @@
 	#define ANT_VULKAN_ENABLE_VALIDATION_LAYERS
 	#endif
 
+	#ifndef ANT_ENABLE_HOT_RELOADING
+	#define	ANT_ENABLE_HOT_RELOADING
+	#endif
+
 #endif
 
 #include "ant_platform.h"
+
+#ifdef ANT_DEBUG
+#define DEBUG_MODE
+#endif
+#define PLATFORM_WINDOWS
+#include "renderer/renderer.h"
+#undef PLATFORM_WINDOWS
+#ifdef ANT_DEBUG
+#undef DEBUG_MODE
+#endif
 
 #include "utils/utility_defines.h"
 #include "utils/memory_utils.h"
@@ -45,32 +56,22 @@
 #define WIN32LOG_DEBUG(message)
 #endif
 
-/// Vukan
-
-#define VK_EXPORTED_FUNCTION(func) PFN_##func func
-#define VK_GLOBAL_LEVEL_FUNCTION(func) PFN_##func func
-#define VK_INSTANCE_LEVEL_FUNCTION(func) PFN_##func func
-#define VK_DEVICE_LEVEL_FUNCTION(func) PFN_##func func
-
-struct win32_vulkan_api
-{
-	#include "vulkan_platform_functions.inl"
-};
-
-global_variable win32_vulkan_api* VulkanAPI;
-
-#undef VK_EXPORTED_FUNCTION
-#undef VK_GLOBAL_LEVEL_FUNCTION
-#undef VK_INSTANCE_LEVEL_FUNCTION
-#undef VK_DEVICE_LEVEL_FUNCTION
+/// Utility
+// NOTE(soimn): This is only used for readability, and should only be used in the setup stage of the WinMain function
+#define CLAMPED_REMAINING_MEMORY(ptr, max) (uint32) CLAMP(0, memory.persistent_size - ((ptr) - (uint8*)memory.persistent_memory), (max))
 
 /// Game
 
 GAME_INIT_FUNCTION(GameInitStub)
 {
+	return 0;
 }
 
 GAME_UPDATE_FUNCTION(GameUpdateStub)
+{
+}
+
+GAME_CLEANUP_FUNCTION(GameCleanupStub)
 {
 }
 
@@ -85,12 +86,16 @@ struct win32_game_code
 
 	game_init_function* game_init_func;
 	game_update_function* game_update_func;
+	game_cleanup_function* game_cleanup_func;
 };
 
 struct win32_game_info
 {
 	const char* name;
 	const uint32 version;
+
+	const char* root_dir;
+	const char* resource_dir;
 
 	const char* dll_path;
 	const char* loaded_dll_path;

@@ -1,10 +1,30 @@
 #pragma once
 
-#include <vulkan/vulkan.h>
+#ifdef ANT_PLATFORM_WINDOWS
+#define PLATFORM_WINDOWS
+#endif
+
+#ifdef ANT_DEBUG
+#define DEBUG_MODE
+#endif
+
+#include "renderer/renderer.h"
+
+#ifdef ANT_DEBUG
+#undef DEBUG_MODE
+#endif
+
+#ifdef ANT_PLATFORM_WINDOWS
+#undef PLATFORM_WINDOWS
+#endif
 
 #include "utils/utility_defines.h"
 #include "utils/memory_utils.h"
 #include "utils/fixed_int.h"
+
+#ifdef ANT_PLATFORM_WINDOWS
+#define EXPORT extern "C" __declspec(dllexport)
+#endif
 
 /// Logging
 
@@ -45,75 +65,25 @@ typedef DEBUG_WRITE_FILE(debug_write_file);
 #define DEBUG_FREE_FILE_MEMORY(name) void name (platform_file_handle file_handle)
 typedef DEBUG_FREE_FILE_MEMORY(debug_free_file_memory);
 
-/// Vulkan
-
-#define MAX_VULKAN_APP_NAME 60
-#define ANT_VULKAN_INSTANCE_EXTENSION_COUNT_LIMIT 16
-#define ANT_VULKAN_INSTANCE_LAYER_COUNT_LIMIT     16
-#define ANT_VULKAN_DEVICE_EXTENSION_COUNT_LIMIT   16
-
-struct vulkan_queue_family_info {
-	int32 gfx_family;
-	int32 present_family;
-	int32 compute_family;
-	int32 transfer_family;
-};
-
-typedef struct vulkan_application
+typedef struct platform_renderer_api
 {
-	bool initialized;
-	VkInstance instance;
-	VkPhysicalDevice physical_device;
-	VkDevice device;
-	VkSurfaceKHR surface;
+	renderer_state* RendererState;
+	vulkan_api* VulkanAPI;
 
-	VkSwapchainKHR swapchain;
-	VkImage* swapchain_images;
-	uint32 swapchain_image_count;
-	VkImageView* swapchain_image_views;
-	uint32 swapchain_image_view_count;
-	VkFormat swapchain_image_format;
-	VkExtent2D swapchain_extent;
-
-	// TODO(soimn): setup a proper system handling these
-	VkPipelineLayout debug_pipeline_layout;
-	VkRenderPass debug_render_pass;
-	VkPipeline debug_pipeline;
-	VkFramebuffer* debug_framebuffers;
-	uint32 debug_framebuffer_count;
-	VkCommandPool debug_cmd_pool;
-	VkCommandBuffer debug_cmd_buffers[16];
-	uint32 debug_cmd_buffer_count;
-	VkSemaphore debug_image_avail;
-	VkSemaphore debug_render_done;
-
-	const char* layers[ANT_VULKAN_INSTANCE_LAYER_COUNT_LIMIT];
-	const char* extensions[ANT_VULKAN_INSTANCE_EXTENSION_COUNT_LIMIT];
-
-	uint32 layer_count;
-	uint32 extension_count;
-
-	const char* device_extensions[ANT_VULKAN_DEVICE_EXTENSION_COUNT_LIMIT];
-	uint32 device_extension_count;
-
-	VkDebugUtilsMessengerEXT debug_messenger;
-
-	bool has_compute_queue;
-	bool has_separate_present_queue;
-
-	vulkan_queue_family_info queue_families;
-
-	VkQueue gfx_queue;
-	VkQueue present_queue;
-	VkQueue transfer_queue;
-	VkQueue compute_queue;
-
-	void* library_module;
-	
-	#define VK_DEVICE_LEVEL_FUNCTION(func) PFN_##func func
-	#include "vulkan_app_functions.inl"
-	#undef VK_DEVICE_LEVEL_FUNCTION
-} vulkan_application;
+	renderer_create_swapchain_function* CreateSwapchain;
+	renderer_create_swapchain_images_function* CreateSwapchainImages;
+	renderer_create_render_pass_function* CreateRenderPass;
+	renderer_create_pipeline_layout_function* CreatePipelineLayout;
+	renderer_create_shader_module_function* CreateShaderModule;
+	renderer_create_shader_stage_infos_function* CreateShaderStageInfos;
+	renderer_create_graphics_pipelines_function* CreateGraphicsPipelines;
+	renderer_create_framebuffer_function* CreateFramebuffer;
+	renderer_create_command_pool_function* CreateCommandPool;
+	renderer_create_semaphore_function* CreateSemaphore;
+	renderer_get_optimal_swapchain_extent_function* GetOptimalSwapchainExtent;
+	renderer_get_optimal_swapchain_surface_format_function* GetOptimalSwapchainSurfaceFormat;
+	renderer_get_optimal_swapchain_present_mode_function* GetOptimalSwapchainPresentMode;
+} platform_renderer_functions;
 
 typedef struct platform_api_functions
 {
@@ -123,6 +93,9 @@ typedef struct platform_api_functions
 	debug_read_file* DebugReadFile;
 	debug_write_file* DebugWriteFile;
 	debug_free_file_memory* DebugFreeFileMemory;
+
+	platform_renderer_api RendererAPI;
+
 } platform_api_functions;
 
 typedef struct game_memory
@@ -135,13 +108,16 @@ typedef struct game_memory
 	uint64 transient_size;
 
 	platform_api_functions platform_api;
-	vulkan_application* vk_application;
 
 	memory_arena debug_arena;
+	memory_arena renderer_arena;
 } game_memory;
 
-#define GAME_INIT_FUNCTION(name) void name (game_memory* memory)
+#define GAME_INIT_FUNCTION(name) bool name (game_memory* memory)
 typedef GAME_INIT_FUNCTION(game_init_function);
 
 #define GAME_UPDATE_FUNCTION(name) void name (game_memory* memory, float delta_t)
 typedef GAME_UPDATE_FUNCTION(game_update_function);
+
+#define GAME_CLEANUP_FUNCTION(name) void name (game_memory* memory)
+typedef GAME_CLEANUP_FUNCTION(game_cleanup_function);
