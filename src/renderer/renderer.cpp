@@ -78,9 +78,9 @@ VulkanSetupDebugMessenger()
 								  | VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT
 								  | VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT;
 
-	create_info.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT
-							  | VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT
-							  | VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
+	create_info.messageType	    = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT
+							      | VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT
+								  | VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
 
 	create_info.pfnUserCallback = &VulkanDebugCallback;
 	create_info.pUserData = NULL;
@@ -100,9 +100,7 @@ VulkanSetupDebugMessenger()
 					LOG_ERROR("Could not create debug messenger. Reason: out of host memory");
 				break;
 
-				default:
-					Assert(false);
-				break;
+				INVALID_DEFAULT_CASE;
 			}
 		}
 	}
@@ -213,9 +211,7 @@ RENDERER_EXPORT RENDERER_VERIFY_LAYER_SUPPORT_FUNCTION(VulkanVerifyLayerSupport)
 						LOG_ERROR("VulkanVerifyLayerSupport failed. Reason: the device is out of memory,\nVK_ERROR_OUT_OF_DEVICE_MEMORY");
 					break;
 
-					default:
-						Assert(false);
-					break;
+					INVALID_DEFAULT_CASE;
 				}
 			}
 
@@ -290,9 +286,7 @@ RENDERER_EXPORT RENDERER_VERIFY_INSTANCE_EXTENSION_SUPPORT_FUNCTION(VulkanVerify
 						LOG_ERROR("VulkanVerifyExtensionSupport failed. Reason: the device is out of memory,\nVK_ERROR_OUT_OF_DEVICE_MEMORY");
 					break;
 
-					default:
-						Assert(false);
-					break;
+					INVALID_DEFAULT_CASE;
 				}
 			}
 
@@ -386,9 +380,7 @@ RENDERER_EXPORT RENDERER_CREATE_INSTANCE_FUNCTION(VulkanCreateInstance)
 					LOG_ERROR("VulkanCreateInstance failed. Reason: the driver is incompatible,\nVK_ERROR_INCOMPATIBLE_DRIVER");
 				break;
 
-				default:
-					Assert(false);
-				break;
+				INVALID_DEFAULT_CASE;
 			}
 		}
 
@@ -407,6 +399,8 @@ RENDERER_EXPORT RENDERER_CREATE_INSTANCE_FUNCTION(VulkanCreateInstance)
 
 RENDERER_EXPORT RENDERER_VERIFY_PHYSICAL_DEVICE_EXTENSION_SUPPORT_FUNCTION(VulkanVerifyPhysicalDeviceExtensionSupport)
 {
+	// NOTE(soimn): if the swapchain extension is disabled, and no other extensions are enabled, then this will fire.
+	//				This might not be beneficial
 	Assert(req_extension_names && req_extension_count);
 
 	bool succeeded = false;
@@ -448,9 +442,7 @@ RENDERER_EXPORT RENDERER_VERIFY_PHYSICAL_DEVICE_EXTENSION_SUPPORT_FUNCTION(Vulka
 								  "VK_ERROR_OUT_OF_DEVICE_MEMORY");
 					break;
 
-					default:
-						Assert(false);
-					break;
+					INVALID_DEFAULT_CASE;
 				}
 			}
 
@@ -630,9 +622,7 @@ RENDERER_EXPORT RENDERER_ACQUIRE_PHYSICAL_DEVICE_FUNCTION(VulkanAcquirePhysicalD
 					LOG_ERROR("VulkanAcquirePhysicalDevice failed. Reason: initialization failed,\nVK_ERROR_INITIALIZATION_FAILED");
 				break;
 
-				default:
-					Assert(false);
-				break;
+				INVALID_DEFAULT_CASE;
 			}
 		}
 
@@ -670,10 +660,10 @@ RENDERER_EXPORT RENDERER_ACQUIRE_PHYSICAL_DEVICE_FUNCTION(VulkanAcquirePhysicalD
 internal void
 VulkanAcquirePhysicalDeviceQueueProperties()
 {
-	RendererState.graphics_family = -1;
-	RendererState.compute_family  = -1;
-	RendererState.transfer_family = -1;
-	RendererState.present_family  = -1;
+	RendererState.graphics_family			= -1;
+	RendererState.compute_family			= -1;
+	RendererState.dedicated_transfer_family = -1;
+	RendererState.present_family			= -1;
 
 	uint32 queue_family_count;
 	VulkanAPI.vkGetPhysicalDeviceQueueFamilyProperties(RendererState.physical_device, &queue_family_count, NULL);
@@ -718,14 +708,13 @@ VulkanAcquirePhysicalDeviceQueueProperties()
 
 				if (queue_family_properties[i].queueFlags & VK_QUEUE_TRANSFER_BIT)
 				{
-					RendererState.transfer_family = (int8) i;
+					RendererState.dedicated_transfer_family = (int8) i;
 				}
 			}
 		}
 
 		Assert(RendererState.graphics_family != -1 && RendererState.present_family != -1);
 
-		// TODO(soimn): evaluate these
 		if (RendererState.compute_family == RendererState.graphics_family
 			|| (RendererState.compute_family == RendererState.present_family
 				&& queue_family_properties[RendererState.compute_family].queueCount < 2))
@@ -735,25 +724,35 @@ VulkanAcquirePhysicalDeviceQueueProperties()
 		}
 
 		else if ((RendererState.compute_family == RendererState.present_family
-					&& RendererState.compute_family == RendererState.transfer_family)
+					&& RendererState.compute_family == RendererState.dedicated_transfer_family)
 				 && queue_family_properties[RendererState.compute_family].queueCount < 3)
 		{
 			RendererState.supports_compute = false;
 			RendererState.compute_family = -1;
-
-			RendererState.supports_transfer = true;
 		}
 
 		else
 		{
 			RendererState.supports_compute  = true;
-			RendererState.supports_transfer = true;
+		}
+
+		if (RendererState.dedicated_transfer_family == RendererState.graphics_family)
+		{
+			RendererState.supports_dedicated_transfer = false;
+			RendererState.dedicated_transfer_family = -1;
+		}
+
+		else
+		{
+			RendererState.supports_dedicated_transfer = true;
 		}
 	}
 }
 
 RENDERER_EXPORT RENDERER_CREATE_LOGICAL_DEVICE_FUNCTION(VulkanCreateLogicalDevice)
 {
+	Assert(RendererState.instance && RendererState.surface && RendererState.physical_device);
+
 	bool succeeded = false;
 	bool additional_info = (bool)(additional_create_info);
 
@@ -833,14 +832,14 @@ RENDERER_EXPORT RENDERER_CREATE_LOGICAL_DEVICE_FUNCTION(VulkanCreateLogicalDevic
 		}
 	}
 
-	if (RendererState.supports_transfer)
+	if (RendererState.supports_dedicated_transfer)
 	{
-		if (RendererState.transfer_family == RendererState.present_family)
+		if (RendererState.dedicated_transfer_family == RendererState.present_family)
 		{
 			++queue_create_info[present_family_index].queueCount;
 		}
 
-		else if (RendererState.transfer_family == RendererState.compute_family)
+		else if (RendererState.dedicated_transfer_family == RendererState.compute_family)
 		{
 			++queue_create_info[compute_family_index].queueCount;
 		}
@@ -850,7 +849,7 @@ RENDERER_EXPORT RENDERER_CREATE_LOGICAL_DEVICE_FUNCTION(VulkanCreateLogicalDevic
 			queue_create_info[queue_create_info_count].sType			= VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
 			queue_create_info[queue_create_info_count].pNext			= NULL;
 			queue_create_info[queue_create_info_count].flags			= 0;
-			queue_create_info[queue_create_info_count].queueFamilyIndex = RendererState.transfer_family;
+			queue_create_info[queue_create_info_count].queueFamilyIndex = RendererState.dedicated_transfer_family;
 			queue_create_info[queue_create_info_count].queueCount		= 1;
 			queue_create_info[queue_create_info_count].pQueuePriorities	= &priorities[3];
 			++queue_create_info_count;
@@ -896,9 +895,7 @@ RENDERER_EXPORT RENDERER_CREATE_LOGICAL_DEVICE_FUNCTION(VulkanCreateLogicalDevic
 				LOG_ERROR("VulkanCreateLogicalDevice failed. Reason: the device was lost,\nVK_ERROR_DEVICE_LOST");
 			break;
 
-			default:
-				Assert(false);
-			break;
+			INVALID_DEFAULT_CASE;
 		}
 	}
 
@@ -926,21 +923,23 @@ RENDERER_EXPORT RENDERER_CREATE_LOGICAL_DEVICE_FUNCTION(VulkanCreateLogicalDevic
 				}
 			}
 
-			if (RendererState.supports_transfer)
+			VulkanAPI.vkGetDeviceQueue(RendererState.device, RendererState.graphics_family, 0, &RendererState.transfer_queue);
+
+			if (RendererState.supports_dedicated_transfer)
 			{
-				if (RendererState.transfer_family == RendererState.present_family)
+				if (RendererState.dedicated_transfer_family == RendererState.present_family)
 				{
-					VulkanAPI.vkGetDeviceQueue(RendererState.device, RendererState.present_family, present_family_queue_index++, &RendererState.transfer_queue);
+					VulkanAPI.vkGetDeviceQueue(RendererState.device, RendererState.present_family, present_family_queue_index++, &RendererState.dedicated_transfer_queue);
 				}
 
-				else if (RendererState.transfer_family == RendererState.compute_family)
+				else if (RendererState.dedicated_transfer_family == RendererState.compute_family)
 				{
-					VulkanAPI.vkGetDeviceQueue(RendererState.device, RendererState.compute_family, 1, &RendererState.transfer_queue);
+					VulkanAPI.vkGetDeviceQueue(RendererState.device, RendererState.compute_family, 1, &RendererState.dedicated_transfer_queue);
 				}
 
 				else
 				{
-					VulkanAPI.vkGetDeviceQueue(RendererState.device, RendererState.transfer_family, 0, &RendererState.transfer_queue);
+					VulkanAPI.vkGetDeviceQueue(RendererState.device, RendererState.dedicated_transfer_family, 0, &RendererState.dedicated_transfer_queue);
 				}
 			}
 		}
@@ -952,6 +951,8 @@ RENDERER_EXPORT RENDERER_CREATE_LOGICAL_DEVICE_FUNCTION(VulkanCreateLogicalDevic
 #ifdef PLATFORM_WINDOWS
 RENDERER_EXPORT RENDERER_CREATE_SURFACE_FUNCTION(VulkanCreateWin32Surface)
 {
+	Assert(process_instance != INVALID_HANDLE_VALUE && window_handle != INVALID_HANDLE_VALUE);
+
 	bool succeeded = false;
 
 	VkWin32SurfaceCreateInfoKHR create_info = {};
@@ -974,9 +975,7 @@ RENDERER_EXPORT RENDERER_CREATE_SURFACE_FUNCTION(VulkanCreateWin32Surface)
 				LOG_ERROR("VulkanCreateWin32Surface failed. Reason: the device is out of memory,\nVK_ERROR_OUT_OF_DEVICE_MEMORY");
 			break;
 
-			default:
-				Assert(false);
-			break;
+			INVALID_DEFAULT_CASE;
 		}
 	}
 
@@ -1042,7 +1041,7 @@ RENDERER_EXPORT RENDERER_INIT_FUNCTION(Win32InitRenderer)
 {
 	bool succeeded = false;
 
-	Assert(callback);
+	Assert(callback && arena);
 	ErrorCallback = callback;
 
 	bool vulkan_loaded = Win32LoadVulkan();
@@ -1063,25 +1062,68 @@ RENDERER_EXPORT RENDERER_INIT_FUNCTION(Win32InitRenderer)
 		else
 		{
 			Memory = arena;
-
-			if (!Memory->memory || Memory->remaining_space < RENDERER_MINIMUM_REQUIRED_MEMORY)
-			{
-				LOG_ERROR("Win32InitVulkan failed. Reason: the provided memory arena has a size which is"
-						  " below th RENDERER_MINIMUM_REQUIRED_MEMORY size");
-			}
-
-			else
-			{
-				state = &RendererState;
-				api = &VulkanAPI;
-				succeeded = true;
-			}
+			state = &RendererState;
+			api = &VulkanAPI;
+			succeeded = true;
 		}
 	}
 
 	return succeeded;
 }
 #endif
+
+RENDERER_EXPORT RENDERER_START_FUNCTION(RendererStart)
+{
+	Assert((RendererState.instance != VK_NULL_HANDLE		  && 
+			RendererState.physical_device != VK_NULL_HANDLE   && 
+			RendererState.surface != VK_NULL_HANDLE			  && 
+			RendererState.device != VK_NULL_HANDLE			  && 
+			RendererState.swapchain.handle == VK_NULL_HANDLE) || 
+			!"RendererStart called at an inappropriate time");
+
+	ClearMemoryArena(Memory);
+
+	return true;
+}
+
+RENDERER_EXPORT RENDERER_BEGIN_FRAME_FUNCTION(VulkanBeginFrame)
+{
+	VkResult result = VulkanAPI.vkAcquireNextImageKHR(RendererState.device, RendererState.swapchain.handle,
+													  UINT64_MAX, RendererState.swapchain.image_acquired_semaphore,
+													  VK_NULL_HANDLE, &RendererState.swapchain.current_image_index);
+	if (result != VK_SUCCESS)
+	{
+		switch(result)
+		{
+			case VK_NOT_READY:
+			break;
+			
+			case VK_SUBOPTIMAL_KHR:
+				// TODO(soimn): recreate swapchain
+			break;
+
+			case VK_TIMEOUT:
+			break;
+
+			// TODO(soimn): handle erroneous values
+			INVALID_DEFAULT_CASE;
+		}
+	}
+}
+
+RENDERER_EXPORT RENDERER_END_FRAME_FUNCTION(VulkanEndFrame)
+{
+	VkPresentInfoKHR present_info = {};
+	present_info.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+	present_info.waitSemaphoreCount = 1;
+	present_info.pWaitSemaphores = &RendererState.swapchain.render_done_semaphore;
+	present_info.swapchainCount = 1;
+	present_info.pSwapchains = &RendererState.swapchain.handle;
+	present_info.pImageIndices = &RendererState.swapchain.current_image_index;
+
+	VulkanAPI.vkQueuePresentKHR(RendererState.present_queue, &present_info);
+	VulkanAPI.vkDeviceWaitIdle(RendererState.device);
+}
 
 RENDERER_EXPORT RENDERER_GET_OPTIMAL_SWAPCHAIN_EXTENT_FUNCTION(VulkanGetOptimalSwapchainExtent)
 {
@@ -1106,9 +1148,7 @@ RENDERER_EXPORT RENDERER_GET_OPTIMAL_SWAPCHAIN_EXTENT_FUNCTION(VulkanGetOptimalS
 				LOG_ERROR("VulkanGetOptimalSwapchainExtent failed. Reason: the surface was lost,\nVK_ERROR_SURFACE_LOST_KHR");
 			break;
 
-			default:
-				Assert(false);
-			break;
+			INVALID_DEFAULT_CASE;
 		}
 	}
 
@@ -1171,9 +1211,7 @@ RENDERER_EXPORT RENDERER_GET_OPTIMAL_SWAPCHAIN_SURFACE_FORMAT_FUNCTION(VulkanGet
 					LOG_ERROR("VulkanGetOptimalSwapchainSurfaceFormat failed. Reason: the surface was lost,\nVK_ERROR_SURFACE_LOST_KHR");
 				break;
 
-				default:
-					Assert(false);
-				break;
+				INVALID_DEFAULT_CASE;
 			}
 		}
 
@@ -1250,9 +1288,7 @@ RENDERER_EXPORT RENDERER_GET_OPTIMAL_SWAPCHAIN_PRESENT_MODE_FUNCTION(VulkanGetOp
 					LOG_ERROR("VulkanGetOptimalSwapchainPresentMode failed. Reason: the surface was lost,\nVK_ERROR_SURFACE_LOST_KHR");
 				break;
 
-				default:
-					Assert(false);
-				break;
+				INVALID_DEFAULT_CASE;
 			}
 		}
 
@@ -1401,9 +1437,7 @@ RENDERER_EXPORT RENDERER_CREATE_SWAPCHAIN_FUNCTION(VulkanCreateSwapchain)
 					LOG_ERROR("VulkanCreateSwapchain failed. Reason: the window is already in use,\nVK_ERROR_NATIVE_WINDOW_IN_USE_KHR");
 				break;
 
-				default:
-					Assert(false);
-				break;
+				INVALID_DEFAULT_CASE;
 			}
 		}
 	}
@@ -1444,9 +1478,7 @@ RENDERER_EXPORT RENDERER_CREATE_SWAPCHAIN_IMAGES_FUNCTION(VulkanCreateSwapchainI
 					LOG_ERROR("VulkanCreateSwapchainImages failed. Reason: the device is out of memory,\nVK_ERROR_OUT_OF_DEVICE_MEMORY");
 				break;
 				
-				default:
-					Assert(false);
-				break;
+				INVALID_DEFAULT_CASE;
 			}
 		}
 
@@ -1496,9 +1528,7 @@ RENDERER_EXPORT RENDERER_CREATE_SWAPCHAIN_IMAGES_FUNCTION(VulkanCreateSwapchainI
 							LOG_ERROR("VK_ERROR_OUT_OF_DEVICE_MEMORY");
 						break;
 
-						default:
-							Assert(false);
-						break;
+						INVALID_DEFAULT_CASE;
 					}
 
 					break;
@@ -1575,14 +1605,26 @@ RENDERER_EXPORT RENDERER_CREATE_RENDER_PASS_FUNCTION(VulkanCreateRenderPass)
 					LOG_ERROR("VulkanCreateRenderPass failes. Reason: the device is out of memory,\nVK_ERROR_OUT_OF_DEVICE_MEMORY");
 				break;
 
-				default:
-					Assert(false);
-				break;
+				INVALID_DEFAULT_CASE;
 			}
 		}
 	}
 
 	return render_pass;
+}
+
+RENDERER_EXPORT RENDERER_CREATE_DEFAULT_RENDER_PASS_FUNCTION(VulkanCreateDefaultRenderPass)
+{
+	bool succeeded = false;
+
+	vulkan_render_pass_create_info pass_info = {};
+	pass_info.use_default_attachment = true;
+	pass_info.use_default_subpass	 = true;
+
+	RendererState.defaults.render_pass = VulkanCreateRenderPass(pass_info);
+	succeeded = RendererState.defaults.render_pass != VK_NULL_HANDLE;
+
+	return succeeded;
 }
 
 RENDERER_EXPORT RENDERER_CREATE_PIPELINE_LAYOUT_FUNCTION(VulkanCreatePipelineLayout)
@@ -1610,9 +1652,7 @@ RENDERER_EXPORT RENDERER_CREATE_PIPELINE_LAYOUT_FUNCTION(VulkanCreatePipelineLay
 				LOG_ERROR("VulkanCreatePipelineLayout failed. Reason: the device is out of memory,\nVK_ERROR_OUT_OF_DEVICE_MEMORY");
 			break;
 
-			default:
-				Assert(false);
-			break;
+			INVALID_DEFAULT_CASE;
 		}
 	}
 
@@ -1655,9 +1695,7 @@ RENDERER_EXPORT RENDERER_CREATE_SHADER_MODULE_FUNCTION(VulkanCreateShaderModule)
 							  "VK_ERROR_INVALID_SHADER_NV");
 				break;
 
-				default:
-					Assert(false);
-				break;
+				INVALID_DEFAULT_CASE;
 			}
 		}
 	}
@@ -1743,7 +1781,11 @@ RENDERER_EXPORT RENDERER_CREATE_GRAPHICS_PIPELINES_FUNCTION(VulkanCreateGraphics
 		Assert(graphics_pipeline_create_info);
 
 		VkPipelineVertexInputStateCreateInfo default_vertex_input_state = {};
-		default_vertex_input_state.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+		default_vertex_input_state.sType						   = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+		default_vertex_input_state.vertexBindingDescriptionCount   = ARRAY_COUNT(default_vertex_binding_descriptions);
+		default_vertex_input_state.pVertexBindingDescriptions	   = default_vertex_binding_descriptions;
+		default_vertex_input_state.vertexAttributeDescriptionCount = ARRAY_COUNT(default_vertex_attribute_descriptions);
+		default_vertex_input_state.pVertexAttributeDescriptions	   = default_vertex_attribute_descriptions;
 
 		VkPipelineInputAssemblyStateCreateInfo default_input_assembly_state = {};
 		default_input_assembly_state.sType    = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
@@ -2002,6 +2044,40 @@ RENDERER_EXPORT RENDERER_CREATE_FRAMEBUFFER_FUNCTION(VulkanCreateFramebuffer)
 	return framebuffer;
 }
 
+RENDERER_EXPORT RENDERER_CREATE_SWAPCHAIN_FRAMEBUFFERS_FUNCTION(VulkanCreateSwapchainFramebuffers)
+{
+	Assert(RendererState.instance && RendererState.physical_device && RendererState.device && RendererState.swapchain.handle
+		   && RendererState.swapchain.image_count && RendererState.defaults.render_pass);
+
+	bool succeeded = false;
+
+	RendererState.swapchain.framebuffers = PushArray(Memory, VkFramebuffer, RendererState.swapchain.image_count);
+
+	bool failed_to_create_framebuffers = false;
+
+	for (u32 i = 0; i < RendererState.swapchain.image_count; ++i)
+	{
+		vulkan_framebuffer_create_info create_info = {};
+		create_info.attachment_count = 1;
+		create_info.attachments		 = &RendererState.swapchain.image_views[i];
+		create_info.extent			 = RendererState.swapchain.extent;
+		create_info.layers			 = 1;
+
+		RendererState.swapchain.framebuffers[i] = VulkanCreateFramebuffer(create_info, RendererState.defaults.render_pass);
+
+		if (RendererState.swapchain.framebuffers[i] == VK_NULL_HANDLE)
+		{
+			LOG_ERROR("VulkanCreateSwapchainFramebuffers failed. Reason: failed to create swapchain framebuffers");
+			failed_to_create_framebuffers = true;
+			break;
+		}
+	}
+
+	succeeded = !failed_to_create_framebuffers;
+
+	return succeeded;
+}
+
 RENDERER_EXPORT RENDERER_CREATE_COMMAND_POOL_FUNCTION(VulkanCreateCommandPool)
 {
 	VkCommandPool command_pool = VK_NULL_HANDLE;
@@ -2038,6 +2114,66 @@ RENDERER_EXPORT RENDERER_CREATE_COMMAND_POOL_FUNCTION(VulkanCreateCommandPool)
 	return command_pool;
 }
 
+RENDERER_EXPORT RENDERER_ALLOCATE_COMMAND_BUFFERS_FUNCTION(VulkanAllocateCommandBuffers)
+{
+	bool succeeded = false;
+
+	VkCommandBufferAllocateInfo allocate_info = {};
+	allocate_info.sType				 = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+	allocate_info.pNext				 = extension_ptr;
+	allocate_info.commandPool		 = command_pool;
+	allocate_info.level				 = buffer_level;
+	allocate_info.commandBufferCount = buffer_count;
+
+	VkResult result = VulkanAPI.vkAllocateCommandBuffers(RendererState.device, &allocate_info, buffers);
+	if (result != VK_SUCCESS)
+	{
+		switch(result)
+		{
+			case VK_ERROR_OUT_OF_HOST_MEMORY:
+				LOG_ERROR("VulkanAllocateCommandBuffers failed. Reason: the host is out of memory,\nVK_ERROR_OUT_OF_HOST_MEMORY");
+			break;
+
+			case VK_ERROR_OUT_OF_DEVICE_MEMORY:
+				LOG_ERROR("VulkanAllocateCommandBuffers failed. Reason: the device is out of memory,\nVK_ERROR_OUT_OF_DEVICE_MEMORY");
+			break;
+
+			INVALID_DEFAULT_CASE;
+		}
+	}
+
+	else
+	{
+		succeeded = true;
+	}
+
+	return succeeded;
+}
+
+RENDERER_EXPORT RENDERER_CREATE_SWAPCHAIN_COMMAND_BUFFERS_FUNCTION(VulkanCreateSwapchainCommandBuffers)
+{
+	bool succeeded = false;
+
+		RendererState.swapchain.command_pool = VulkanCreateCommandPool(RendererState.graphics_family, 0, NULL);
+
+		if (RendererState.swapchain.command_pool != VK_NULL_HANDLE)
+		{
+			RendererState.swapchain.command_buffer_count = RendererState.swapchain.image_count;
+			RendererState.swapchain.command_buffers = PushArray(Memory, VkCommandBuffer, RendererState.swapchain.command_buffer_count);
+
+			succeeded = VulkanAllocateCommandBuffers(RendererState.swapchain.command_pool, VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+													 RendererState.swapchain.command_buffer_count, RendererState.swapchain.command_buffers,
+													 NULL);
+		}
+
+		else
+		{
+			LOG_ERROR("VulkanCreateSwapchainCommandBuffers failed. Reason: failed to create the command pool for the buffers");
+		}
+
+	return succeeded;
+}
+
 RENDERER_EXPORT RENDERER_CREATE_SEMAPHORE_FUNCTION(VulkanCreateSemaphore)
 {
 	VkSemaphore semaphore = VK_NULL_HANDLE;
@@ -2067,4 +2203,752 @@ RENDERER_EXPORT RENDERER_CREATE_SEMAPHORE_FUNCTION(VulkanCreateSemaphore)
 	}
 
 	return semaphore;
+}
+
+RENDERER_EXPORT RENDERER_CREATE_SWAPCHAIN_SEMAPHORES_FUNCTION(VulkanCreateSwapchainSemaphores)
+{
+	bool succeeded = false;
+
+	RendererState.swapchain.image_acquired_semaphore = VulkanCreateSemaphore(NULL, 0);
+	RendererState.swapchain.render_done_semaphore	 = VulkanCreateSemaphore(NULL, 0);
+
+	succeeded = (RendererState.swapchain.image_acquired_semaphore != VK_NULL_HANDLE &&
+				 RendererState.swapchain.render_done_semaphore	  != VK_NULL_HANDLE);
+
+	return succeeded;
+}
+
+internal int32
+VulkanGetOptimalDeviceMemoryType(uint32 type_filter, VkMemoryPropertyFlags property_flags)
+{
+	int32 result = -1;
+
+	VkPhysicalDeviceMemoryProperties memory_properties;
+	VulkanAPI.vkGetPhysicalDeviceMemoryProperties(RendererState.physical_device, &memory_properties);
+
+	for (uint32 i = 0; i < memory_properties.memoryTypeCount; ++i)
+	{
+		bool is_required_memory_type = type_filter & (((uint32) 1) << i);
+		bool has_required_properties = (property_flags & memory_properties.memoryTypes[i].propertyFlags) == property_flags;
+
+		if (is_required_memory_type && has_required_properties)
+		{
+			result = (int32) i;
+		}
+	}
+
+	return result;
+}
+
+internal bool
+VulkanCreateBuffer(VkDeviceSize size, VkBufferUsageFlags usage_flags,
+				   VkSharingMode sharing_mode, VkMemoryPropertyFlags property_flags,
+				   VkDeviceMemory* buffer_memory, VkBuffer* buffer, 
+				   const void* extension_ptr = NULL, VkBufferCreateFlags create_flags = 0)
+{
+	bool succeeded = false;
+
+	VkBufferCreateInfo create_info = {};
+	create_info.sType				  = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+	create_info.pNext				  = extension_ptr;
+	create_info.flags				  = create_flags;
+	create_info.size				  = size;
+	create_info.usage				  = usage_flags;
+	create_info.sharingMode			  = sharing_mode;
+
+	VkResult result = VulkanAPI.vkCreateBuffer(RendererState.device, &create_info, NULL, buffer);
+
+	if (result != VK_SUCCESS)
+	{
+		switch(result)
+		{
+			case VK_ERROR_OUT_OF_HOST_MEMORY:
+				LOG_ERROR("VulkanCreateVertexBuffer failed. Reason: the host is out of memory,\nVK_ERROR_OUT_OF_HOST_MEMORY");
+			break;
+			
+			case VK_ERROR_OUT_OF_DEVICE_MEMORY:
+				LOG_ERROR("VulkanCreateVertexBuffer failed. Reason: the device is out of memory,\nVK_ERROR_OUT_OF_DEVICE_MEMORY");
+			break;
+			
+// 			case VK_ERROR_INVALID_DEVICE_ADDRESS_EXT:
+// 				LOG_ERROR("VulkanCreateVertexBuffer failed. Reason: the requested address is not available,\nVK_ERROR_INVALID_DEVICE_ADDRESS_EXT");
+// 			break;
+
+			default:
+				Assert(false);
+			break;
+		}
+	}
+
+	else
+	{
+		VkMemoryRequirements memory_requirements;
+		VulkanAPI.vkGetBufferMemoryRequirements(RendererState.device, *buffer, &memory_requirements);
+
+		VkMemoryAllocateInfo allocation_info = {};
+		allocation_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+		allocation_info.allocationSize = memory_requirements.size;
+		allocation_info.memoryTypeIndex = VulkanGetOptimalDeviceMemoryType(memory_requirements.memoryTypeBits, property_flags);
+
+		if (allocation_info.memoryTypeIndex == -1)
+		{
+			LOG_ERROR("VulkanCreateBuffer failed. Reason: found no suitable memory type for the requested buffer");
+		}
+
+		else
+		{
+			result = VulkanAPI.vkAllocateMemory(RendererState.device, &allocation_info, NULL, buffer_memory);
+
+			if (result != VK_SUCCESS)
+			{
+				switch(result)
+				{
+					case VK_ERROR_OUT_OF_HOST_MEMORY:
+						LOG_ERROR("VulkanCreateBuffer failed. Reason: the host is out of memory,\nVK_ERROR_OUT_OF_HOST_MEMORY");
+					break;
+					
+					case VK_ERROR_OUT_OF_DEVICE_MEMORY:
+						LOG_ERROR("VulkanCreateBuffer failed. Reason: the device is out of memory,\nVK_ERROR_OUT_OF_DEVICE_MEMORY");
+					break;
+
+					case VK_ERROR_TOO_MANY_OBJECTS:
+						LOG_ERROR("VulkanCreateBuffer failed. Reason: there are too many objects in memory,\nVK_ERROR_TOO_MANY_OBJECTS");
+					break;
+
+					case VK_ERROR_INVALID_EXTERNAL_HANDLE:
+						LOG_ERROR("VulkanCreateBuffer failed. Reason: invalid handle value,\nVK_ERROR_INVALID_EXTERNAL_HANDLE");
+					break;
+
+					default:
+						Assert(false);
+					break;
+				}
+			}
+
+			else
+			{
+				result = VulkanAPI.vkBindBufferMemory(RendererState.device, *buffer, *buffer_memory, 0);
+
+				if (result != VK_SUCCESS)
+				{
+					switch(result)
+					{
+						case VK_ERROR_OUT_OF_HOST_MEMORY:
+							LOG_ERROR("VulkanCreateBuffer failed. Reason: the host is out of memory,\nVK_ERROR_OUT_OF_HOST_MEMORY");
+						break;
+						
+						case VK_ERROR_OUT_OF_DEVICE_MEMORY:
+							LOG_ERROR("VulkanCreateBuffer failed. Reason: the device is out of memory,\nVK_ERROR_OUT_OF_DEVICE_MEMORY");
+						break;
+
+						default:
+							Assert(false);
+						break;
+					}
+				}
+
+				else
+				{
+					succeeded = true;
+				}
+			}
+		}
+	}
+
+	return succeeded;
+}
+
+internal bool
+VulkanCreateTemporaryTransferPool()
+{
+	bool succeeded = false;
+
+	RendererState.temporary_transfer_pool = VulkanCreateCommandPool(RendererState.graphics_family, NULL, VK_COMMAND_POOL_CREATE_TRANSIENT_BIT);
+	succeeded = RendererState.temporary_transfer_pool != VK_NULL_HANDLE;
+
+	return succeeded;
+}
+
+// TODO(soimn): move the initialization of the temporary pool elsewhere
+RENDERER_EXPORT RENDERER_COPY_BUFFER_FUNCTION(VulkanCopyBuffer)
+{
+	bool succeeded = false;
+
+	local_persist bool once_flag = true;
+	if (once_flag)
+	{
+		succeeded = VulkanCreateTemporaryTransferPool();
+	}
+
+	if (!succeeded || once_flag && succeeded)
+	{
+		VkCommandBufferAllocateInfo allocate_info = {};
+		allocate_info.sType				 = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+		allocate_info.level				 = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+		allocate_info.commandPool		 = RendererState.temporary_transfer_pool;
+		allocate_info.commandBufferCount = 1;
+
+		VkCommandBuffer buffer;
+		
+		VkResult result = VulkanAPI.vkAllocateCommandBuffers(RendererState.device, &allocate_info, &buffer);
+		if (result != VK_SUCCESS)
+		{
+			switch(result)
+			{
+				case VK_ERROR_OUT_OF_HOST_MEMORY:
+					LOG_ERROR("VulkanCopyBuffer failed. Reason: the host is out of memory,\nVK_ERROR_OUT_OF_HOST_MEMORY");
+				break;
+
+				case VK_ERROR_OUT_OF_DEVICE_MEMORY:
+					LOG_ERROR("VulkanCopyBuffer failed. Reason: the device is out of memory,\nVK_ERROR_OUT_OF_DEVICE_MEMORY");
+				break;
+
+				INVALID_DEFAULT_CASE;
+			}
+		}
+
+		else
+		{
+			VkCommandBufferBeginInfo begin_info = {};
+			begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+			begin_info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+
+			result = VulkanAPI.vkBeginCommandBuffer(buffer, &begin_info);
+			if (result != VK_SUCCESS)
+			{
+				switch(result)
+				{
+					case VK_ERROR_OUT_OF_HOST_MEMORY:
+						LOG_ERROR("VulkanCopyBuffer failed. Reason: the host is out of memory,\nVK_ERROR_OUT_OF_HOST_MEMORY");
+					break;
+
+					case VK_ERROR_OUT_OF_DEVICE_MEMORY:
+						LOG_ERROR("VulkanCopyBuffer failed. Reason: the device is out of memory,\nVK_ERROR_OUT_OF_DEVICE_MEMORY");
+					break;
+
+					INVALID_DEFAULT_CASE;
+				}
+			}
+
+			else
+			{
+				VkBufferCopy copy_region = {};
+				copy_region.size = size;
+				VulkanAPI.vkCmdCopyBuffer(buffer, source, dest, 1, &copy_region);
+				result = VulkanAPI.vkEndCommandBuffer(buffer);
+				if (result != VK_SUCCESS)
+				{
+					switch(result)
+					{
+						case VK_ERROR_OUT_OF_HOST_MEMORY:
+							LOG_ERROR("VulkanCopyBuffer failed. Reason: the host is out of memory,\nVK_ERROR_OUT_OF_HOST_MEMORY");
+						break;
+
+						case VK_ERROR_OUT_OF_DEVICE_MEMORY:
+							LOG_ERROR("VulkanCopyBuffer failed. Reason: the device is out of memory,\nVK_ERROR_OUT_OF_DEVICE_MEMORY");
+						break;
+
+						INVALID_DEFAULT_CASE;
+					}
+				}
+
+				else
+				{
+					VkSubmitInfo submit_info = {};
+					submit_info.sType			   = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+					submit_info.commandBufferCount = 1;
+					submit_info.pCommandBuffers	   = &buffer;
+
+					result = VulkanAPI.vkQueueSubmit(RendererState.graphics_queue, 1, &submit_info, VK_NULL_HANDLE);
+					if (result != VK_SUCCESS)
+					{
+						switch(result)
+						{
+							case VK_ERROR_OUT_OF_HOST_MEMORY:
+								LOG_ERROR("VulkanCopyBuffer failed. Reason: the host is out of memory,\nVK_ERROR_OUT_OF_HOST_MEMORY");
+							break;
+
+							case VK_ERROR_OUT_OF_DEVICE_MEMORY:
+								LOG_ERROR("VulkanCopyBuffer failed. Reason: the device is out of memory,\nVK_ERROR_OUT_OF_DEVICE_MEMORY");
+							break;
+
+							case VK_ERROR_DEVICE_LOST:
+								LOG_ERROR("VulkanCopyBuffer failed. Reason: the device was lost,\nVK_ERROR_DEVICE_LOST");
+							break;
+
+							INVALID_DEFAULT_CASE;
+						}
+					}
+
+					else
+					{
+						result = VulkanAPI.vkQueueWaitIdle(RendererState.graphics_queue);
+						if (result != VK_SUCCESS)
+						{
+							switch(result)
+							{
+								case VK_ERROR_OUT_OF_HOST_MEMORY:
+									LOG_ERROR("VulkanCopyBuffer failed. Reason: the host is out of memory,\nVK_ERROR_OUT_OF_HOST_MEMORY");
+								break;
+
+								case VK_ERROR_OUT_OF_DEVICE_MEMORY:
+									LOG_ERROR("VulkanCopyBuffer failed. Reason: the device is out of memory,\nVK_ERROR_OUT_OF_DEVICE_MEMORY");
+								break;
+
+								case VK_ERROR_DEVICE_LOST:
+									LOG_ERROR("VulkanCopyBuffer failed. Reason: the device was lost,\nVK_ERROR_DEVICE_LOST");
+								break;
+
+								INVALID_DEFAULT_CASE;
+							}
+						}
+
+						else
+						{
+							succeeded = true;
+						}
+					}
+				}
+			}
+		}
+
+		VulkanAPI.vkFreeCommandBuffers(RendererState.device, RendererState.temporary_transfer_pool, 1, &buffer);
+	}
+
+	return succeeded;
+}
+
+RENDERER_EXPORT RENDERER_CREATE_VERTEX_BUFFER_FUNCTION(VulkanCreateVertexBuffer)
+{
+	bool succeeded = false;
+
+	VkBuffer staging_buffer;
+	VkDeviceMemory staging_buffer_memory;
+
+	succeeded = VulkanCreateBuffer(buffer_create_info.size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+								   VK_SHARING_MODE_EXCLUSIVE, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+								   &staging_buffer_memory, &staging_buffer);
+	if (succeeded)
+	{
+
+		void* data;
+		VkResult result = VulkanAPI.vkMapMemory(RendererState.device, staging_buffer_memory, 0, buffer_create_info.size, 0, &data);
+
+		if (result != VK_SUCCESS)
+		{
+			switch(result)
+			{
+				case VK_ERROR_OUT_OF_HOST_MEMORY:
+					LOG_ERROR("VulkanCreateVertexBuffer failed. Reason: the host is out of memory,\nVK_ERROR_OUT_OF_HOST_MEMORY");
+				break;
+
+				case VK_ERROR_OUT_OF_DEVICE_MEMORY:
+					LOG_ERROR("VulkanCreateVertexBuffer failed. Reason: the device is out of memory,\nVK_ERROR_OUT_OF_DEVICE_MEMORY");
+				break;
+
+				case VK_ERROR_MEMORY_MAP_FAILED:
+					LOG_ERROR("VulkanCreateVertexBuffer failed. Reason: the memory map failed,\nVK_ERROR_MEMORY_MAP_FAILED");
+				break;
+
+				INVALID_DEFAULT_CASE;
+			}
+		}
+
+		else
+		{
+			Copy(buffer_create_info.vertex_data, (memory_index) buffer_create_info.size, data);
+			VulkanAPI.vkUnmapMemory(RendererState.device, staging_buffer_memory);
+
+			succeeded = VulkanCreateBuffer(buffer_create_info.size, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+										   buffer_create_info.sharing_mode, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+										   buffer_memory, buffer, buffer_create_info.extension_ptr, buffer_create_info.create_flags);
+
+			if (succeeded)
+			{
+				succeeded = VulkanCopyBuffer(staging_buffer, *buffer, buffer_create_info.size);
+			}
+
+			VulkanAPI.vkDestroyBuffer(RendererState.device, staging_buffer, NULL);
+			VulkanAPI.vkFreeMemory(RendererState.device, staging_buffer_memory, NULL);
+		}
+	}
+
+	return succeeded;
+}
+
+RENDERER_EXPORT RENDERER_CREATE_INDEX_BUFFER_FUNCTION(VulkanCreateIndexBuffer)
+{
+	bool succeeded = false;
+
+	VkBuffer staging_buffer;
+	VkDeviceMemory staging_buffer_memory;
+
+	succeeded = VulkanCreateBuffer(buffer_create_info.size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+								   VK_SHARING_MODE_EXCLUSIVE, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+								   &staging_buffer_memory, &staging_buffer);
+	if (succeeded)
+	{
+
+		void* data;
+		VkResult result = VulkanAPI.vkMapMemory(RendererState.device, staging_buffer_memory, 0, buffer_create_info.size, 0, &data);
+
+		if (result != VK_SUCCESS)
+		{
+			switch(result)
+			{
+				case VK_ERROR_OUT_OF_HOST_MEMORY:
+					LOG_ERROR("VulkanCreateVertexBuffer failed. Reason: the host is out of memory,\nVK_ERROR_OUT_OF_HOST_MEMORY");
+				break;
+
+				case VK_ERROR_OUT_OF_DEVICE_MEMORY:
+					LOG_ERROR("VulkanCreateVertexBuffer failed. Reason: the device is out of memory,\nVK_ERROR_OUT_OF_DEVICE_MEMORY");
+				break;
+
+				case VK_ERROR_MEMORY_MAP_FAILED:
+					LOG_ERROR("VulkanCreateVertexBuffer failed. Reason: the memory map failed,\nVK_ERROR_MEMORY_MAP_FAILED");
+				break;
+
+				INVALID_DEFAULT_CASE;
+			}
+		}
+
+		else
+		{
+			Copy(buffer_create_info.index_data, (memory_index) buffer_create_info.size, data);
+			VulkanAPI.vkUnmapMemory(RendererState.device, staging_buffer_memory);
+
+			succeeded = VulkanCreateBuffer(buffer_create_info.size, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+										   buffer_create_info.sharing_mode, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+										   buffer_memory, buffer, buffer_create_info.extension_ptr, buffer_create_info.create_flags);
+
+			if (succeeded)
+			{
+				succeeded = VulkanCopyBuffer(staging_buffer, *buffer, buffer_create_info.size);
+			}
+
+			VulkanAPI.vkDestroyBuffer(RendererState.device, staging_buffer, NULL);
+			VulkanAPI.vkFreeMemory(RendererState.device, staging_buffer_memory, NULL);
+		}
+	}
+
+	return succeeded;
+}
+
+RENDERER_EXPORT RENDERER_CREATE_UNIFORM_BUFFER_FUNCTION(VulkanCreateUniformBuffer)
+{
+	bool succeeded = false;
+
+	succeeded = VulkanCreateBuffer(uniform_buffer_size, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+								   VK_SHARING_MODE_EXCLUSIVE, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+								   uniform_buffer_memory, uniform_buffer);
+
+	if (!succeeded)
+	{
+		LOG_ERROR("VulkanCreateUniformBuffer failed. Reason: failed to create uniform buffer");
+	}
+
+	return succeeded;
+}
+
+RENDERER_EXPORT RENDERER_LOAD_MESH_FUNCTION(VulkanLoadMesh)
+{
+	Assert(vertex_buffer_memory || !"Invalid pointer to vertex buffer memory passed to VulkanLoadMesh");
+	Assert(index_buffer_memory  || !"Invalid pointer to index buffer memory passed to VulkanLoadMesh");
+	Assert(vertex_buffer		|| !"Invalid pointer to vertex buffer passed to VulkanLoadMesh");
+	Assert(index_buffer			|| !"Invalid pointer to index buffer passed to VulkanLoadMesh");
+	Assert(vertex_data			|| !"Invalid pointer to vertex data passed to VulkanLoadMesh");
+	Assert(index_data			|| !"Invalid pointer to index data passed to VulkanLoadMesh");
+
+	bool succeeded = false;
+
+	VkDeviceSize vertex_buffer_size = sizeof(vertex) * vertex_count;
+	VkDeviceSize index_buffer_size  = sizeof(uint32) * index_count;
+
+	vulkan_vertex_buffer_create_info vertex_buffer_create_info = {};
+	vertex_buffer_create_info.size = vertex_buffer_size;
+
+	succeeded = VulkanCreateVertexBuffer(vertex_buffer_create_info, vertex_buffer_memory, vertex_buffer);
+
+	if (succeeded)
+	{
+		vulkan_index_buffer_create_info index_buffer_create_info = {};
+		index_buffer_create_info.size = index_buffer_size;
+
+		succeeded = VulkanCreateIndexBuffer(index_buffer_create_info, index_buffer_memory, index_buffer);
+
+		if (!succeeded)
+		{
+			LOG_ERROR("VulkanLoadMesh failed. Reason: failed to create index buffer");
+		}
+	}
+
+	else
+	{
+		LOG_ERROR("VulkanLoadMesh failed. Reason: failed to create vertex buffer");
+	}
+
+	return succeeded;
+}
+
+RENDERER_EXPORT RENDERER_UPDATE_MESH_FUNCTION(VulkanUpdateMesh)
+{
+	Assert(vertex_buffer		|| !"Invalid pointer to vertex buffer passed to VulkanUpdateMesh");
+	Assert(index_buffer			|| !"Invalid pointer to index buffer passed to VulkanUpdateMesh");
+	Assert(vertex_data			|| !"Invalid pointer to vertex data passed to VulkanUpdateMesh");
+	Assert(index_data			|| !"Invalid pointer to index data passed to VulkanUpdateMesh");
+
+	bool succeeded = false;
+
+	VkDeviceSize vertex_buffer_size = sizeof(vertex) * vertex_count;
+	VkDeviceSize index_buffer_size  = sizeof(uint32) * index_count;
+
+	{
+		VkBuffer staging_buffer;
+		VkDeviceMemory staging_buffer_memory;
+
+		succeeded = VulkanCreateBuffer(vertex_buffer_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+									   VK_SHARING_MODE_EXCLUSIVE, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+									   &staging_buffer_memory, &staging_buffer);
+		if (succeeded)
+		{
+
+			void* data;
+			VkResult result = VulkanAPI.vkMapMemory(RendererState.device, staging_buffer_memory, 0, vertex_buffer_size, 0, &data);
+
+			if (result != VK_SUCCESS)
+			{
+				switch(result)
+				{
+					case VK_ERROR_OUT_OF_HOST_MEMORY:
+						LOG_ERROR("VulkanUpdateMesh failed. Reason: the host is out of memory,\nVK_ERROR_OUT_OF_HOST_MEMORY");
+					break;
+
+					case VK_ERROR_OUT_OF_DEVICE_MEMORY:
+						LOG_ERROR("VulkanUpdateMesh failed. Reason: the device is out of memory,\nVK_ERROR_OUT_OF_DEVICE_MEMORY");
+					break;
+
+					case VK_ERROR_MEMORY_MAP_FAILED:
+						LOG_ERROR("VulkanUpdateMesh failed. Reason: the memory map failed,\nVK_ERROR_MEMORY_MAP_FAILED");
+					break;
+
+					INVALID_DEFAULT_CASE;
+				}
+			}
+
+			else
+			{
+				Copy(vertex_data, (memory_index) vertex_buffer_size, data);
+				VulkanAPI.vkUnmapMemory(RendererState.device, staging_buffer_memory);
+
+				if (succeeded)
+				{
+					succeeded = VulkanCopyBuffer(staging_buffer, *vertex_buffer, vertex_buffer_size);
+				}
+
+				VulkanAPI.vkDestroyBuffer(RendererState.device, staging_buffer, NULL);
+				VulkanAPI.vkFreeMemory(RendererState.device, staging_buffer_memory, NULL);
+			}
+		}
+	}
+
+	if (!succeeded)
+	{
+		LOG_ERROR("VulkanUpdateMesh faile. Reason: failed to update the vertex buffer");
+	}
+
+	else
+	{
+		VkBuffer staging_buffer;
+		VkDeviceMemory staging_buffer_memory;
+
+		succeeded = VulkanCreateBuffer(index_buffer_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+									   VK_SHARING_MODE_EXCLUSIVE, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+									   &staging_buffer_memory, &staging_buffer);
+		if (succeeded)
+		{
+
+			void* data;
+			VkResult result = VulkanAPI.vkMapMemory(RendererState.device, staging_buffer_memory, 0, index_buffer_size, 0, &data);
+
+			if (result != VK_SUCCESS)
+			{
+				switch(result)
+				{
+					case VK_ERROR_OUT_OF_HOST_MEMORY:
+						LOG_ERROR("VulkanUpdateMesh failed. Reason: the host is out of memory,\nVK_ERROR_OUT_OF_HOST_MEMORY");
+					break;
+
+					case VK_ERROR_OUT_OF_DEVICE_MEMORY:
+						LOG_ERROR("VulkanUpdateMesh failed. Reason: the device is out of memory,\nVK_ERROR_OUT_OF_DEVICE_MEMORY");
+					break;
+
+					case VK_ERROR_MEMORY_MAP_FAILED:
+						LOG_ERROR("VulkanUpdateMesh failed. Reason: the memory map failed,\nVK_ERROR_MEMORY_MAP_FAILED");
+					break;
+
+					INVALID_DEFAULT_CASE;
+				}
+			}
+
+			else
+			{
+				Copy(index_data, (memory_index) index_buffer_size, data);
+				VulkanAPI.vkUnmapMemory(RendererState.device, staging_buffer_memory);
+
+				if (succeeded)
+				{
+					succeeded = VulkanCopyBuffer(staging_buffer, *index_buffer, index_buffer_size);
+				}
+
+				VulkanAPI.vkDestroyBuffer(RendererState.device, staging_buffer, NULL);
+				VulkanAPI.vkFreeMemory(RendererState.device, staging_buffer_memory, NULL);
+			}
+		}
+
+		if (!succeeded)
+		{
+			LOG_ERROR("VulkanUpdateMesh faile. Reason: failed to update the index buffer");
+		}
+	}
+
+	return succeeded;
+}
+
+RENDERER_EXPORT RENDERER_UNLOAD_MESH_FUNCTION(VulkanUnloadMesh)
+{
+	Assert(vertex_buffer		|| !"Invalid pointer to vertex buffer passed to VulkanUnloadMesh");
+	Assert(index_buffer			|| !"Invalid pointer to index buffer passed to VulkanUnloadMesh");
+
+	VulkanAPI.vkDestroyBuffer(RendererState.device, *vertex_buffer, NULL);
+	VulkanAPI.vkDestroyBuffer(RendererState.device, *index_buffer, NULL);
+	VulkanAPI.vkFreeMemory(RendererState.device, *vertex_buffer_memory, NULL);
+	VulkanAPI.vkFreeMemory(RendererState.device, *index_buffer_memory, NULL);
+}
+
+RENDERER_EXPORT RENDERER_CREATE_DESCRIPTOR_POOL_FUNCTION(VulkanCreateDescriptorPool)
+{
+	VkDescriptorPool descriptor_pool = VK_NULL_HANDLE;
+
+	VkDescriptorPoolCreateInfo create_info = {};
+	create_info.sType		  = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+	create_info.pNext		  = pool_create_info.extension_ptr;
+	create_info.flags		  = pool_create_info.create_flags;
+	create_info.maxSets		  = pool_create_info.max_descriptor_set_count;
+	create_info.poolSizeCount = pool_create_info.pool_size_count;
+	create_info.pPoolSizes	  = pool_create_info.pool_sizes;
+
+	VkResult result = VulkanAPI.vkCreateDescriptorPool(RendererState.device, &create_info, NULL, &descriptor_pool);
+	if (result != VK_SUCCESS)
+	{
+		switch(result)
+		{
+			case VK_ERROR_OUT_OF_HOST_MEMORY:
+				LOG_ERROR("VulkanCreateDescriptorPool failed. Reason: the host is out of memory,\nVK_ERROR_OUT_OF_HOST_MEMORY");
+			break;
+
+			case VK_ERROR_OUT_OF_DEVICE_MEMORY:
+				LOG_ERROR("VulkanCreateDescriptorPool failed. Reason: the device is out of memory,\nVK_ERROR_OUT_OF_DEVICE_MEMORY");
+			break;
+
+			case VK_ERROR_FRAGMENTATION_EXT:
+				LOG_ERROR("VulkanCreateDescriptorPool failed. Reason: failed due to fragmentation,\nVK_ERROR_FRAGMENTATION_EXT");
+			break;
+
+			INVALID_DEFAULT_CASE;
+		}
+	}
+
+	return descriptor_pool;
+}
+
+RENDERER_EXPORT RENDERER_CREATE_DESCRIPTOR_SET_LAYOUT_FUNCTION(VulkanCreateDescriptorLayout)
+{
+	VkDescriptorSetLayout descriptor_set_layout = VK_NULL_HANDLE;
+
+	VkDescriptorSetLayoutCreateInfo create_info = {};
+	create_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+	create_info.bindingCount = layout_binding_count;
+	create_info.pBindings = layout_bindings;
+
+	VkResult result = VulkanAPI.vkCreateDescriptorSetLayout(RendererState.device, &create_info, NULL, &descriptor_set_layout);
+	if (result != VK_SUCCESS)
+	{
+		switch(result)
+		{
+			case VK_ERROR_OUT_OF_HOST_MEMORY:
+				LOG_ERROR("VulkanCreateDescriptorSetLayout failed. Reason: the host is out of memory,\nVK_ERROR_OUT_OF_HOST_MEMORY");
+			break;
+
+			case VK_ERROR_OUT_OF_DEVICE_MEMORY:
+				LOG_ERROR("VulkanCreateDescriptorSetLayout failed. Reason: the device is out of memory,\nVK_ERROR_OUT_OF_DEVICE_MEMORY");
+			break;
+
+			INVALID_DEFAULT_CASE;
+		}
+	}
+
+	return descriptor_set_layout;
+}
+
+RENDERER_EXPORT RENDERER_ALLOCATE_DESCRIPTOR_SETS_FUNCTION(VulkanAllocateDescriptorSets)
+{
+	bool succeeded = false;
+
+	VkDescriptorSetAllocateInfo allocate_info = {};
+	allocate_info.sType				 = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+	allocate_info.pNext				 = extension_ptr;
+	allocate_info.descriptorPool	 = descriptor_pool;
+	allocate_info.descriptorSetCount = set_count;
+	allocate_info.pSetLayouts		 = set_layouts;
+
+	VkResult result = VulkanAPI.vkAllocateDescriptorSets(RendererState.device, &allocate_info, descriptor_sets);
+	if (result != VK_SUCCESS)
+	{
+		switch(result)
+		{
+			case VK_ERROR_OUT_OF_HOST_MEMORY:
+				LOG_ERROR("VulkanAllocateDescriptorSets failed. Reason: the host is out of memory,\nVK_ERROR_OUT_OF_HOST_MEMORY");
+			break;
+
+			case VK_ERROR_OUT_OF_DEVICE_MEMORY:
+				LOG_ERROR("VulkanAllocateDescriptorSets failed. Reason: the device is out of memory,\nVK_ERROR_OUT_OF_DEVICE_MEMORY");
+			break;
+
+			case VK_ERROR_FRAGMENTED_POOL:
+				LOG_ERROR("VulkanAllocateDescriptorSets failed. Reason: the descriptor pool is too fragmented,\nVK_ERROR_FRAGMENTED_POOL");
+			break;
+
+			case VK_ERROR_OUT_OF_POOL_MEMORY:
+				LOG_ERROR("VulkanAllocateDescriptorSets failed. Reason: the descriptor pool is out of memory,\nVK_ERROR_OUT_OF_POOL_MEMORY");
+			break;
+
+			INVALID_DEFAULT_CASE;
+		}
+	}
+
+	else
+	{
+		succeeded = true;
+	}
+
+	return succeeded;
+}
+
+RENDERER_EXPORT RENDERER_UPDATE_UNIFORM_BUFFER_DESCRIPTOR_SET_FUNCTION(VulkanUpdateUniformBufferDescriptorSet)
+{
+	VkDescriptorBufferInfo buffer_info = {};
+	buffer_info.buffer = uniform_buffer;
+	buffer_info.offset = buffer_offset;
+	buffer_info.range  = buffer_range;
+
+	VkWriteDescriptorSet descriptor_write = {};
+	descriptor_write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+	descriptor_write.dstSet = descriptor_set;
+	descriptor_write.dstBinding = descriptor_binding;
+	descriptor_write.dstArrayElement = descriptor_array_element;
+	descriptor_write.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+	descriptor_write.descriptorCount = 1;
+	descriptor_write.pBufferInfo = &buffer_info;
+
+	VulkanAPI.vkUpdateDescriptorSets(RendererState.device, 1, &descriptor_write, 0, NULL);
 }

@@ -27,12 +27,14 @@ VK_INSTANCE_LEVEL_FUNCTION(vkGetPhysicalDeviceFeatures);
 VK_INSTANCE_LEVEL_FUNCTION(vkGetPhysicalDeviceQueueFamilyProperties);
 VK_INSTANCE_LEVEL_FUNCTION(vkGetDeviceProcAddr);
 VK_INSTANCE_LEVEL_FUNCTION(vkEnumerateDeviceExtensionProperties);
+VK_INSTANCE_LEVEL_FUNCTION(vkGetPhysicalDeviceMemoryProperties);
 #endif
 
 #ifdef VK_DEVICE_LEVEL_FUNCTION
 VK_DEVICE_LEVEL_FUNCTION(vkGetDeviceQueue);
 VK_DEVICE_LEVEL_FUNCTION(vkDestroyDevice);
 VK_DEVICE_LEVEL_FUNCTION(vkDeviceWaitIdle);
+VK_DEVICE_LEVEL_FUNCTION(vkQueueWaitIdle);
 VK_DEVICE_LEVEL_FUNCTION(vkCreateSwapchainKHR);
 VK_DEVICE_LEVEL_FUNCTION(vkDestroySwapchainKHR);
 VK_DEVICE_LEVEL_FUNCTION(vkCreateSemaphore);
@@ -59,6 +61,7 @@ VK_DEVICE_LEVEL_FUNCTION(vkFreeCommandBuffers);
 VK_DEVICE_LEVEL_FUNCTION(vkCmdBeginRenderPass);
 VK_DEVICE_LEVEL_FUNCTION(vkCmdBindPipeline);
 VK_DEVICE_LEVEL_FUNCTION(vkCmdDraw);
+VK_DEVICE_LEVEL_FUNCTION(vkCmdDrawIndexed);
 VK_DEVICE_LEVEL_FUNCTION(vkCmdEndRenderPass);
 VK_DEVICE_LEVEL_FUNCTION(vkGetBufferMemoryRequirements);
 VK_DEVICE_LEVEL_FUNCTION(vkAllocateMemory);
@@ -69,6 +72,7 @@ VK_DEVICE_LEVEL_FUNCTION(vkUnmapMemory);
 VK_DEVICE_LEVEL_FUNCTION(vkCmdSetViewport);
 VK_DEVICE_LEVEL_FUNCTION(vkCmdSetScissor);
 VK_DEVICE_LEVEL_FUNCTION(vkCmdBindVertexBuffers);
+VK_DEVICE_LEVEL_FUNCTION(vkCmdBindIndexBuffer);
 VK_DEVICE_LEVEL_FUNCTION(vkWaitForFences);
 VK_DEVICE_LEVEL_FUNCTION(vkResetFences);
 VK_DEVICE_LEVEL_FUNCTION(vkFreeMemory);

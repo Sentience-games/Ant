@@ -6,12 +6,8 @@
 
 #ifdef ANT_DEBUG
 	
-	#ifndef ANT_ASSERTION_ENABLED
-	#define ANT_ASSERTION_ENABLED
-	#endif
-
-	#ifndef ANT_VULKAN_ENABLE_VALIDATION_LAYERS
-	#define ANT_VULKAN_ENABLE_VALIDATION_LAYERS
+	#ifndef ASSERTION_ENABLED
+	#define ASSERTION_ENABLED
 	#endif
 
 	#ifndef ANT_ENABLE_HOT_RELOADING
@@ -40,6 +36,7 @@
 // TODO(soimn): move these to the build arguments
 #define APPLICATION_NAME "ant"
 #define APPLICATION_VERSION 0
+#define DEFAULT_TARGET_FPS 60
 
 #define WIN32_EXPORT extern "C" __declspec(dllexport)
 
@@ -56,9 +53,24 @@
 #define WIN32LOG_DEBUG(message)
 #endif
 
-/// Utility
-// NOTE(soimn): This is only used for readability, and should only be used in the setup stage of the WinMain function
-#define CLAMPED_REMAINING_MEMORY(ptr, max) (uint32) CLAMP(0, memory.persistent_size - ((ptr) - (uint8*)memory.persistent_memory), (max))
+/// FILE API
+struct win32_platform_file_group
+{
+	memory_arena memory;
+};
+
+/// Renderer
+struct win32_renderer_api
+{
+	renderer_begin_frame_function* BeginFrame;
+	renderer_end_frame_function* EndFrame;
+	renderer_create_swapchain_function* CreateSwapchain;
+	renderer_create_swapchain_images_function* CreateSwapchainImages;
+	renderer_create_default_render_pass_function* CreateDefaultRenderPass;
+	renderer_create_swapchain_framebuffers_function* CreateSwapchainFramebuffers;
+	renderer_create_swapchain_command_buffers_function* CreateSwapchainCommandBuffers;
+	renderer_create_swapchain_semaphores_function* CreateSwapchainSemaphores;
+};
 
 /// Game
 
@@ -67,16 +79,13 @@ GAME_INIT_FUNCTION(GameInitStub)
 	return 0;
 }
 
-GAME_UPDATE_FUNCTION(GameUpdateStub)
+GAME_UPDATE_AND_RENDER_FUNCTION(GameUpdateAndRenderStub)
 {
 }
 
 GAME_CLEANUP_FUNCTION(GameCleanupStub)
 {
 }
-
-#define ANT_MAX_GAME_NAME_LENGTH 128
-
 
 struct win32_game_code
 {
@@ -85,7 +94,7 @@ struct win32_game_code
 	bool is_valid;
 
 	game_init_function* game_init_func;
-	game_update_function* game_update_func;
+	game_update_and_render_function* game_update_and_render_func;
 	game_cleanup_function* game_cleanup_func;
 };
 
@@ -95,7 +104,7 @@ struct win32_game_info
 	const uint32 version;
 
 	const char* root_dir;
-	const char* resource_dir;
+	const char* data_dir;
 
 	const char* dll_path;
 	const char* loaded_dll_path;

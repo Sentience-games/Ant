@@ -2,7 +2,7 @@
 
 #include "utils/utility_defines.h"
 #include "utils/assert.h"
-#include "utils/fixed_int.h"
+#include "ant_types.h"
 
 global_variable uint32 npos = ~(0UL);
 

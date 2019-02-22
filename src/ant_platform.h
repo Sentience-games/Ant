@@ -4,8 +4,11 @@
 #define PLATFORM_WINDOWS
 #endif
 
+
+
 #ifdef ANT_DEBUG
 #define DEBUG_MODE
+#define ASSERTION_ENABLED
 #endif
 
 #include "renderer/renderer.h"
@@ -18,9 +21,10 @@
 #undef PLATFORM_WINDOWS
 #endif
 
+#include "utils/assert.h"
 #include "utils/utility_defines.h"
 #include "utils/memory_utils.h"
-#include "utils/fixed_int.h"
+#include "ant_types.h"
 
 #ifdef ANT_PLATFORM_WINDOWS
 #define EXPORT extern "C" __declspec(dllexport)
@@ -28,10 +32,12 @@
 
 /// Logging
 
-#define PLATFORM_LOG_INFO(name) void name (const char* module, bool is_debug, const char* function_name, unsigned int line_nr, const char* message)
-typedef PLATFORM_LOG_INFO(platform_log_info);
-#define PLATFORM_LOG_ERROR(name) void name (const char* module, bool is_fatal, const char* function_name, unsigned int line_nr, const char* message)
-typedef PLATFORM_LOG_ERROR(platform_log_error);
+#define PLATFORM_LOG_INFO_FUNCTION(name) void name (const char* module, bool is_debug, const char* function_name,\
+													unsigned int line_nr, const char* message)
+typedef PLATFORM_LOG_INFO_FUNCTION(platform_log_info_function);
+#define PLATFORM_LOG_ERROR_FUNCTION(name) void name (const char* module, bool is_fatal, const char* function_name,\
+													 unsigned int line_nr, const char* message)
+typedef PLATFORM_LOG_ERROR_FUNCTION(platform_log_error_function);
 	
 #define LOG_FATAL(message) Platform->LogError("GAME", true, __FUNCTION__, __LINE__, message)
 #define LOG_ERROR(message) Platform->LogError("GAME", false, __FUNCTION__, __LINE__, message)
@@ -46,32 +52,71 @@ typedef PLATFORM_LOG_ERROR(platform_log_error);
 
 /// File API
 
-typedef uint64 platform_file_size;
-typedef const char* platform_file_path;
-
 struct platform_file_handle
 {
-	void* data;
-	platform_file_size size;
-	uint8 adjustment;
+	void* platform_data;
+	b32 is_valid;
 };
 
-#define DEBUG_READ_FILE(name) platform_file_handle name (platform_file_path path, uint8 data_alignment)
-typedef DEBUG_READ_FILE(debug_read_file);
+struct platform_file_info
+{
+	u64 timestamp;
+	u64 file_size;
+	char* base_name;
+	void* platform_data;
 
-#define DEBUG_WRITE_FILE(name) bool name (platform_file_path path, void* memory, uint32 memory_size)
-typedef DEBUG_WRITE_FILE(debug_write_file);
+	platform_file_info* next;
+};
 
-#define DEBUG_FREE_FILE_MEMORY(name) void name (platform_file_handle file_handle)
-typedef DEBUG_FREE_FILE_MEMORY(debug_free_file_memory);
+struct platform_file_group
+{
+	u32 file_count;
+	platform_file_info* first_file_info;
+	void* platform_data;
+};
+
+enum PlatformFileTypeTag
+{
+	PlatformFileType_AssetFile,
+	PlatformFileType_SaveFile,
+	PlatformFileType_PNG,
+	PlatformFileType_WAV,
+	PlatformFileType_OBJ,
+
+	PlatformFileType_TagCount
+};
+
+enum PlatformOpenFileOpenFlags
+{
+	OpenFile_Read  = 0x1,
+	OpenFile_Write = 0x2
+};
+
+#define PLATFORM_GET_ALL_FILES_OF_TYPE_BEGIN_FUNCTION(name) platform_file_group name (enum32(PlatformFileTypeTag) file_type)
+typedef PLATFORM_GET_ALL_FILES_OF_TYPE_BEGIN_FUNCTION(platform_get_all_files_of_type_begin_function);
+
+#define PLATFORM_GET_ALL_FILES_OF_TYPE_END_FUNCTION(name) void name (platform_file_group* file_group)
+typedef PLATFORM_GET_ALL_FILES_OF_TYPE_END_FUNCTION(platform_get_all_files_of_type_end_function);
+
+#define PLATFORM_OPEN_FILE_FUNCTION(name) platform_file_handle name (platform_file_info* file_info, u8 open_params)
+typedef PLATFORM_OPEN_FILE_FUNCTION(platform_open_file_function);
+
+#define PLATFORM_CLOSE_FILE_FUNCTION(name) void name (platform_file_handle* file_handle)
+typedef PLATFORM_CLOSE_FILE_FUNCTION(platform_close_file_function);
+
+#define PLATFORM_READ_FROM_FILE_FUNCTION(name) void name (platform_file_handle* handle, u64 offset, u64 size, void* dest)
+typedef PLATFORM_READ_FROM_FILE_FUNCTION(platform_read_from_file_function);
+
+#define PLATFORM_WRITE_TO_FILE_FUNCTION(name) void name (platform_file_handle* handle, u64 offset, u64 size, void* source)
+typedef PLATFORM_WRITE_TO_FILE_FUNCTION(platform_write_to_file_function);
+
+#define PLATFORM_FILE_IS_VALID(handle) ((handle)->is_valid)
 
 typedef struct platform_renderer_api
 {
 	renderer_state* RendererState;
 	vulkan_api* VulkanAPI;
 
-	renderer_create_swapchain_function* CreateSwapchain;
-	renderer_create_swapchain_images_function* CreateSwapchainImages;
 	renderer_create_render_pass_function* CreateRenderPass;
 	renderer_create_pipeline_layout_function* CreatePipelineLayout;
 	renderer_create_shader_module_function* CreateShaderModule;
@@ -79,20 +124,27 @@ typedef struct platform_renderer_api
 	renderer_create_graphics_pipelines_function* CreateGraphicsPipelines;
 	renderer_create_framebuffer_function* CreateFramebuffer;
 	renderer_create_command_pool_function* CreateCommandPool;
+	renderer_allocate_command_buffers_function* AllocateCommandBuffers;
 	renderer_create_semaphore_function* CreateSemaphore;
 	renderer_get_optimal_swapchain_extent_function* GetOptimalSwapchainExtent;
 	renderer_get_optimal_swapchain_surface_format_function* GetOptimalSwapchainSurfaceFormat;
 	renderer_get_optimal_swapchain_present_mode_function* GetOptimalSwapchainPresentMode;
+	renderer_copy_buffer_function* CopyBuffer;
+	renderer_create_vertex_buffer_function* CreateVertexBuffer;
+	renderer_create_index_buffer_function* CreateIndexBuffer;
 } platform_renderer_functions;
 
 typedef struct platform_api_functions
 {
-	platform_log_info* LogInfo;
-	platform_log_error* LogError;
+	platform_log_info_function* LogInfo;
+	platform_log_error_function* LogError;
 
-	debug_read_file* DebugReadFile;
-	debug_write_file* DebugWriteFile;
-	debug_free_file_memory* DebugFreeFileMemory;
+	platform_get_all_files_of_type_begin_function* GetAllFilesOfTypeBegin;
+	platform_get_all_files_of_type_end_function* GetAllFilesOfTypeEnd;
+	platform_open_file_function* OpenFile;
+	platform_close_file_function* CloseFile;
+	platform_read_from_file_function* ReadFromFile;
+	platform_write_to_file_function* WriteToFile;
 
 	platform_renderer_api RendererAPI;
 
@@ -102,13 +154,11 @@ typedef struct game_memory
 {
 	bool is_initialized;
 
-	void* persistent_memory;
-	void* transient_memory;
-	uint64 persistent_size;
-	uint64 transient_size;
-
 	platform_api_functions platform_api;
 
+	default_memory_arena_allocation_routines default_allocation_routines;
+	memory_arena persistent_arena;
+	memory_arena transient_arena;
 	memory_arena debug_arena;
 	memory_arena renderer_arena;
 } game_memory;
@@ -116,8 +166,8 @@ typedef struct game_memory
 #define GAME_INIT_FUNCTION(name) bool name (game_memory* memory)
 typedef GAME_INIT_FUNCTION(game_init_function);
 
-#define GAME_UPDATE_FUNCTION(name) void name (game_memory* memory, float delta_t)
-typedef GAME_UPDATE_FUNCTION(game_update_function);
+#define GAME_UPDATE_AND_RENDER_FUNCTION(name) void name (game_memory* memory, float delta_t)
+typedef GAME_UPDATE_AND_RENDER_FUNCTION(game_update_and_render_function);
 
 #define GAME_CLEANUP_FUNCTION(name) void name (game_memory* memory)
 typedef GAME_CLEANUP_FUNCTION(game_cleanup_function);

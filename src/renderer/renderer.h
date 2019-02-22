@@ -32,9 +32,45 @@
 #define RENDERER_DEFAULT_SWAPCHAIN_HEIGHT 1080
 
 #include "utils/utility_defines.h"
-#include "utils/fixed_int.h"
+#include "ant_types.h"
 #include "utils/cstring.h"
 #include "utils/memory_utils.h"
+
+#include "math/vector.h"
+
+// TODO(soimn):
+/*
+ * - The FPS drops after the window has been shaken for a while, fix this
+ * - Implement custom memory allocation scheme
+ */
+
+/// TYPES
+
+typedef VkBuffer vertex_buffer;
+typedef VkBuffer index_buffer;
+typedef VkBuffer uniform_buffer;
+
+typedef VkDeviceMemory vertex_buffer_memory;
+typedef VkDeviceMemory index_buffer_memory;
+typedef VkDeviceMemory uniform_buffer_memory;
+
+struct vertex
+{
+	v3 position, normal;
+	v2 uv;
+};
+
+/// DEFAULT DATA
+
+global_variable VkVertexInputBindingDescription
+	default_vertex_binding_descriptions[]   =  {0, sizeof(vertex), VK_VERTEX_INPUT_RATE_VERTEX};
+
+global_variable VkVertexInputAttributeDescription
+	default_vertex_attribute_descriptions[] = {{0, 0, VK_FORMAT_R32G32B32_SFLOAT, OFFSETOF(vertex, position)},
+											   {1, 0, VK_FORMAT_R32G32B32_SFLOAT, OFFSETOF(vertex, normal)},
+											   {2, 0, VK_FORMAT_R32G32_SFLOAT,	  OFFSETOF(vertex, uv)}};
+
+/// INFO STRUCTS
 
 struct vulkan_api
 {
@@ -62,16 +98,32 @@ struct renderer_state
 	struct
 	{
 		VkSwapchainKHR handle;
-		uint32 image_count;
+		u32 image_count;
 		VkImage* images;
 		VkImageView* image_views;
 		VkExtent2D extent;
 		VkFormat format;
+		VkFramebuffer* framebuffers;
+
+		u32 current_image_index;
+		u32 command_buffer_count;
+		VkCommandBuffer* command_buffers;
+		VkCommandPool command_pool;
+
+		VkSemaphore image_acquired_semaphore;
+		VkSemaphore render_done_semaphore;
 	} swapchain;
 
-	bool supports_transfer, supports_compute;
-	int8 graphics_family, compute_family, transfer_family, present_family;
-	VkQueue graphics_queue, compute_queue, transfer_queue, present_queue;
+	struct
+	{
+		VkRenderPass render_pass;
+	} defaults;
+
+	bool supports_dedicated_transfer, supports_compute;
+	int8 graphics_family, compute_family, dedicated_transfer_family, present_family;
+	VkQueue graphics_queue, compute_queue, transfer_queue, dedicated_transfer_queue, present_queue;
+
+	VkCommandPool temporary_transfer_pool;
 };
 
 enum RENDERER_ERROR_MESSAGE_SEVERITY
@@ -237,7 +289,40 @@ struct vulkan_framebuffer_create_info
 	VkFramebufferCreateFlags create_flags;
 };
 
-#define RENDERER_VERIFY_PHYSICAL_DEVICE_EXTENSION_SUPPORT_FUNCTION(name) bool name (VkPhysicalDevice device, const char** req_extension_names, uint32 req_extension_count)
+struct vulkan_vertex_buffer_create_info
+{
+	void* vertex_data;
+	VkDeviceSize size;
+	VkSharingMode sharing_mode;
+
+	const void* extension_ptr;
+	VkBufferCreateFlags create_flags;
+};
+
+struct vulkan_index_buffer_create_info
+{
+	void* index_data;
+	VkDeviceSize size;
+	VkSharingMode sharing_mode;
+
+	const void* extension_ptr;
+	VkBufferCreateFlags create_flags;
+};
+
+struct vulkan_descriptor_pool_create_info
+{
+	uint32 max_descriptor_set_count;
+
+	uint32 pool_size_count;
+	const VkDescriptorPoolSize* pool_sizes;
+
+	const void* extension_ptr;
+	VkDescriptorPoolCreateFlags create_flags;
+};
+
+/// EXPORTED FUNCTIONS
+#define RENDERER_VERIFY_PHYSICAL_DEVICE_EXTENSION_SUPPORT_FUNCTION(name) bool name (VkPhysicalDevice device, const char** req_extension_names,\
+																					uint32 req_extension_count)
 typedef RENDERER_VERIFY_PHYSICAL_DEVICE_EXTENSION_SUPPORT_FUNCTION(renderer_verify_physical_device_extension_support_function);
 RENDERER_EXPORT RENDERER_VERIFY_PHYSICAL_DEVICE_EXTENSION_SUPPORT_FUNCTION(VulkanVerifyPhysicalDeviceExtensionSupport);
 
@@ -272,10 +357,23 @@ RENDERER_EXPORT RENDERER_CREATE_INSTANCE_FUNCTION(VulkanCreateInstance);
 typedef RENDERER_CREATE_SURFACE_FUNCTION(renderer_create_surface_function);
 RENDERER_EXPORT RENDERER_CREATE_SURFACE_FUNCTION(VulkanCreateWin32Surface);
 
-#define RENDERER_INIT_FUNCTION(name) bool name (memory_arena* arena, error_callback* callback, renderer_state*& state, vulkan_api*& api)
+#define RENDERER_INIT_FUNCTION(name) bool name (memory_arena* arena, error_callback* callback,\
+												renderer_state*& state, vulkan_api*& api)
 typedef RENDERER_INIT_FUNCTION(renderer_init_function);
 RENDERER_EXPORT RENDERER_INIT_FUNCTION(Win32InitRenderer);
 #endif
+
+#define RENDERER_START_FUNCTION(name) bool name (void)
+typedef RENDERER_START_FUNCTION(renderer_start_function);
+RENDERER_EXPORT RENDERER_START_FUNCTION(RendererStart);
+
+#define RENDERER_BEGIN_FRAME_FUNCTION(name) void name (void)
+typedef RENDERER_BEGIN_FRAME_FUNCTION(renderer_begin_frame_function);
+RENDERER_EXPORT RENDERER_BEGIN_FRAME_FUNCTION(VulkanBeginFrame);
+
+#define RENDERER_END_FRAME_FUNCTION(name) void name (void)
+typedef RENDERER_END_FRAME_FUNCTION(renderer_end_frame_function);
+RENDERER_EXPORT RENDERER_END_FRAME_FUNCTION(VulkanEndFrameFunction);
 
 #define RENDERER_GET_OPTIMAL_SWAPCHAIN_EXTENT_FUNCTION(name) bool name (VkExtent2D* extent)
 typedef RENDERER_GET_OPTIMAL_SWAPCHAIN_EXTENT_FUNCTION(renderer_get_optimal_swapchain_extent_function);
@@ -301,6 +399,10 @@ RENDERER_EXPORT RENDERER_CREATE_SWAPCHAIN_IMAGES_FUNCTION(VulkanCreateSwapchainI
 typedef RENDERER_CREATE_RENDER_PASS_FUNCTION(renderer_create_render_pass_function);
 RENDERER_EXPORT RENDERER_CREATE_RENDER_PASS_FUNCTION(VulkanCreateRenderPass);
 
+#define RENDERER_CREATE_DEFAULT_RENDER_PASS_FUNCTION(name) bool name (void)
+typedef RENDERER_CREATE_DEFAULT_RENDER_PASS_FUNCTION(renderer_create_default_render_pass_function);
+RENDERER_EXPORT RENDERER_CREATE_DEFAULT_RENDER_PASS_FUNCTION(VulkanCreateDefaultRenderPass);
+
 #define RENDERER_CREATE_PIPELINE_LAYOUT_FUNCTION(name) VkPipelineLayout name (VkDescriptorSetLayout* descriptors, uint32 descriptor_count,\
 																			  VkPushConstantRange* push_constant_ranges, uint32 push_constant_range_count)
 typedef RENDERER_CREATE_PIPELINE_LAYOUT_FUNCTION(renderer_create_pipeline_layout_function);
@@ -325,10 +427,85 @@ RENDERER_EXPORT RENDERER_CREATE_GRAPHICS_PIPELINES_FUNCTION(VulkanCreateGraphics
 typedef RENDERER_CREATE_FRAMEBUFFER_FUNCTION(renderer_create_framebuffer_function);
 RENDERER_EXPORT RENDERER_CREATE_FRAMEBUFFER_FUNCTION(VulkanCreateFramebuffer);
 
+#define RENDERER_CREATE_SWAPCHAIN_FRAMEBUFFERS_FUNCTION(name) bool name (void)
+typedef RENDERER_CREATE_SWAPCHAIN_FRAMEBUFFERS_FUNCTION(renderer_create_swapchain_framebuffers_function);
+RENDERER_EXPORT RENDERER_CREATE_SWAPCHAIN_FRAMEBUFFERS_FUNCTION(VulkanCreateSwapchainFramebuffers);
+
 #define RENDERER_CREATE_COMMAND_POOL_FUNCTION(name) VkCommandPool name (uint32 queue_family, const void* extension_ptr, VkCommandPoolCreateFlags create_flags)
 typedef RENDERER_CREATE_COMMAND_POOL_FUNCTION(renderer_create_command_pool_function);
 RENDERER_EXPORT RENDERER_CREATE_COMMAND_POOL_FUNCTION(VulkanCreateCommandPool);
 
+#define RENDERER_ALLOCATE_COMMAND_BUFFERS_FUNCTION(name) bool name (VkCommandPool command_pool, VkCommandBufferLevel buffer_level,\
+																	uint32 buffer_count, VkCommandBuffer* buffers,\
+																	const void* extension_ptr)
+typedef RENDERER_ALLOCATE_COMMAND_BUFFERS_FUNCTION(renderer_allocate_command_buffers_function);
+RENDERER_EXPORT RENDERER_ALLOCATE_COMMAND_BUFFERS_FUNCTION(VulkanAllocateCommandBuffers);
+
+#define RENDERER_CREATE_SWAPCHAIN_COMMAND_BUFFERS_FUNCTION(name) bool name (void)
+typedef RENDERER_CREATE_SWAPCHAIN_COMMAND_BUFFERS_FUNCTION(renderer_create_swapchain_command_buffers_function);
+RENDERER_EXPORT RENDERER_CREATE_SWAPCHAIN_COMMAND_BUFFERS_FUNCTION(VulkanCreateSwapchainCommandBuffers);
+
 #define RENDERER_CREATE_SEMAPHORE_FUNCTION(name) VkSemaphore name (const void* extension_ptr, VkSemaphoreCreateFlags create_flags)
 typedef RENDERER_CREATE_SEMAPHORE_FUNCTION(renderer_create_semaphore_function);
 RENDERER_EXPORT RENDERER_CREATE_SEMAPHORE_FUNCTION(VulkanCreateSemaphore);
+
+#define RENDERER_CREATE_SWAPCHAIN_SEMAPHORES_FUNCTION(name) bool name (void)
+typedef RENDERER_CREATE_SWAPCHAIN_SEMAPHORES_FUNCTION(renderer_create_swapchain_semaphores_function);
+RENDERER_EXPORT RENDERER_CREATE_SWAPCHAIN_SEMAPHORES_FUNCTION(VulkanCreateSwapchainSemaphores);
+
+#define RENDERER_COPY_BUFFER_FUNCTION(name) bool name (VkBuffer source, VkBuffer dest, VkDeviceSize size)
+typedef RENDERER_COPY_BUFFER_FUNCTION(renderer_copy_buffer_function);
+RENDERER_EXPORT RENDERER_COPY_BUFFER_FUNCTION(VulkanCopyBuffer);
+
+#define RENDERER_CREATE_VERTEX_BUFFER_FUNCTION(name) bool name (vulkan_vertex_buffer_create_info buffer_create_info, VkDeviceMemory* buffer_memory,\
+																VkBuffer* buffer)
+typedef RENDERER_CREATE_VERTEX_BUFFER_FUNCTION(renderer_create_vertex_buffer_function);
+RENDERER_EXPORT RENDERER_CREATE_VERTEX_BUFFER_FUNCTION(VulkanCreateVertexBuffer);
+
+#define RENDERER_CREATE_INDEX_BUFFER_FUNCTION(name) bool name (vulkan_index_buffer_create_info buffer_create_info, VkDeviceMemory* buffer_memory,\
+															   VkBuffer* buffer)
+typedef RENDERER_CREATE_INDEX_BUFFER_FUNCTION(renderer_create_index_buffer_function);
+RENDERER_EXPORT RENDERER_CREATE_INDEX_BUFFER_FUNCTION(VulkanCreateIndexBuffer);
+
+#define RENDERER_CREATE_UNIFORM_BUFFER_FUNCTION(name) bool name (VkDeviceMemory* uniform_buffer_memory, VkDeviceSize uniform_buffer_size,\
+																 VkBuffer* uniform_buffer)
+typedef RENDERER_CREATE_UNIFORM_BUFFER_FUNCTION(renderer_create_uniform_buffer_function);
+RENDERER_EXPORT RENDERER_CREATE_UNIFORM_BUFFER_FUNCTION(VulkanCreateUniformBuffer);
+
+#define RENDERER_LOAD_MESH_FUNCTION(name) bool name (VkDeviceMemory* vertex_buffer_memory, VkBuffer* vertex_buffer,\
+													 VkDeviceMemory* index_buffer_memory, VkBuffer* index_buffer,\
+													 void* vertex_data, uint32 vertex_count,\
+													 void* index_data, uint32 index_count)
+typedef RENDERER_LOAD_MESH_FUNCTION(renderer_load_mesh_function);
+RENDERER_EXPORT RENDERER_LOAD_MESH_FUNCTION(VulkanLoadMesh);
+
+#define RENDERER_UPDATE_MESH_FUNCTION(name) bool name (VkBuffer* vertex_buffer, VkBuffer* index_buffer,\
+													   void* vertex_data, uint32 vertex_count,\
+													   void* index_data, uint32 index_count)
+typedef RENDERER_UPDATE_MESH_FUNCTION(renderer_update_mesh_function);
+RENDERER_EXPORT RENDERER_UPDATE_MESH_FUNCTION(VulkanUpdateMesh);
+
+#define RENDERER_UNLOAD_MESH_FUNCTION(name) void name (VkDeviceMemory* vertex_buffer_memory, VkBuffer* vertex_buffer,\
+													   VkDeviceMemory* index_buffer_memory, VkBuffer* index_buffer)
+typedef RENDERER_UNLOAD_MESH_FUNCTION(renderer_unload_mesh_function);
+RENDERER_EXPORT RENDERER_UNLOAD_MESH_FUNCTION(VulkanUnloadMesh);
+
+#define RENDERER_CREATE_DESCRIPTOR_SET_LAYOUT_FUNCTION(name) VkDescriptorSetLayout name (VkDescriptorSetLayoutBinding* layout_bindings, uint32 layout_binding_count)
+typedef RENDERER_CREATE_DESCRIPTOR_SET_LAYOUT_FUNCTION(renderer_create_descriptor_set_layout_function);
+RENDERER_EXPORT RENDERER_CREATE_DESCRIPTOR_SET_LAYOUT_FUNCTION(VulkanCreateDescriptorSetLayout);
+
+#define RENDERER_CREATE_DESCRIPTOR_POOL_FUNCTION(name) VkDescriptorPool name (vulkan_descriptor_pool_create_info pool_create_info)
+typedef RENDERER_CREATE_DESCRIPTOR_POOL_FUNCTION(renderer_create_descriptor_pool_function);
+RENDERER_EXPORT RENDERER_CREATE_DESCRIPTOR_POOL_FUNCTION(VulkanCreateDescriptorPool);
+
+#define RENDERER_ALLOCATE_DESCRIPTOR_SETS_FUNCTION(name) bool name (VkDescriptorPool descriptor_pool, uint32 set_count,\
+																	const VkDescriptorSetLayout* set_layouts, VkDescriptorSet* descriptor_sets,\
+																	const void* extension_ptr)
+typedef RENDERER_ALLOCATE_DESCRIPTOR_SETS_FUNCTION(renderer_allocate_descriptor_sets_function);
+RENDERER_EXPORT RENDERER_ALLOCATE_DESCRIPTOR_SETS_FUNCTION(VulkanAllocateDescriptorSets);
+
+#define RENDERER_UPDATE_UNIFORM_BUFFER_DESCRIPTOR_SET_FUNCTION(name) void name (VkBuffer uniform_buffer, VkDeviceSize buffer_offset,\
+																				VkDeviceSize buffer_range, VkDescriptorSet descriptor_set,\
+																				uint32 descriptor_binding, uint32 descriptor_array_element)
+typedef RENDERER_UPDATE_UNIFORM_BUFFER_DESCRIPTOR_SET_FUNCTION(renderer_update_uniform_descriptor_set_function);
+RENDERER_EXPORT RENDERER_UPDATE_UNIFORM_BUFFER_DESCRIPTOR_SET_FUNCTION(VulkanUpdateUniformBufferDescriptorSet);
