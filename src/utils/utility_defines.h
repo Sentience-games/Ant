@@ -30,7 +30,8 @@
 
 #define OFFSETOF(obj, var) (uintptr) &(((obj*)0)->var)
 
-#define INVALID_DEFAULT_CASE default: Assert(!"Invalid code path"); break
+#define INVALID_CODE_PATH Assert(!"Invalid code path")
+#define INVALID_DEFAULT_CASE default: INVALID_CODE_PATH; break
 
 #define BREAK_ON_FALSE(EX, boolean)\
 	boolean = EX;\

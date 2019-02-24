@@ -9,14 +9,17 @@ EXPORT GAME_INIT_FUNCTION(GameInit)
 	DefaultMemoryArenaAllocationRoutines = memory->default_allocation_routines;
 	DebugArena = &memory->debug_arena;
 
+	bool failed_memory_initiaization = false;
 	if (!memory->is_initialized)
 	{
+// 		platform_file_group file_group = Platform->GetAllFilesOfTypeBegin(PlatformFileType_AssetFile);
+// 
+// 		Platform->GetAllFilesOfTypeEnd(&file_group);
+
 		memory->is_initialized = true;
 	}
 
-	// TODO(soimn): refactor in order to maintain the ability to properly
-	//				hot reload without asserting due to this being set only at init time
-	succeeded = true;
+	succeeded = !failed_memory_initiaization;
 
 	return succeeded;
 }

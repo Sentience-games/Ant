@@ -185,6 +185,9 @@ PushSize_(memory_arena* arena, memory_index size,
 		new_block->previous		= arena->current_block;
 		arena->current_block	= new_block;
 		++arena->block_count;
+
+		adjustment = AlignOffset(arena->current_block->push_ptr, alignment);
+		total_size = size + adjustment;
 	}
 
 	memory_block* block = arena->current_block;
@@ -291,7 +294,7 @@ BootstrapPushSize_(memory_index struct_size, u8 struct_alignment,
 	bootstrap_arena.defaults.block_alignment = block_alignment;
 
 	result = PushSize(&bootstrap_arena, struct_size, struct_alignment);
-	*((memory_arena*)((u8*) result + struct_size)) = bootstrap_arena;
+	*((memory_arena*)((u8*) result + offset_to_arena)) = bootstrap_arena;
 
 	return result;
 }

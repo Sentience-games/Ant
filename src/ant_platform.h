@@ -126,19 +126,18 @@ typedef struct vulkan_renderer_state
 		VkSwapchainKHR handle;
 		u32 image_count;
 		VkImage* images;
+
+		VkImageSubresourceRange subresource_range;
 		VkExtent2D extent;
 		VkSurfaceFormatKHR surface_format;
 		VkPresentModeKHR present_mode;
-		VkSemaphore image_available_semaphore;
 
-		// NOTE(soimn): this flag controls when to recreate the swapchain.
-		//				If a surface resize is detected before the update and render of
-		//				the game, then the swapchain is recreated right away, and the recreate
-		//				flag is cleared.
-		//				If the vkAcquireNextImage returns VK_OUT_OF_DATE_KHR, then the recreate flag
-		//				is set and the presentation of the image is skipped.
-		//				If the vkAcquireNextImage returns VK_SUBOPTIMAL_KHR, then the recreate flag
-		//				is set and the image is presented as usual, even though it may not be optimal.
+		VkSemaphore image_available_semaphore;
+		VkSemaphore transfer_done_semaphore;
+
+		VkCommandPool present_pool;
+		VkCommandBuffer* present_buffers;
+
 		bool should_recreate_swapchain;
 	} swapchain;
 
@@ -147,9 +146,16 @@ typedef struct vulkan_renderer_state
 		VkImage image;
 		VkImageView image_view;
 		VkDeviceMemory image_memory;
+
+		VkExtent2D extent;
+
 		VkRenderPass render_pass;
 		VkFramebuffer framebuffer;
+
 		VkSemaphore render_done_semaphore;
+
+		VkCommandPool render_pool;
+		VkCommandBuffer render_buffer;
 	} render_target;
 
 	bool supports_compute, supports_dedicated_transfer;
