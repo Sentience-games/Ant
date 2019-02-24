@@ -1,24 +1,11 @@
 #pragma once
 
-#ifdef ANT_PLATFORM_WINDOWS
-#define PLATFORM_WINDOWS
-#endif
-
-
+#define VK_NO_PROTOTYPES
+#include <vulkan/vulkan.h>
+#undef VK_NO_PROTOTYPES
 
 #ifdef ANT_DEBUG
-#define DEBUG_MODE
 #define ASSERTION_ENABLED
-#endif
-
-#include "renderer/renderer.h"
-
-#ifdef ANT_DEBUG
-#undef DEBUG_MODE
-#endif
-
-#ifdef ANT_PLATFORM_WINDOWS
-#undef PLATFORM_WINDOWS
 #endif
 
 #include "utils/assert.h"
@@ -112,27 +99,63 @@ typedef PLATFORM_WRITE_TO_FILE_FUNCTION(platform_write_to_file_function);
 
 #define PLATFORM_FILE_IS_VALID(handle) ((handle)->is_valid)
 
-typedef struct platform_renderer_api
+typedef struct vulkan_api_functions
 {
-	renderer_state* RendererState;
-	vulkan_api* VulkanAPI;
+	#define VK_EXPORTED_FUNCTION(func) PFN_##func func
+	#define VK_GLOBAL_LEVEL_FUNCTION(func) PFN_##func func
+	#define VK_INSTANCE_LEVEL_FUNCTION(func) PFN_##func func
+	#define VK_DEVICE_LEVEL_FUNCTION(func) PFN_##func func
 
-	renderer_create_render_pass_function* CreateRenderPass;
-	renderer_create_pipeline_layout_function* CreatePipelineLayout;
-	renderer_create_shader_module_function* CreateShaderModule;
-	renderer_create_shader_stage_infos_function* CreateShaderStageInfos;
-	renderer_create_graphics_pipelines_function* CreateGraphicsPipelines;
-	renderer_create_framebuffer_function* CreateFramebuffer;
-	renderer_create_command_pool_function* CreateCommandPool;
-	renderer_allocate_command_buffers_function* AllocateCommandBuffers;
-	renderer_create_semaphore_function* CreateSemaphore;
-	renderer_get_optimal_swapchain_extent_function* GetOptimalSwapchainExtent;
-	renderer_get_optimal_swapchain_surface_format_function* GetOptimalSwapchainSurfaceFormat;
-	renderer_get_optimal_swapchain_present_mode_function* GetOptimalSwapchainPresentMode;
-	renderer_copy_buffer_function* CopyBuffer;
-	renderer_create_vertex_buffer_function* CreateVertexBuffer;
-	renderer_create_index_buffer_function* CreateIndexBuffer;
-} platform_renderer_functions;
+	#include "vulkan_functions.inl"
+
+	#undef VK_DEVICE_LEVEL_FUNCTION
+	#undef VK_INSTANCE_LEVEL_FUNCTION
+	#undef VK_GLOBAL_LEVEL_FUNCTION
+	#undef VK_EXPORTED_FUNCTION
+} vulkan_api;
+
+typedef struct vulkan_renderer_state
+{
+	VkInstance instance;
+	VkPhysicalDevice physical_device;
+	VkDevice device;
+	VkSurfaceKHR surface;
+
+	struct swapchain
+	{
+		VkSwapchainKHR handle;
+		u32 image_count;
+		VkImage* images;
+		VkExtent2D extent;
+		VkSurfaceFormatKHR surface_format;
+		VkPresentModeKHR present_mode;
+		VkSemaphore image_available_semaphore;
+
+		// NOTE(soimn): this flag controls when to recreate the swapchain.
+		//				If a surface resize is detected before the update and render of
+		//				the game, then the swapchain is recreated right away, and the recreate
+		//				flag is cleared.
+		//				If the vkAcquireNextImage returns VK_OUT_OF_DATE_KHR, then the recreate flag
+		//				is set and the presentation of the image is skipped.
+		//				If the vkAcquireNextImage returns VK_SUBOPTIMAL_KHR, then the recreate flag
+		//				is set and the image is presented as usual, even though it may not be optimal.
+		bool should_recreate_swapchain;
+	} swapchain;
+
+	struct render_target
+	{
+		VkImage image;
+		VkImageView image_view;
+		VkDeviceMemory image_memory;
+		VkRenderPass render_pass;
+		VkFramebuffer framebuffer;
+		VkSemaphore render_done_semaphore;
+	} render_target;
+
+	bool supports_compute, supports_dedicated_transfer;
+	i32 graphics_family, compute_family, dedicated_transfer_family, present_family;
+	VkQueue graphics_queue, compute_queue, transfer_queue, dedicated_transfer_queue, present_queue;
+} vulkan_renderer_state;
 
 typedef struct platform_api_functions
 {
@@ -145,9 +168,6 @@ typedef struct platform_api_functions
 	platform_close_file_function* CloseFile;
 	platform_read_from_file_function* ReadFromFile;
 	platform_write_to_file_function* WriteToFile;
-
-	platform_renderer_api RendererAPI;
-
 } platform_api_functions;
 
 typedef struct game_memory
@@ -155,6 +175,9 @@ typedef struct game_memory
 	bool is_initialized;
 
 	platform_api_functions platform_api;
+	vulkan_api_functions vulkan_api;
+
+	vulkan_renderer_state vulkan_state;
 
 	default_memory_arena_allocation_routines default_allocation_routines;
 	memory_arena persistent_arena;

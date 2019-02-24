@@ -9,7 +9,6 @@ global_variable bool Running						 = false;
 global_variable float TargetFrameSecounds			 = (float) (1.0f / ((float)DEFAULT_TARGET_FPS * 1000.0f));
 global_variable LARGE_INTEGER PerformanceCounterFreq = {};
 
-global_variable win32_renderer_api Win32RendererAPI;
 global_variable memory_arena FrameTempArena;
 
 ///
@@ -88,153 +87,1017 @@ Win32HandleRawInput(UINT msgCode, WPARAM wParam,
 }
 
 ///
-/// Renderer
+/// Vulkan
 ///
 
-internal void
-Win32RendererErrorCallback(const char* message, const char* function_name,
-						   unsigned int line_nr, RENDERER_ERROR_MESSAGE_SEVERITY severity)
+internal VKAPI_ATTR VkBool32 VKAPI_CALL
+Win32VulkanDebugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT message_severity,
+						 VkDebugUtilsMessageTypeFlagsEXT message_type,
+						 const VkDebugUtilsMessengerCallbackDataEXT* callback_data,
+						 void* user_data)
 {
-	if (severity >= RENDERER_WARNING_MESSAGE)
+	if (message_type != VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT)
 	{
-		Win32LogError("RENDERER", false, function_name, line_nr, message);
+		switch(message_severity)
+		{
+			case VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT:
+				WIN32LOG_ERROR(callback_data->pMessage);
+			break;
+
+			case VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT:
+			case VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT:
+				WIN32LOG_INFO(callback_data->pMessage);
+			break;
+
+			INVALID_DEFAULT_CASE;
+		}
 	}
+
+	return VK_FALSE;
 }
 
 internal bool
-Win32InitVulkanRenderer(HMODULE renderer_module, memory_arena* renderer_arena,
-						HINSTANCE instance, HWND windowHandle,
-						renderer_state*& state, vulkan_api*& api)
+Win32InitVulkan(memory_arena* temp_memory, win32_vulkan_binding* binding,
+				vulkan_renderer_state* vulkan_state, HINSTANCE process_instance,
+				HWND window_handle, const char* application_name,
+				u32 application_version)
 {
 	bool succeeded = false;
 
-	renderer_init_function* Win32InitRenderer = 
-		(renderer_init_function*) GetProcAddress(renderer_module, "Win32InitRenderer");
+	binding->module = LoadLibraryA("vulkan-1.dll");
 
-	renderer_start_function* StartRenderer = 
-		(renderer_start_function*) GetProcAddress(renderer_module, "RendererStart");
-
-	renderer_create_instance_function* VulkanCreateInstance = 
-		(renderer_create_instance_function*) GetProcAddress(renderer_module, "VulkanCreateInstance");
-
-	renderer_create_surface_function* VulkanCreateWin32Surface = 
-		(renderer_create_surface_function*) GetProcAddress(renderer_module, "VulkanCreateWin32Surface");
-
-	renderer_acquire_physical_device_function* VulkanAcquirePhysicalDevice = 
-		(renderer_acquire_physical_device_function*) GetProcAddress(renderer_module, "VulkanAcquirePhysicalDevice");
-
-	renderer_create_logical_device_function* VulkanCreateLogicalDevice = 
-		(renderer_create_logical_device_function*) GetProcAddress(renderer_module, "VulkanCreateLogicalDevice");
-
-	succeeded = Win32InitRenderer(renderer_arena, &Win32RendererErrorCallback, state, api);
-	if (succeeded)
+	if (binding->module != INVALID_HANDLE_VALUE)
 	{
 		do
 		{
-			const char* extensions[]		= {
-												  #define INSTANCE_EXTENSIONS
-												  #include "vulkan_extensions.inl"
-												  #undef INSTANCE_EXTENSIONS
-											  };
+			{ //// Load exported and global level vulkan functions
+				#define VK_EXPORTED_FUNCTION(func)\
+					binding->api.##func = (PFN_##func) GetProcAddress(binding->module, #func);\
+					if (!binding->api.##func)\
+					{\
+						WIN32LOG_FATAL("Failed to load the exported vulkan function '" #func "'.");\
+						break;\
+					}
+			
+				#define VK_GLOBAL_LEVEL_FUNCTION(func)\
+					binding->api.##func = (PFN_##func) binding->api.vkGetInstanceProcAddr(NULL, #func);\
+					if (!binding->api.##func)\
+					{\
+						WIN32LOG_FATAL("Failed to load the global level vulkan function '" #func "'.");\
+						break;\
+					}
+	
+				#include "vulkan_functions.inl"
+			
+				#undef VK_GLOBAL_LEVEL_FUNCTION
+				#undef VK_EXPORTED_FUNCTION
+			}
 
-			const char* device_extensions[] = {
-												  #define DEVICE_EXTENSIONS
-												  #include "vulkan_extensions.inl"
-												  #undef DEVICE_EXTENSIONS
-											  };
+			vulkan_api_functions& VulkanAPI = binding->api;
 
-			const char* layers[]			= {
-												  #define LAYERS
-												  #include "vulkan_extensions.inl"
-												  #undef LAYERS
-											  };
+			VkResult result;
+			#define VK_CHECK(call)\
+				result = call##;\
+				if (result != VK_SUCCESS)\
+				{\
+					WIN32LOG_FATAL("The call to the vulkan function '" STRINGIFY(call) "' failed.");\
+					break;\
+				}
 
-			succeeded = VulkanCreateInstance("Ant Game Engine", ANT_VERSION,
-											 APPLICATION_NAME, APPLICATION_VERSION,
-											 layers, ARRAY_COUNT(layers),
-											 extensions, ARRAY_COUNT(extensions),
-											 NULL, 0);
+			#define VK_NESTED_CHECK(call, encountered_error)\
+				result = call##;\
+				if (result != VK_SUCCESS)\
+				{\
+					WIN32LOG_FATAL("The call to the vulkan function '" #call "' failed.");\
+					encountered_error = true;\
+					break;\
+				}
 
-			if (!succeeded)
-				break;
+			const char* required_instance_extensions[] = {
+				#define INSTANCE_EXTENSIONS
 
-			succeeded = VulkanCreateWin32Surface(instance, windowHandle, NULL, 0);
+				#ifdef ANT_DEBUG
+				#define DEBUG_EXTENSIONS
+				#include "vulkan_extensions.inl"
+				#undef DEBUG_EXTENSIONS
 
-			if (!succeeded)
-				break;
+				#else
+				#include "vulkan_extensions.inl"
+				#endif
 
-			succeeded = VulkanAcquirePhysicalDevice(device_extensions, ARRAY_COUNT(device_extensions));
+				#undef INSTANCE_EXTENSIONS
+			};
 
-			if (!succeeded)
-				break;
+			const char* required_layers[] = {
+				#ifdef ANT_DEBUG
+				#define LAYERS
+				#include "vulkan_extensions.inl"
+				#undef LAYERS
+				#endif
+			};
 
-			succeeded = VulkanCreateLogicalDevice(NULL);
+			const char* required_device_extensions[] = 
+			{
+				#define DEVICE_EXTENSIONS
+				#include "vulkan_extensions.inl"
+				#undef DEVICE_EXTENSIONS
+			};
 
-			StartRenderer();
+			///
+			/// Setup instance
+			///
+
+			{ //// Validate extension support	
+				u32 found_extension_count = 0;
+
+				u32 extension_count;
+				VK_CHECK(VulkanAPI.vkEnumerateInstanceExtensionProperties(NULL, &extension_count, NULL));
+
+				VkExtensionProperties* extension_properties = PushArray(temp_memory, VkExtensionProperties, extension_count);
+				VK_CHECK(VulkanAPI.vkEnumerateInstanceExtensionProperties(NULL, &extension_count, extension_properties));
+
+				for (char** current_extension_name = (char**) required_instance_extensions;
+					 current_extension_name < required_instance_extensions + ARRAY_COUNT(required_instance_extensions);
+					 ++current_extension_name)
+				{
+					for (VkExtensionProperties* current_property = extension_properties;
+						 current_property < extension_properties + extension_count;
+						 ++current_property)
+					{
+						if (strcompare(*current_extension_name, current_property->extensionName))
+						{
+							++found_extension_count;
+							break;
+						}
+					}
+				}
+
+				if (found_extension_count != ARRAY_COUNT(required_instance_extensions))
+				{
+					WIN32LOG_ERROR("Instance extension property validation failed. One or more of the required vulkan instance extensions are not"
+								   " present.");
+					break;
+				}
+			}
+
+			#ifdef ANT_DEBUG
+			{ //// Validate layer support
+				u32 found_layer_count = 0;
+
+				u32 layer_count;
+				VK_CHECK(VulkanAPI.vkEnumerateInstanceLayerProperties(&layer_count, NULL));
+
+				VkLayerProperties* layer_properties = PushArray(temp_memory, VkLayerProperties, layer_count);
+				VK_CHECK(VulkanAPI.vkEnumerateInstanceLayerProperties(&layer_count, layer_properties));
+
+				for (char** current_layer_name = (char**) required_layers;
+					 current_layer_name < required_layers + ARRAY_COUNT(required_layers);
+					 ++current_layer_name)
+				{
+					for (VkLayerProperties* current_property = layer_properties;
+						 current_property < layer_properties + layer_count;
+						 ++current_property)
+					{
+						if (strcompare(*current_layer_name, current_property->layerName))
+						{
+							++found_layer_count;
+							break;
+						}
+							
+					}
+				}
+
+				if (found_layer_count != ARRAY_COUNT(required_layers))
+				{
+					WIN32LOG_ERROR("Instance layer property validation failed. One or more of the required vulkan layers are not present.");
+					break;
+				}
+			}
+			#endif
+			
+			{ //// Create instance
+				VkApplicationInfo app_info = {};
+				app_info.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
+				app_info.pApplicationName = application_name;
+				app_info.applicationVersion = application_version;
+				app_info.pEngineName = "Ant Engine";
+				app_info.engineVersion = ANT_VERSION;
+				app_info.apiVersion = VK_API_VERSION_1_0;
+
+				VkInstanceCreateInfo create_info = {};
+				create_info.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
+				create_info.pNext = NULL;
+				create_info.flags = 0;
+				create_info.pApplicationInfo = &app_info;
+				create_info.enabledLayerCount = ARRAY_COUNT(required_layers);
+				create_info.ppEnabledLayerNames = required_layers;
+				create_info.enabledExtensionCount = ARRAY_COUNT(required_instance_extensions);
+				create_info.ppEnabledExtensionNames = required_instance_extensions;
+
+				VK_CHECK(VulkanAPI.vkCreateInstance(&create_info, NULL, &vulkan_state->instance));
+			}
+
+			// Load instance level functions
+			#define VK_INSTANCE_LEVEL_FUNCTION(func)\
+				VulkanAPI.##func = (PFN_##func) VulkanAPI.vkGetInstanceProcAddr(vulkan_state->instance, #func);\
+				if (!VulkanAPI.##func)\
+				{\
+					WIN32LOG_ERROR("Failed to load instance level function '" #func "'.");\
+					break;\
+				}
+			
+			#include "vulkan_functions.inl"
+			
+			#undef VK_INSTANCE_LEVEL_FUNCTION
+
+			#ifdef ANT_DEBUG
+	
+			{ //// Setup debug messenger
+
+				// TODO(soimn): consider keeping this
+				VkDebugUtilsMessengerEXT error_callback = VK_NULL_HANDLE;
+
+				VkDebugUtilsMessengerCreateInfoEXT create_info = {};
+				create_info.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
+
+				create_info.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT
+											  | VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT
+											  | VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT;
+
+				create_info.messageType	    = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT
+											  | VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT
+											  | VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
+
+				create_info.pfnUserCallback = &Win32VulkanDebugCallback;
+				create_info.pUserData = NULL;
+
+				PFN_vkCreateDebugUtilsMessengerEXT vkCreateDebugUtilsMessengerEXT =
+					(PFN_vkCreateDebugUtilsMessengerEXT) VulkanAPI.vkGetInstanceProcAddr(vulkan_state->instance, "vkCreateDebugUtilsMessengerEXT");
+				
+				if (!vkCreateDebugUtilsMessengerEXT)
+				{
+					WIN32LOG_ERROR("Failed to load the instance level function 'vkCreateDebugUtilsMessengerEXT'.");
+					break;
+				}
+
+				VK_CHECK(vkCreateDebugUtilsMessengerEXT(vulkan_state->instance, &create_info, NULL, &error_callback));
+			}
+
+			#endif
+
+			{ //// Create window surface
+				VkWin32SurfaceCreateInfoKHR create_info = {};
+				create_info.sType	  = VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR;
+				create_info.pNext	  = NULL;
+				create_info.flags	  = 0;
+				create_info.hinstance = process_instance;
+				create_info.hwnd	  = window_handle;
+
+				PFN_vkCreateWin32SurfaceKHR	vkCreateWin32SurfaceKHR =
+					(PFN_vkCreateWin32SurfaceKHR) VulkanAPI.vkGetInstanceProcAddr(vulkan_state->instance, "vkCreateWin32SurfaceKHR");
+
+				if (!vkCreateWin32SurfaceKHR)
+				{
+					WIN32LOG_ERROR("Failed to load the instance level function 'vkCreateWin32SurfaceKHR'.");
+					break;
+				}
+
+				VK_CHECK(vkCreateWin32SurfaceKHR(vulkan_state->instance, &create_info, NULL, &vulkan_state->surface));
+			}	
+
+			///
+			/// Setup physical device
+			///
+
+			{ //// Acquire physical device
+				u32 device_count;
+				VK_CHECK(VulkanAPI.vkEnumeratePhysicalDevices(vulkan_state->instance, &device_count, NULL));
+
+				VkPhysicalDevice* physical_devices = PushArray(temp_memory, VkPhysicalDevice, device_count);
+				VK_CHECK(VulkanAPI.vkEnumeratePhysicalDevices(vulkan_state->instance, &device_count, physical_devices));
+
+				bool encountered_errors = false;
+
+				u32 best_score = 0;
+				VkPhysicalDevice chosen_device = VK_NULL_HANDLE;
+				for (u32 i = 0; i < device_count; ++i)
+				{
+					u32 device_score = 0;
+					bool device_invalid = false;
+
+					VkPhysicalDeviceProperties properties;
+					VkPhysicalDeviceFeatures features;
+
+					VulkanAPI.vkGetPhysicalDeviceProperties(physical_devices[i], &properties);
+					VulkanAPI.vkGetPhysicalDeviceFeatures(physical_devices[i], &features);
+
+					bool supports_graphics	   = false;
+					bool supports_compute	   = false;
+					bool supports_transfer	   = false;
+					bool supports_presentation = false;
+
+					{ //// Queues
+						u32 queue_family_count;
+						VulkanAPI.vkGetPhysicalDeviceQueueFamilyProperties(physical_devices[i], &queue_family_count, NULL);
+
+						VkQueueFamilyProperties* queue_family_properties = PushArray(temp_memory, VkQueueFamilyProperties, queue_family_count);
+						VulkanAPI.vkGetPhysicalDeviceQueueFamilyProperties(physical_devices[i], &queue_family_count, queue_family_properties);
+
+						bool nested_encountered_errors = false;
+						for (u32 j = 0; j < queue_family_count; ++j)
+						{
+							if (queue_family_properties[j].queueFlags & VK_QUEUE_GRAPHICS_BIT)
+							{
+								supports_graphics = true;
+							}
+
+							if (queue_family_properties[j].queueFlags & VK_QUEUE_COMPUTE_BIT)
+							{
+								supports_compute = true;
+							}
+
+							if (queue_family_properties[j].queueFlags & VK_QUEUE_TRANSFER_BIT)
+							{
+								supports_transfer = true;
+							}
+
+							VkBool32 queue_supports_presentation = {};
+							VK_NESTED_CHECK(VulkanAPI.vkGetPhysicalDeviceSurfaceSupportKHR(physical_devices[i], j, vulkan_state->surface,
+																						   &queue_supports_presentation), nested_encountered_errors);
+							supports_presentation = (supports_presentation || (bool) queue_supports_presentation);
+						}
+
+						if (nested_encountered_errors)
+						{
+							encountered_errors = true;
+							break;
+						}
+
+						if (!supports_graphics || !supports_transfer || !supports_presentation)
+						{
+							device_invalid = true;
+						}
+
+						if (supports_compute)
+						{
+							device_score += 250;
+						}
+					}
+
+					{ //// Extensions
+						u32 found_extension_count = 0;
+
+						u32 extension_count;
+						VK_CHECK(VulkanAPI.vkEnumerateDeviceExtensionProperties(physical_devices[i], NULL, &extension_count, NULL));
+
+						VkExtensionProperties* extension_properties = PushArray(temp_memory, VkExtensionProperties, extension_count);
+						VK_CHECK(VulkanAPI.vkEnumerateDeviceExtensionProperties(physical_devices[i], NULL, &extension_count, extension_properties));
+
+						for (char** current_extension_name = (char**) required_device_extensions;
+							 current_extension_name < required_device_extensions + ARRAY_COUNT(required_device_extensions);
+							 ++current_extension_name)
+						{
+							for (VkExtensionProperties* current_property = extension_properties;
+								 current_property < extension_properties + extension_count;
+								 ++current_property)
+							{
+								if (strcompare(*current_extension_name, current_property->extensionName))
+								{
+									++found_extension_count;
+									break;
+								}
+							}
+						}
+
+						if (found_extension_count != ARRAY_COUNT(required_device_extensions))
+						{
+							device_invalid = true;
+						}
+					}
+
+					{ //// Surface format & present mode
+						u32 format_count;
+						u32 present_mode_count;
+
+						VulkanAPI.vkGetPhysicalDeviceSurfaceFormatsKHR(physical_devices[i], vulkan_state->surface, &format_count, NULL);
+						VulkanAPI.vkGetPhysicalDeviceSurfacePresentModesKHR(physical_devices[i], vulkan_state->surface, &present_mode_count, NULL);
+						
+						if (format_count == 0 || present_mode_count == 0)
+						{
+							device_invalid = true;
+						}
+					}
+
+					{ //// Traits
+						if (properties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU)
+						{
+							device_score += 1000;
+						}
+
+						device_score += properties.limits.maxImageDimension2D;
+
+						if (!features.geometryShader)
+						{
+							device_invalid = true;
+						}
+					}
+
+					if (device_invalid)
+					{
+						device_score = 0;
+					}
+
+					if (device_score > best_score)
+					{
+						chosen_device = physical_devices[i];
+					}
+				}
+
+				if (encountered_errors)
+				{
+					break;
+				}
+
+				if (chosen_device == VK_NULL_HANDLE)
+				{
+					WIN32LOG_ERROR("Failed to find a suitable device supporting vulkan");
+					break;
+				}
+
+				else
+				{
+					vulkan_state->physical_device = chosen_device;
+				}
+			}
+
+			{ //// Acquire queue families
+				vulkan_state->graphics_family			= -1;
+				vulkan_state->compute_family			= -1;
+				vulkan_state->dedicated_transfer_family = -1;
+				vulkan_state->present_family			= -1;
+
+				u32 queue_family_count;
+				VulkanAPI.vkGetPhysicalDeviceQueueFamilyProperties(vulkan_state->physical_device, &queue_family_count, NULL);
+
+				VkQueueFamilyProperties* queue_family_properties = PushArray(temp_memory, VkQueueFamilyProperties, queue_family_count);
+				VulkanAPI.vkGetPhysicalDeviceQueueFamilyProperties(vulkan_state->physical_device, &queue_family_count, queue_family_properties);
+
+				for (u32 i = 0; i < queue_family_count; ++i)
+				{
+					if (queue_family_properties[i].queueCount != 0)
+					{
+						if (queue_family_properties[i].queueFlags & VK_QUEUE_GRAPHICS_BIT
+							&& vulkan_state->graphics_family == -1)
+						{
+							vulkan_state->graphics_family = (i32) i;
+						}
+
+						if (queue_family_properties[i].queueFlags & VK_QUEUE_COMPUTE_BIT)
+						{
+							vulkan_state->compute_family = (i32) i;
+						}
+
+						if (queue_family_properties[i].queueFlags & VK_QUEUE_TRANSFER_BIT)
+						{
+							vulkan_state->dedicated_transfer_family = (i32) i;
+						}
+
+						if (vulkan_state->present_family == -1)
+						{
+							VkBool32 queue_family_supports_presentation;
+							VulkanAPI.vkGetPhysicalDeviceSurfaceSupportKHR(vulkan_state->physical_device, i,
+																		   vulkan_state->surface, &queue_family_supports_presentation);
+
+							if (queue_family_supports_presentation)
+							{
+								vulkan_state->present_family = (i32) i;
+							}
+						}
+					}
+				}
+
+				if (vulkan_state->graphics_family == -1 || vulkan_state->present_family == -1)
+				{
+					WIN32LOG_ERROR("Failed to acquire graphics and/or present queue families.");
+					break;
+				}
+
+				if (vulkan_state->compute_family == vulkan_state->graphics_family
+					|| (vulkan_state->compute_family == vulkan_state->present_family
+						&& queue_family_properties[vulkan_state->compute_family].queueCount < 2))
+				{
+					vulkan_state->supports_compute = false;
+					vulkan_state->compute_family = -1;
+				}
+
+				else if ((vulkan_state->compute_family == vulkan_state->present_family
+							&& vulkan_state->compute_family == vulkan_state->dedicated_transfer_family)
+						 && queue_family_properties[vulkan_state->compute_family].queueCount < 3)
+				{
+					vulkan_state->supports_compute = false;
+					vulkan_state->compute_family = -1;
+
+					if (vulkan_state->dedicated_transfer_family == vulkan_state->graphics_family
+						|| (vulkan_state->dedicated_transfer_family == vulkan_state->present_family
+							&& queue_family_properties[vulkan_state->present_family].queueCount < 2))
+					{
+						vulkan_state->supports_dedicated_transfer = false;
+						vulkan_state->dedicated_transfer_family = -1;
+					}
+
+					else if (vulkan_state->dedicated_transfer_family != -1)
+					{
+					
+						vulkan_state->supports_dedicated_transfer = true;
+					}
+				}
+
+				else if (vulkan_state->compute_family != -1)
+				{
+					vulkan_state->supports_compute  = true;
+				}
+			}
+
+			///
+			/// Setup logical device
+			///
+
+			{ //// Create logical device
+				const float queue_priorities[4] = {1.0f, 1.0f, 1.0f, 1.0f};
+				
+				VkDeviceQueueCreateInfo queue_create_info[4] = {};
+				u32 queue_create_info_count = 0;
+				u32 present_family_index	= 0;
+				u32 compute_family_index	= 0;
+
+				// Graphics queue
+				queue_create_info[queue_create_info_count].sType			= VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+				queue_create_info[queue_create_info_count].pNext			= NULL;
+				queue_create_info[queue_create_info_count].flags			= 0;
+				queue_create_info[queue_create_info_count].queueFamilyIndex = vulkan_state->graphics_family;
+				queue_create_info[queue_create_info_count].queueCount		= 1;
+				queue_create_info[queue_create_info_count].pQueuePriorities	= &queue_priorities[0];
+				++queue_create_info_count;
+
+				if (vulkan_state->present_family == vulkan_state->graphics_family)
+				{
+					present_family_index = queue_create_info_count;
+					++queue_create_info[queue_create_info_count].queueCount;
+				}
+
+				else
+				{
+					present_family_index = queue_create_info_count;
+					queue_create_info[present_family_index].sType			 = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+					queue_create_info[present_family_index].pNext			 = NULL;
+					queue_create_info[present_family_index].flags			 = 0;
+					queue_create_info[present_family_index].queueFamilyIndex = vulkan_state->present_family;
+					queue_create_info[present_family_index].queueCount		 = 1;
+					queue_create_info[present_family_index].pQueuePriorities = &queue_priorities[1];
+					++queue_create_info_count;
+				}
+
+				if (vulkan_state->supports_compute)
+				{
+					if (vulkan_state->compute_family == vulkan_state->present_family)
+					{
+						++queue_create_info[present_family_index].queueCount;
+					}
+
+					else
+					{
+						compute_family_index = queue_create_info_count;
+						queue_create_info[compute_family_index].sType			 = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+						queue_create_info[compute_family_index].pNext			 = NULL;
+						queue_create_info[compute_family_index].flags			 = 0;
+						queue_create_info[compute_family_index].queueFamilyIndex = vulkan_state->compute_family;
+						queue_create_info[compute_family_index].queueCount		 = 1;
+						queue_create_info[compute_family_index].pQueuePriorities = &queue_priorities[2];
+						++queue_create_info_count;
+					}
+				}
+
+				if (vulkan_state->supports_dedicated_transfer)
+				{
+					if (vulkan_state->dedicated_transfer_family == vulkan_state->present_family)
+					{
+						++queue_create_info[present_family_index].queueCount;
+					}
+
+					else if (vulkan_state->dedicated_transfer_family == vulkan_state->compute_family)
+					{
+						++queue_create_info[compute_family_index].queueCount;
+					}
+
+					else
+					{
+						queue_create_info[queue_create_info_count].sType			= VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+						queue_create_info[queue_create_info_count].pNext			= NULL;
+						queue_create_info[queue_create_info_count].flags			= 0;
+						queue_create_info[queue_create_info_count].queueFamilyIndex = vulkan_state->dedicated_transfer_family;
+						queue_create_info[queue_create_info_count].queueCount		= 1;
+						queue_create_info[queue_create_info_count].pQueuePriorities	= &queue_priorities[3];
+						++queue_create_info_count;
+					}
+				}
+
+				VkDeviceCreateInfo device_create_info = {};
+				device_create_info.sType				   = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
+				device_create_info.pNext				   = NULL;
+				device_create_info.flags				   = 0;
+				device_create_info.queueCreateInfoCount	   = queue_create_info_count;
+				device_create_info.pQueueCreateInfos	   = &queue_create_info[0];
+				device_create_info.enabledExtensionCount   = ARRAY_COUNT(required_device_extensions);
+				device_create_info.ppEnabledExtensionNames = required_device_extensions;
+				device_create_info.pEnabledFeatures		   = NULL;
+
+				VK_CHECK(VulkanAPI.vkCreateDevice(vulkan_state->physical_device, &device_create_info, NULL, &vulkan_state->device));
+			}
+
+			// Load device level functions
+			#define VK_DEVICE_LEVEL_FUNCTION(func)\
+				VulkanAPI.##func = (PFN_##func) VulkanAPI.vkGetDeviceProcAddr(vulkan_state->device, #func);\
+				if (!VulkanAPI.##func)\
+				{\
+					WIN32LOG_ERROR("Failed to load device level function '" #func "'.");\
+					break;\
+				}
+			
+			#include "vulkan_functions.inl"
+			
+			#undef VK_DEVICE_LEVEL_FUNCTION
+
+			{ //// Setup queues
+				VulkanAPI.vkGetDeviceQueue(vulkan_state->device, vulkan_state->graphics_family, 0, &vulkan_state->graphics_queue);
+
+				u32 present_family_queue_index = 0;
+				VulkanAPI.vkGetDeviceQueue(vulkan_state->device, vulkan_state->present_family, present_family_queue_index, &vulkan_state->present_queue);
+				
+				if (vulkan_state->supports_compute)
+				{
+					if (vulkan_state->compute_family == vulkan_state->present_family)
+					{
+						VulkanAPI.vkGetDeviceQueue(vulkan_state->device, vulkan_state->present_family,
+												   ++present_family_queue_index, &vulkan_state->compute_queue);
+					}
+
+					else
+					{
+						VulkanAPI.vkGetDeviceQueue(vulkan_state->device, vulkan_state->compute_family, 0, &vulkan_state->compute_queue);
+					}
+				}
+
+				VulkanAPI.vkGetDeviceQueue(vulkan_state->device, vulkan_state->graphics_family, 0, &vulkan_state->transfer_queue);
+
+				if (vulkan_state->supports_dedicated_transfer)
+				{
+					if (vulkan_state->dedicated_transfer_family == vulkan_state->present_family)
+					{
+						VulkanAPI.vkGetDeviceQueue(vulkan_state->device, vulkan_state->present_family,
+												   ++present_family_queue_index, &vulkan_state->dedicated_transfer_queue);
+					}
+
+					else if (vulkan_state->dedicated_transfer_family == vulkan_state->compute_family)
+					{
+						VulkanAPI.vkGetDeviceQueue(vulkan_state->device, vulkan_state->compute_family, 1, &vulkan_state->dedicated_transfer_queue);
+					}
+
+					else
+					{
+						VulkanAPI.vkGetDeviceQueue(vulkan_state->device, vulkan_state->dedicated_transfer_family,
+												   0, &vulkan_state->dedicated_transfer_queue);
+					}
+				}
+			}
+
+			///
+			/// Setup swapchain
+			///
+
+			{ //// Create swapchain
+				VkExtent2D swapchain_extent				= {};
+				VkSurfaceFormatKHR swapchain_format		= {};
+				VkPresentModeKHR swapchain_present_mode = {};
+				u32 image_count = 2;
+
+				{ //// Pick swapchain extent and ensure image usage and count support
+					VkSurfaceCapabilitiesKHR capabilities;
+					VK_CHECK(VulkanAPI.vkGetPhysicalDeviceSurfaceCapabilitiesKHR(vulkan_state->physical_device, vulkan_state->surface, &capabilities));
+
+					if (capabilities.currentExtent.width != UINT32_MAX)
+					{
+						swapchain_extent = capabilities.currentExtent;
+					}
+
+					else
+					{
+						swapchain_extent = {CLAMP(capabilities.minImageExtent.width, 2560,
+												  capabilities.maxImageExtent.width),
+											CLAMP(capabilities.minImageExtent.height, 1440,
+												  capabilities.maxImageExtent.height)};
+					}
+
+					if ((capabilities.supportedUsageFlags & VK_IMAGE_USAGE_TRANSFER_DST_BIT) == 0)
+					{
+						WIN32LOG_ERROR("Failed to create swapchain, as the surface does not support image transfers to the swapchain images.");
+						break;
+					}
+
+					else if (capabilities.minImageCount > image_count)
+					{
+						image_count = capabilities.minImageCount;
+					}
+				}
+
+				{ //// Pick swapchain format
+					u32 format_count;
+					VkSurfaceFormatKHR* formats;
+
+					VK_CHECK(VulkanAPI.vkGetPhysicalDeviceSurfaceFormatsKHR(vulkan_state->physical_device, vulkan_state->surface,
+																			&format_count, NULL));
+
+					if (format_count == 0)
+					{
+						WIN32LOG_ERROR("Failed to retrieve surface formats for swapchain creation.");
+						break;
+					}
+
+					formats = PushArray(temp_memory, VkSurfaceFormatKHR, format_count);
+					VK_CHECK(VulkanAPI.vkGetPhysicalDeviceSurfaceFormatsKHR(vulkan_state->physical_device, vulkan_state->surface,
+																			&format_count, formats));
+
+					bool found_format = false;
+
+					if (format_count == 1 && formats[0].format == VK_FORMAT_UNDEFINED)
+					{
+						swapchain_format = {VK_FORMAT_B8G8R8A8_UNORM, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR};
+						found_format = true;
+					}
+
+					else
+					{
+						for (u32 i = 0; i < format_count; ++i)
+						{
+							if (formats[i].format == VK_FORMAT_B8G8R8A8_UNORM && formats[i].colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR)
+							{
+								swapchain_format = formats[i];
+								found_format = true;
+								break;
+							}
+						}
+					}
+
+					if (!found_format)
+					{
+						swapchain_format = formats[0];
+					}
+				}
+
+				{ //// Pick swapchain present mode
+					u32 present_mode_count;
+					VkPresentModeKHR* present_modes;
+
+					VK_CHECK(VulkanAPI.vkGetPhysicalDeviceSurfacePresentModesKHR(vulkan_state->physical_device, vulkan_state->surface,
+																						  &present_mode_count, NULL));
+
+					present_modes = PushArray(temp_memory, VkPresentModeKHR, present_mode_count);
+					VK_CHECK(VulkanAPI.vkGetPhysicalDeviceSurfacePresentModesKHR(vulkan_state->physical_device, vulkan_state->surface,
+																						  &present_mode_count, present_modes));
+
+					// IMPORTANT(soimn): this loop is biasing FIFO_RELAXED, which may not always be optimal
+					u32 best_score = 0;
+					for (u32 i = 0; i < present_mode_count; ++i)
+					{
+						if (present_modes[i] == VK_PRESENT_MODE_FIFO_RELAXED_KHR)
+						{
+							swapchain_present_mode = present_modes[i];
+							break;
+						}
+
+						else if (present_modes[i] == VK_PRESENT_MODE_MAILBOX_KHR
+								 && best_score < 800)
+						{
+							best_score = 800;
+							swapchain_present_mode = present_modes[i];
+						}
+
+
+						else if (present_modes[i] == VK_PRESENT_MODE_FIFO_KHR
+								 && best_score < 600)
+						{
+							best_score = 600;
+							swapchain_present_mode = present_modes[i];
+						}
+					}
+
+					if (!best_score)
+					{
+						WIN32LOG_ERROR("Failed to find a suitable present mode for swapchain creation");
+					}
+				}
+
+				vulkan_state->swapchain.extent		   = swapchain_extent;
+				vulkan_state->swapchain.surface_format = swapchain_format;
+				vulkan_state->swapchain.present_mode   = swapchain_present_mode;
+
+				VkSwapchainCreateInfoKHR create_info = {};
+				create_info.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
+
+				create_info.minImageCount	 = image_count;
+				create_info.imageFormat		 = swapchain_format.format;
+				create_info.imageColorSpace  = swapchain_format.colorSpace;
+				create_info.imageExtent		 = swapchain_extent;
+				create_info.imageUsage		 = VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+				create_info.presentMode		 = swapchain_present_mode;
+				create_info.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
+				create_info.clipped			 = VK_TRUE;
+				create_info.surface			 = vulkan_state->surface;
+				create_info.imageArrayLayers = 1;
+				create_info.preTransform	 = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
+				create_info.compositeAlpha	 = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+
+				VK_CHECK(VulkanAPI.vkCreateSwapchainKHR(vulkan_state->device, &create_info, NULL, &vulkan_state->swapchain.handle));
+			}
+
+			{ //// Create swapchain images
+				VK_CHECK(VulkanAPI.vkGetSwapchainImagesKHR(vulkan_state->device, vulkan_state->swapchain.handle,
+														   &vulkan_state->swapchain.image_count, NULL));
+
+				vulkan_state->swapchain.images		= PushArray(temp_memory, VkImage, vulkan_state->swapchain.image_count);
+
+				VK_CHECK(VulkanAPI.vkGetSwapchainImagesKHR(vulkan_state->device, vulkan_state->swapchain.handle,
+														   &vulkan_state->swapchain.image_count, vulkan_state->swapchain.images));
+			}
+
+			{ //// Create swapchain semaphores
+				VkSemaphoreCreateInfo create_info = {};
+				create_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+				create_info.pNext = NULL;
+				create_info.flags = 0;
+
+				VK_CHECK(VulkanAPI.vkCreateSemaphore(vulkan_state->device, &create_info, NULL, &vulkan_state->swapchain.image_available_semaphore));
+			}
+
+			///
+			/// Setup render target
+			///
+			
+			{ //// Create render target image
+				VkImageCreateInfo create_info = {};
+				create_info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+				create_info.pNext = NULL;
+				create_info.flags = 0;
+				create_info.imageType = VK_IMAGE_TYPE_2D;
+				create_info.format = vulkan_state->swapchain.surface_format.format;
+				create_info.extent = {vulkan_state->swapchain.extent.width,
+									  vulkan_state->swapchain.extent.height,
+									  1};
+				create_info.mipLevels = 1;
+				create_info.arrayLayers = 1;
+				create_info.samples = VK_SAMPLE_COUNT_1_BIT;
+				create_info.tiling = VK_IMAGE_TILING_OPTIMAL;
+				create_info.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+				create_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+				create_info.queueFamilyIndexCount = 0;
+				create_info.pQueueFamilyIndices = NULL;
+				create_info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+
+				VK_CHECK(VulkanAPI.vkCreateImage(vulkan_state->device, &create_info, NULL, &vulkan_state->render_target.image));
+
+				VkMemoryRequirements memory_requirements;
+				VulkanAPI.vkGetImageMemoryRequirements(vulkan_state->device, vulkan_state->render_target.image, &memory_requirements);
+
+				VkPhysicalDeviceMemoryProperties memory_properties;
+				VulkanAPI.vkGetPhysicalDeviceMemoryProperties(vulkan_state->physical_device, &memory_properties);
+				VkMemoryPropertyFlags required_memory_properties = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+
+				i32 selected_memory_type = -1;
+				for (u32 i = 0; i < memory_properties.memoryTypeCount; ++i)
+				{
+					if ((memory_requirements.memoryTypeBits & (1 << i)) &&
+						(memory_properties.memoryTypes[i].propertyFlags & required_memory_properties) == required_memory_properties)
+					{
+						selected_memory_type = (i32) i;
+					}
+				}
+
+				if (selected_memory_type == -1)
+				{
+					WIN32LOG_ERROR("Failed to find an appropriate memory type for the main render target image");
+					break;
+				}
+
+				VkMemoryAllocateInfo allocate_info = {};
+				allocate_info.sType			  = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+				allocate_info.pNext			  = NULL;
+				allocate_info.allocationSize  = memory_requirements.size;
+				allocate_info.memoryTypeIndex = (u32) selected_memory_type;
+
+				VK_CHECK(VulkanAPI.vkAllocateMemory(vulkan_state->device, &allocate_info, NULL, &vulkan_state->render_target.image_memory));
+				VK_CHECK(VulkanAPI.vkBindImageMemory(vulkan_state->device, vulkan_state->render_target.image, vulkan_state->render_target.image_memory, 0));
+			}
+
+			{ //// Create render target image view
+				VkImageViewCreateInfo create_info = {};
+				create_info.sType							= VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+				create_info.pNext							= NULL;
+				create_info.flags							= 0;
+				create_info.image							= vulkan_state->render_target.image;
+				create_info.viewType						= VK_IMAGE_VIEW_TYPE_2D;
+				create_info.format							= vulkan_state->swapchain.surface_format.format;
+
+				create_info.components						= {VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY,
+															   VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY};
+
+				create_info.subresourceRange.aspectMask		= VK_IMAGE_ASPECT_COLOR_BIT;
+				create_info.subresourceRange.baseMipLevel	= 0;
+				create_info.subresourceRange.levelCount		= 1;
+				create_info.subresourceRange.baseArrayLayer = 0;
+				create_info.subresourceRange.layerCount		= 1;
+
+				VK_CHECK(VulkanAPI.vkCreateImageView(vulkan_state->device, &create_info, NULL, &vulkan_state->render_target.image_view));
+			}
+
+			{ //// Create render target render pass
+				VkAttachmentDescription attachment_description = {};
+				attachment_description.flags		  = 0;
+				attachment_description.format		  = vulkan_state->swapchain.surface_format.format;
+				attachment_description.samples		  = VK_SAMPLE_COUNT_1_BIT;
+				attachment_description.loadOp		  = VK_ATTACHMENT_LOAD_OP_CLEAR;
+				attachment_description.storeOp		  = VK_ATTACHMENT_STORE_OP_STORE;
+				attachment_description.stencilLoadOp  = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+				attachment_description.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+				attachment_description.initialLayout  = VK_IMAGE_LAYOUT_UNDEFINED;
+				attachment_description.finalLayout	  = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+
+				VkAttachmentReference attachment_reference = {
+					0,
+					VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL
+				};
+
+				VkSubpassDescription primary_subpass = {};
+				{
+					primary_subpass.flags					= 0;
+					primary_subpass.pipelineBindPoint		= VK_PIPELINE_BIND_POINT_GRAPHICS;
+					primary_subpass.inputAttachmentCount	= 0;
+					primary_subpass.pInputAttachments		= NULL;
+					primary_subpass.colorAttachmentCount	= 1;
+					primary_subpass.pColorAttachments		= &attachment_reference;
+					primary_subpass.pResolveAttachments		= NULL;
+					primary_subpass.pDepthStencilAttachment = NULL;
+					primary_subpass.preserveAttachmentCount = 0;
+					primary_subpass.pPreserveAttachments	= NULL;
+				}
+
+				VkRenderPassCreateInfo create_info = {};
+				create_info.sType			= VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+				create_info.pNext			= NULL;
+				create_info.flags			= 0;
+				create_info.attachmentCount = 1;
+				create_info.pAttachments	= &attachment_description;
+				create_info.subpassCount	= 1;
+				create_info.pSubpasses		= &primary_subpass;
+				create_info.dependencyCount = 0;
+				create_info.pDependencies	= NULL;
+
+				VK_CHECK(VulkanAPI.vkCreateRenderPass(vulkan_state->device, &create_info, NULL, &vulkan_state->render_target.render_pass));
+			}
+
+			{ //// Create render target framebuffer
+				VkFramebufferCreateInfo create_info = {};
+				create_info.sType			= VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+				create_info.pNext			= NULL;
+				create_info.flags			= 0;
+				create_info.renderPass		= vulkan_state->render_target.render_pass;
+				create_info.attachmentCount = 1;
+				create_info.pAttachments	= &vulkan_state->render_target.image_view;
+				create_info.width			= vulkan_state->swapchain.extent.width;
+				create_info.height			= vulkan_state->swapchain.extent.height;
+				create_info.layers			= 1;
+
+				VK_CHECK(VulkanAPI.vkCreateFramebuffer(vulkan_state->device, &create_info, NULL, &vulkan_state->render_target.framebuffer));
+			}
+
+			{ //// Create render target semaphores
+				VkSemaphoreCreateInfo create_info = {};
+				create_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+				create_info.pNext = NULL;
+				create_info.flags = 0;
+
+				VK_CHECK(VulkanAPI.vkCreateSemaphore(vulkan_state->device, &create_info, NULL, &vulkan_state->render_target.render_done_semaphore));
+			}
+
+			#undef VK_CHECK
+
+			succeeded = true;
 		}
 		while(0);
 	}
 
-	return succeeded;
-}
-
-internal bool
-Win32LoadRendererFunctionPointers(HMODULE renderer_module, platform_renderer_functions* renderer,
-								  win32_renderer_api* win32_api)
-{
-	bool succeeded = false;
-
-	#define LOAD_RENDERER_FUNCTION(func, type, name)\
-		renderer->name = (type*) GetProcAddress(renderer_module, func);\
-		if (!renderer->name)\
-		{\
-			WIN32LOG_FATAL("Win32LoadRendererFunctionPointers failed. Reason: failed to load the function pointer to the '" #func "' function");\
-			break;\
-		}
-
-	#define LOAD_WIN32_RENDERER_FUNCTION(func, type, name)\
-		win32_api->name = (type*) GetProcAddress(renderer_module, func);\
-		if (!win32_api)\
-		{\
-			WIN32LOG_FATAL("Win32LoadRendererFunctionPointers failed. Reason: failed to load the function pointer to the '" #func "' function");\
-			break;\
-		}
-
-	do
+	else
 	{
-		LOAD_RENDERER_FUNCTION("VulkanCreateRenderPass", renderer_create_render_pass_function, CreateRenderPass);
-		LOAD_RENDERER_FUNCTION("VulkanCreatePipelineLayout", renderer_create_pipeline_layout_function, CreatePipelineLayout);
-		LOAD_RENDERER_FUNCTION("VulkanCreateShaderModule", renderer_create_shader_module_function, CreateShaderModule);
-		LOAD_RENDERER_FUNCTION("VulkanCreateShaderStageInfos", renderer_create_shader_stage_infos_function, CreateShaderStageInfos);
-		LOAD_RENDERER_FUNCTION("VulkanCreateGraphicsPipelines", renderer_create_graphics_pipelines_function, CreateGraphicsPipelines);
-		LOAD_RENDERER_FUNCTION("VulkanCreateFramebuffer", renderer_create_framebuffer_function, CreateFramebuffer);
-		LOAD_RENDERER_FUNCTION("VulkanCreateCommandPool", renderer_create_command_pool_function, CreateCommandPool);
-		LOAD_RENDERER_FUNCTION("VulkanAllocateCommandBuffers", renderer_allocate_command_buffers_function, AllocateCommandBuffers);
-		LOAD_RENDERER_FUNCTION("VulkanCreateSemaphore", renderer_create_semaphore_function, CreateSemaphore);
-		LOAD_RENDERER_FUNCTION("VulkanGetOptimalSwapchainExtent", renderer_get_optimal_swapchain_extent_function, GetOptimalSwapchainExtent);
-		LOAD_RENDERER_FUNCTION("VulkanGetOptimalSwapchainSurfaceFormat", renderer_get_optimal_swapchain_surface_format_function,
-							   GetOptimalSwapchainSurfaceFormat);
-		LOAD_RENDERER_FUNCTION("VulkanGetOptimalSwapchainPresentMode", renderer_get_optimal_swapchain_present_mode_function,
-							   GetOptimalSwapchainPresentMode);
-		LOAD_RENDERER_FUNCTION("VulkanCopyBuffer", renderer_copy_buffer_function, CopyBuffer);
-		LOAD_RENDERER_FUNCTION("VulkanCreateVertexBuffer", renderer_create_vertex_buffer_function, CreateVertexBuffer);
-		LOAD_RENDERER_FUNCTION("VulkanCreateIndexBuffer", renderer_create_index_buffer_function, CreateIndexBuffer);
-
-
-		LOAD_WIN32_RENDERER_FUNCTION("VulkanBeginFrame", renderer_begin_frame_function, BeginFrame);
-		LOAD_WIN32_RENDERER_FUNCTION("VulkanEndFrame", renderer_end_frame_function, EndFrame);
-		LOAD_WIN32_RENDERER_FUNCTION("VulkanCreateSwapchain", renderer_create_swapchain_function, CreateSwapchain);
-		LOAD_WIN32_RENDERER_FUNCTION("VulkanCreateSwapchainImages", renderer_create_swapchain_images_function, CreateSwapchainImages);
-		LOAD_WIN32_RENDERER_FUNCTION("VulkanCreateDefaultRenderPass", renderer_create_default_render_pass_function, CreateDefaultRenderPass);
-		LOAD_WIN32_RENDERER_FUNCTION("VulkanCreateSwapchainFramebuffers", renderer_create_swapchain_framebuffers_function, CreateSwapchainFramebuffers);
-		LOAD_WIN32_RENDERER_FUNCTION("VulkanCreateSwapchainCommandBuffers", renderer_create_swapchain_command_buffers_function, CreateSwapchainCommandBuffers);
-		LOAD_WIN32_RENDERER_FUNCTION("VulkanCreateSwapchainSemaphores", renderer_create_swapchain_semaphores_function, CreateSwapchainSemaphores);
-
-		succeeded = true;
+		WIN32LOG_ERROR("Failed to load vulkan-1.dll");
 	}
-	while(0);
-
-	#undef LOAD_RENDERER_FUNCTION
 
 	return succeeded;
 }
@@ -243,6 +1106,7 @@ Win32LoadRendererFunctionPointers(HMODULE renderer_module, platform_renderer_fun
 /// File System Interaction
 ///
 
+// TODO(soimn): make this more robust to enable hot loading capability in release mode
 #ifdef ANT_ENABLE_HOT_RELOADING
 FILETIME
 Win32DebugGetFileCreateTime(const char* file_path)
@@ -705,36 +1569,36 @@ LRESULT CALLBACK Win32MainWindowProc(HWND windowHandle, UINT msgCode,
 ///
 
 int CALLBACK WinMain(HINSTANCE instance,
-					 HINSTANCE prevInstance,
-					 LPSTR commandLine,
-					 int windowShowMode)
+					 HINSTANCE prev_instance,
+					 LPSTR command_line,
+					 int window_show_mode)
 {
-	UNUSED_PARAMETER(prevInstance);
-	UNUSED_PARAMETER(commandLine);
-	UNUSED_PARAMETER(windowShowMode);
+	UNUSED_PARAMETER(prev_instance);
+	UNUSED_PARAMETER(command_line);
+	UNUSED_PARAMETER(window_show_mode);
 
-	HWND windowHandle;
-	WNDCLASSEXA windowClass = {};
+	HWND window_handle;
+	WNDCLASSEXA window_class = {};
 
-	windowClass.cbSize = sizeof(WNDCLASSEX);
-	windowClass.style = CS_VREDRAW | CS_HREDRAW;
-	windowClass.lpfnWndProc = &Win32MainWindowProc;
-	windowClass.hInstance = instance;
-	windowClass.hbrBackground = 0;
-	windowClass.lpszClassName = APPLICATION_NAME;
+	window_class.cbSize = sizeof(WNDCLASSEX);
+	window_class.style = CS_VREDRAW | CS_HREDRAW;
+	window_class.lpfnWndProc = &Win32MainWindowProc;
+	window_class.hInstance = instance;
+	window_class.hbrBackground = 0;
+	window_class.lpszClassName = APPLICATION_NAME;
 
-	if (RegisterClassExA(&windowClass))
+	if (RegisterClassExA(&window_class))
 	{
-		windowHandle =
-			CreateWindowExA(windowClass.style,
-							windowClass.lpszClassName,
+		window_handle =
+			CreateWindowExA(window_class.style,
+							window_class.lpszClassName,
 							APPLICATION_NAME,
 							WS_VISIBLE | WS_OVERLAPPED | WS_SYSMENU,
 							CW_USEDEFAULT, CW_USEDEFAULT,
 							CW_USEDEFAULT, CW_USEDEFAULT,
 							NULL, NULL,
 							instance, NULL);
-		if (windowHandle)
+		if (window_handle)
 		{
 			/// Setup
 			
@@ -757,11 +1621,6 @@ int CALLBACK WinMain(HINSTANCE instance,
 
 			memory.debug_arena.current_block		= Win32AllocateMemoryBlock(GIGABYTES(1), 4);
 			++memory.transient_arena.block_count;
-
-			memory.renderer_arena.current_block		= Win32AllocateMemoryBlock(MEGABYTES(1), 4);
-			memory.renderer_arena.allocate_function = &Win32AllocateMemoryBlock;
-			memory.renderer_arena.free_function		= &Win32FreeMemoryBlock;
-			++memory.renderer_arena.block_count;
 
 			FrameTempArena.current_block			= Win32AllocateMemoryBlock(MEGABYTES(1), 4);
 			++FrameTempArena.block_count;
@@ -788,49 +1647,24 @@ int CALLBACK WinMain(HINSTANCE instance,
 			// Raw input
 			bool input_ready = Win32InitRawInput();
 
-			// Renderer
-			bool renderer_ready = false;
-
-			{
-				HMODULE renderer_module = LoadLibraryA("renderer.dll");
-
-				if (renderer_module != INVALID_HANDLE_VALUE)
-				{
-					renderer_ready = Win32InitVulkanRenderer(renderer_module, &memory.renderer_arena,
-															 instance, windowHandle,
-															 memory.platform_api.RendererAPI.RendererState,
-															 memory.platform_api.RendererAPI.VulkanAPI);
-					renderer_ready = Win32LoadRendererFunctionPointers(renderer_module, &memory.platform_api.RendererAPI, &Win32RendererAPI);
-
-					if (renderer_ready)
-					{
-						do
-						{
-							BREAK_ON_FALSE(Win32RendererAPI.CreateSwapchain(NULL),			 renderer_ready);
-							BREAK_ON_FALSE(Win32RendererAPI.CreateSwapchainImages(NULL),	 renderer_ready);
-							BREAK_ON_FALSE(Win32RendererAPI.CreateDefaultRenderPass(),		 renderer_ready);
-							BREAK_ON_FALSE(Win32RendererAPI.CreateSwapchainFramebuffers(),	 renderer_ready);
-							BREAK_ON_FALSE(Win32RendererAPI.CreateSwapchainCommandBuffers(), renderer_ready);
-							BREAK_ON_FALSE(Win32RendererAPI.CreateSwapchainSemaphores(),	 renderer_ready);
-						}
-						while(0);
-					}
-				}
-
-				else
-				{
-					WIN32LOG_FATAL("Failed to load the renderer.dll module");
-				}
-			}
+			// Vulkan
+			win32_vulkan_binding vulkan_binding = {};
+			bool vulkan_ready = Win32InitVulkan(&FrameTempArena, &vulkan_binding,
+												&memory.vulkan_state, instance,
+												window_handle, APPLICATION_NAME,
+												APPLICATION_VERSION);
 
 			// Misc
 			QueryPerformanceFrequency(&PerformanceCounterFreq);
 
 			ClearMemoryArena(&FrameTempArena);
 
-			if (game_code.is_valid && input_ready && renderer_ready)
+			if (game_code.is_valid && input_ready && vulkan_ready)
 			{
 				Running = true;
+
+				ShowWindow(window_handle, SW_SHOW);
+
 				if (game_code.game_init_func(&memory))
 				{
 
@@ -839,8 +1673,10 @@ int CALLBACK WinMain(HINSTANCE instance,
 					{
 						LARGE_INTEGER frame_start_time = Win32GetWallClock();
 
+						// TODO(soimn): check if the window was resized, and recreate swapchain if resized or the recreate flag is set
+
 						MSG message;
-						while (PeekMessage(&message, windowHandle, 0, 0, PM_REMOVE))
+						while (PeekMessage(&message, window_handle, 0, 0, PM_REMOVE))
 						{
 // 							if (message.message == WM_INPUT)
 // 							{
@@ -881,11 +1717,7 @@ int CALLBACK WinMain(HINSTANCE instance,
 						}
 						#endif
 
-// 						Win32RendererAPI.BeginFrame();
-
 						game_code.game_update_and_render_func(&memory, TargetFrameSecounds);
-
-// 						Win32RendererAPI.EndFrame();
 
 						LARGE_INTEGER frame_end_time = Win32GetWallClock();
 
@@ -896,11 +1728,6 @@ int CALLBACK WinMain(HINSTANCE instance,
 							frame_time_elapsed += Win32GetSecoundsElapsed(frame_start_time, Win32GetWallClock());
 						}
 
-// 						char buffer[100];
-// 						frame_time_elapsed += Win32GetSecoundsElapsed(frame_start_time, Win32GetWallClock());
-// 						sprintf(buffer, "Frame finished in %f ms\n", frame_time_elapsed * 1000.0f);
-// 						WIN32LOG_DEBUG(buffer);
-			
 						// TODO(soimn): reset temporary frame local memory
 					}
 					/// Main Loop End
@@ -930,11 +1757,10 @@ int CALLBACK WinMain(HINSTANCE instance,
  *
  *	- Setup game input abstraction supporting future rebinding of keys
  *	- Refactor input handling to allow more explicit additions and deletions of devices
+ *	- Implement support for DirectInput
  *	- Setup XAudio2
- *	- Add integrated graphics support in the physical device
- *	  selection, and check setup for compatibility
- *	- Implement proper file handling with relative paths based on
- *	  a base directory
  *	- Implement a solution for freeing allocations instead of entire arenas
- *	- Setup a temp memory arena
+ *	- Change the explicit sleep at the end of the global loop to a wait on v-blank, and
+ *	  find a way to handle 144 Hz monitor refresh rates and update synchronization, and consider
+ *	  supporting several frames in flight.
  */

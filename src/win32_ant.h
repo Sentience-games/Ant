@@ -16,17 +16,9 @@
 
 #endif
 
+#define VK_USE_PLATFORM_WIN32_KHR
 #include "ant_platform.h"
-
-#ifdef ANT_DEBUG
-#define DEBUG_MODE
-#endif
-#define PLATFORM_WINDOWS
-#include "renderer/renderer.h"
-#undef PLATFORM_WINDOWS
-#ifdef ANT_DEBUG
-#undef DEBUG_MODE
-#endif
+#undef VK_USE_PLATFORM_WIN32_KHR
 
 #include "utils/utility_defines.h"
 #include "utils/memory_utils.h"
@@ -59,17 +51,11 @@ struct win32_platform_file_group
 	memory_arena memory;
 };
 
-/// Renderer
-struct win32_renderer_api
+/// Vulkan
+struct win32_vulkan_binding
 {
-	renderer_begin_frame_function* BeginFrame;
-	renderer_end_frame_function* EndFrame;
-	renderer_create_swapchain_function* CreateSwapchain;
-	renderer_create_swapchain_images_function* CreateSwapchainImages;
-	renderer_create_default_render_pass_function* CreateDefaultRenderPass;
-	renderer_create_swapchain_framebuffers_function* CreateSwapchainFramebuffers;
-	renderer_create_swapchain_command_buffers_function* CreateSwapchainCommandBuffers;
-	renderer_create_swapchain_semaphores_function* CreateSwapchainSemaphores;
+	HMODULE module;
+	vulkan_api_functions api;
 };
 
 /// Game

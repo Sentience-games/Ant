@@ -8,10 +8,6 @@
 #include "utils/cstring.h"
 
 global_variable platform_api_functions* Platform;
-global_variable platform_renderer_api* Renderer;
-global_variable renderer_state* RendererState;
-global_variable vulkan_api* VulkanAPI;
-
 global_variable memory_arena* DebugArena;
 
 // TODO(soimn):

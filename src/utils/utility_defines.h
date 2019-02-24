@@ -22,6 +22,8 @@
 
 #define CONCAT_(x, y) x##y
 #define CONCAT(x, y) CONCAT_(x, y)
+#define STRINGIFY_(x) #x
+#define STRINGIFY(x) STRINGIFY_(x)
 
 #define BITS(num) (1 << (num))
 #define ISBITSET(flag, bit) (((flag) & (bit)) != 0)

@@ -10,11 +10,6 @@ VK_GLOBAL_LEVEL_FUNCTION(vkEnumerateInstanceLayerProperties);
 
 #ifdef VK_INSTANCE_LEVEL_FUNCTION
 VK_INSTANCE_LEVEL_FUNCTION(vkDestroyInstance);
-
-#ifdef PLATFORM_WINDOWS
-VK_INSTANCE_LEVEL_FUNCTION(vkCreateWin32SurfaceKHR);
-#endif
-
 VK_INSTANCE_LEVEL_FUNCTION(vkGetPhysicalDeviceSurfaceSupportKHR);
 VK_INSTANCE_LEVEL_FUNCTION(vkGetPhysicalDeviceSurfaceCapabilitiesKHR);
 VK_INSTANCE_LEVEL_FUNCTION(vkGetPhysicalDeviceSurfaceFormatsKHR);
