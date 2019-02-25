@@ -70,6 +70,9 @@ enum PlatformFileTypeTag
 	PlatformFileType_WAV,
 	PlatformFileType_OBJ,
 
+	// NOTE(soimn): this is mostly for debugging
+	PlatformFileType_ShaderFile,
+
 	PlatformFileType_TagCount
 };
 

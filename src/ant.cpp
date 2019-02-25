@@ -12,7 +12,22 @@ EXPORT GAME_INIT_FUNCTION(GameInit)
 	bool failed_memory_initiaization = false;
 	if (!memory->is_initialized)
 	{
-// 		platform_file_group file_group = Platform->GetAllFilesOfTypeBegin(PlatformFileType_AssetFile);
+// 		platform_file_group file_group = Platform->GetAllFilesOfTypeBegin(PlatformFileType_ShaderFile);
+// 
+// 		VkShaderModule vertex_shader   = {};
+// 		VkShaderModule frag_shader	   = {};
+// 		VkShaderModule geometry_shader = {};
+// 
+// 		do
+// 		{
+// 			// NOTE(soimn): the version running from nvim crashes at this line, nullptr dereference?
+// 			if (strcompare(file_group.first_file_info->base_name, "polygon_v"));
+// 			if (strcompare(file_group.first_file_info->base_name, "polygon_f"));
+// 			if (strcompare(file_group.first_file_info->base_name, "polygon_g"));
+// 			break;
+// 		}
+// 
+// 		while(vertex_shader == VK_NULL_HANDLE && frag_shader == VK_NULL_HANDLE && geometry_shader == VK_NULL_HANDLE);
 // 
 // 		Platform->GetAllFilesOfTypeEnd(&file_group);
 

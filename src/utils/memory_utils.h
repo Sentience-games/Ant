@@ -74,7 +74,7 @@ RoundToAligned(memory_index size, uint8 alignment)
 	return size + AlignOffset((void*) ((uint8*)0 + size), alignment);
 }
 
-#define CopyArray(source, count, dest) Copy((source), (count) * sizeof(*(source)), (dest))
+#define CopyArray(source, count, dest) Copy((void*)(source), (count) * sizeof(*(source)), (dest))
 inline void*
 Copy(void* source, memory_index source_length, void* dest)
 {

@@ -29,6 +29,28 @@ strlength (const char* cstring, int32 max_value = INT32_MAX - 1)
 }
 
 inline int
+wstrlength (const wchar_t* wcstring, int32 max_value = INT32_MAX - 1)
+{
+	Assert(wcstring);
+	Assert(0 <= max_value);
+
+	int length = 0;
+
+	for (wchar_t* it = (wchar_t*)wcstring; *it; ++it)
+	{
+		if (length > max_value)
+		{
+			length = -1;
+			break;
+		}
+
+		++length;
+	}
+
+	return length;
+}
+
+inline int
 strcompare (const char* cstring_1, const char* cstring_2)
 {
 	Assert(cstring_1 && cstring_2);
@@ -233,6 +255,8 @@ substrconcat3 (const char* cstring_1, int num_chars_1,
 	return result;
 }
 
+
+// TODO(soimn): clean this up, stupid use of variable: length
 inline uint32
 strfind (const char* cstr, const char ch, bool find_last = false)
 {

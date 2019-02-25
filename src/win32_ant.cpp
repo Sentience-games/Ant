@@ -1253,14 +1253,105 @@ Win32InitVulkan(memory_arena* temp_memory, memory_arena* persistent_memory,
 /// File System Interaction
 ///
 
+// TODO(soimn): see if this breaks when the path is long enough
+internal wchar_t*
+Win32GetCWD(memory_arena* persistent_memory, uint32* result_length)
+{
+	wchar_t* result = NULL;
+
+	// FIXME(soimn): this will most certainly span multiple pages, which may be a problem
+	struct temporary_memory { memory_arena arena; };
+	temporary_memory* temp_memory = BootstrapPushSize(temporary_memory, arena, KILOBYTES(32));
+
+	u32 file_path_growth_amount = 256 * sizeof(wchar_t);
+	u32 file_path_memory_size = file_path_growth_amount;
+
+	wchar_t* file_path = (wchar_t*) PushSize(&temp_memory->arena, file_path_growth_amount);
+	u32 path_length;
+
+	for (;;)
+	{
+		path_length = GetModuleFileNameW(NULL, file_path, file_path_memory_size);
+		
+		// NOTE(soimn): this asserts that this function succeeds
+		Assert(path_length);
+
+		if (path_length != file_path_memory_size)
+		{
+			break;
+		}
+
+		else
+		{
+			if (file_path_growth_amount >= temp_memory->arena.current_block->remaining_space)
+			{
+				WIN32LOG_FATAL("Failed to get the current working directory of the game, out of memory");
+				return NULL;
+			}
+
+			else
+			{
+				file_path_memory_size += file_path_growth_amount;
+
+				PushSize(&temp_memory->arena, file_path_memory_size);
+				continue;
+			}
+		}
+	}
+
+	u32 length = 0;
+	for (wchar_t* scan = file_path; *scan; ++scan)
+	{	
+		if (*scan == L'\\')
+		{
+			length = (u32)(scan - file_path);
+		}
+	}
+
+	if (length == 0)
+	{
+		WIN32LOG_FATAL("Failed to get the current working directory of the game, no path separator found");
+		return NULL;
+	}
+
+	++length;
+
+	result = (wchar_t*) PushSize(persistent_memory, sizeof(wchar_t) * (length + 1));
+	CopyArray(file_path, length, result);
+	result[length] = (wchar_t)(NULL);
+
+	*result_length = length;
+
+	return result;
+}
+
+internal void
+Win32BuildFullyQualifiedPath(win32_game_info* game_info, const wchar_t* appendage,
+							 wchar_t* buffer, u32 buffer_length)
+{
+	u32 length_of_cwd = 0;
+	for (wchar_t* scan = (wchar_t*) game_info->cwd; *scan; ++scan)
+	{
+		++length_of_cwd;
+	}
+
+	i32 length_of_appendage = wstrlength(appendage, buffer_length);
+
+	Assert(length_of_appendage != -1);
+	Assert(length_of_cwd && buffer_length > (length_of_cwd + length_of_appendage));
+
+	CopyArray(game_info->cwd, length_of_cwd, buffer);
+	CopyArray(appendage, length_of_cwd + 1, buffer + length_of_cwd);
+};
+
 // TODO(soimn): make this more robust to enable hot loading capability in release mode
 #ifdef ANT_ENABLE_HOT_RELOADING
 FILETIME
-Win32DebugGetFileCreateTime(const char* file_path)
+Win32DebugGetFileCreateTime(const wchar_t* file_path)
 {
 	FILETIME result = {};
 
-	HANDLE file = CreateFileA(file_path, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+	HANDLE file = CreateFileW(file_path, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
 	if (file != INVALID_HANDLE_VALUE)
 	{
 		GetFileTime(file, &result, NULL, NULL);
@@ -1286,6 +1377,13 @@ PLATFORM_GET_ALL_FILES_OF_TYPE_BEGIN_FUNCTION(Win32GetAllFilesOfTypeBegin)
 		case PlatformFileType_AssetFile:
 			directory = L"data\\";
 			wildcard  = L"data\\*.aaf";
+		break;
+
+
+		// NOTE(soimn): this is temporary
+		case PlatformFileType_ShaderFile:
+			directory = L"data\\";
+			wildcard  = L"data\\*.spv";
 		break;
 
 		INVALID_DEFAULT_CASE;
@@ -1523,125 +1621,14 @@ MEMORY_FREE_MEMORY_BLOCK_FUNCTION(Win32FreeMemoryBlock)
 
 /// Game Code Hot Reload
 
-internal bool
-Win32SetupGameInfo(win32_game_info& game_info, memory_arena* persistent_memory)
-{
-	bool succeeded = false;
-
-	uint32 file_path_growth_amount = 256;
-	char* file_path = (char*) PushSize(&FrameTempArena, file_path_growth_amount);
-	uint32 file_path_memory_size = file_path_growth_amount;
-	uint32 path_length;
-
-	for (;;)
-	{
-		path_length = GetModuleFileNameA(NULL, file_path, file_path_memory_size);
-
-		if (path_length != file_path_memory_size)
-		{
-			break;
-		}
-
-		else
-		{
-			if (1024 > FrameTempArena.current_block->remaining_space)
-			{
-				WIN32LOG_ERROR("Win32SetupGameInfo failed. Out of memory");
-				return false;
-			}
-
-			else
-			{
-				file_path_memory_size += file_path_growth_amount;
-
-				PushSize(&FrameTempArena, file_path_memory_size);
-				continue;
-			}
-		}
-	}
-
-	uint32 index = strfind(file_path, '\\', true);
-
-	if (index == npos)
-	{
-		WIN32LOG_ERROR("An error occurred whilst trying to extrapolate the working directory of the game. Reason: module path is invalid");
-	}
-
-	else
-	{
-		uint32 length_of_dir = index + 1;
-
-		game_info.root_dir = PushString(persistent_memory, file_path, length_of_dir);
-
-		if (game_info.root_dir)
-		{
-			// Main DLL path
-			char* dll_suffix			  = ".dll";
-			char* loaded_dll_suffix		  = "_loaded.dll";
-			uint32 game_name_length		  = strlength(game_info.name);
-			uint32 dll_path_length		  = length_of_dir + game_name_length + strlength(dll_suffix);
-			uint32 loaded_dll_path_length = length_of_dir + game_name_length + strlength(loaded_dll_suffix);
-
-			int successfully_concatenated = -1;
-
-			do
-			{
-				game_info.dll_path = (char*) PushSize(persistent_memory, dll_path_length + 1);
-				if (game_info.dll_path)
-				{
-					successfully_concatenated = strconcat3(game_info.root_dir, game_info.name, dll_suffix, (char*) game_info.dll_path, dll_path_length + 1);
-					if (successfully_concatenated == -1)
-					{
-						break;
-					}
-				}
-
-				// Loaded DLL path
-				game_info.loaded_dll_path = (char*) PushSize(persistent_memory, loaded_dll_path_length + 1);
-				if (game_info.loaded_dll_path)
-				{
-					successfully_concatenated = strconcat3(game_info.root_dir, game_info.name, loaded_dll_suffix, (char*) game_info.loaded_dll_path, loaded_dll_path_length + 1);
-					if (successfully_concatenated == -1)
-					{
-						break;
-					}
-				}
-				
-// 					// Resource directory
-// 					char* resource_suffix = "res\\";
-// 					uint32 resource_dir_length = length_of_dir + strlength(resource_suffix);
-// 
-// 					game_info.resource_dir = (char*) PushSize(persistent_memory, resource_dir_length + 1);
-// 					if (game_info.resource_dir)
-// 					{
-// 						successfully_concatenated = strconcat(game_info.root_dir, resource_suffix, (char*) game_info.resource_dir, resource_dir_length + 1);
-// 						if (successfully_concatenated == -1)
-// 						{
-// 							break;
-// 						}
-// 					}
-			}
-			while(0);
-
-			if ((game_info.dll_path && game_info.loaded_dll_path /*&& game_info.resource_dir*/) &&
-				successfully_concatenated != -1)
-			{
-				succeeded = true;
-			}
-		}
-	}
-
-	return succeeded;
-}
-
 internal win32_game_code
-Win32LoadGameCode(const char* dll_path, const char* loaded_dll_path)
+Win32LoadGameCode(const wchar_t* dll_path, const wchar_t* loaded_dll_path)
 {
 	win32_game_code game_code = {};
 
-	CopyFileA(dll_path, loaded_dll_path, FALSE);
+	CopyFileW(dll_path, loaded_dll_path, FALSE);
 
-	game_code.module = LoadLibraryExA(loaded_dll_path, NULL, DONT_RESOLVE_DLL_REFERENCES);
+	game_code.module = LoadLibraryExW(loaded_dll_path, NULL, DONT_RESOLVE_DLL_REFERENCES);
 
 	if (game_code.module != NULL)
 	{
@@ -1749,9 +1736,6 @@ int CALLBACK WinMain(HINSTANCE instance,
 		{
 			/// Setup
 			
-			// Game Info
-			win32_game_info game_info = {APPLICATION_NAME, APPLICATION_VERSION};
-
 			// Memory
 			game_memory memory = {};
 
@@ -1783,10 +1767,44 @@ int CALLBACK WinMain(HINSTANCE instance,
 			memory.platform_api.ReadFromFile		   = &Win32ReadFromFile;
 			memory.platform_api.WriteToFile			   = &Win32WriteToFile;
 
+			// Game Info
+			bool game_info_valid = false;
+
+			win32_game_info game_info = {APPLICATION_NAME, APPLICATION_VERSION};
+			game_info.cwd = Win32GetCWD(&memory.persistent_arena, (u32*) &game_info.cwd_length);
+
+			{ //// Build dll path
+				const wchar_t* appendage = CONCAT(L, APPLICATION_NAME) L".dll";
+				u32 buffer_length = game_info.cwd_length + (u32) wstrlength(appendage) + 1;
+
+				game_info.dll_path = PushArray(&memory.persistent_arena, wchar_t, buffer_length);
+				Win32BuildFullyQualifiedPath(&game_info, appendage, (wchar_t*) game_info.dll_path, buffer_length);
+			}
+
+			{ //// Build loaded dll path
+				const wchar_t* appendage = CONCAT(L, APPLICATION_NAME) L"_loaded.dll";
+				u32 buffer_length = game_info.cwd_length + (u32) wstrlength(appendage) + 1;
+
+				game_info.loaded_dll_path = PushArray(&memory.persistent_arena, wchar_t, buffer_length);
+				Win32BuildFullyQualifiedPath(&game_info, appendage, (wchar_t*) game_info.loaded_dll_path, buffer_length);
+			}
+
+			// Set working directory
+			{
+				BOOL successfully_set_wd = SetCurrentDirectoryW(game_info.cwd);
+
+				if (successfully_set_wd == FALSE)
+				{
+					WIN32LOG_FATAL("Failed to set working directory to the proper value");
+				}
+
+				game_info_valid = (successfully_set_wd != 0);
+			}
+
 			// Game code
 			win32_game_code game_code = {};
 
-			if (Win32SetupGameInfo(game_info, &memory.persistent_arena))
+			if (game_info_valid)
 			{
 				game_code = Win32LoadGameCode(game_info.dll_path, game_info.loaded_dll_path);
 			}
@@ -1806,7 +1824,7 @@ int CALLBACK WinMain(HINSTANCE instance,
 
 			ClearMemoryArena(&FrameTempArena);
 
-			if (game_code.is_valid && input_ready && vulkan_ready)
+			if (game_info_valid && game_code.is_valid && input_ready && vulkan_ready)
 			{
 				Running = true;
 

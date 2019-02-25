@@ -89,9 +89,9 @@ struct win32_game_info
 	const char* name;
 	const uint32 version;
 
-	const char* root_dir;
-	const char* data_dir;
+	const wchar_t* cwd;
+	const u32 cwd_length;
 
-	const char* dll_path;
-	const char* loaded_dll_path;
+	const wchar_t* dll_path;
+	const wchar_t* loaded_dll_path;
 };
