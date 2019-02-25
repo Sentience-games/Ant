@@ -239,7 +239,7 @@ Win32InitVulkan(memory_arena* temp_memory, memory_arena* persistent_memory,
 
 				if (found_extension_count != ARRAY_COUNT(required_instance_extensions))
 				{
-					WIN32LOG_ERROR("Instance extension property validation failed. One or more of the required vulkan instance extensions are not"
+					WIN32LOG_FATAL("Instance extension property validation failed. One or more of the required vulkan instance extensions are not"
 								   " present.");
 					break;
 				}
@@ -274,7 +274,7 @@ Win32InitVulkan(memory_arena* temp_memory, memory_arena* persistent_memory,
 
 				if (found_layer_count != ARRAY_COUNT(required_layers))
 				{
-					WIN32LOG_ERROR("Instance layer property validation failed. One or more of the required vulkan layers are not present.");
+					WIN32LOG_FATAL("Instance layer property validation failed. One or more of the required vulkan layers are not present.");
 					break;
 				}
 			}
@@ -282,21 +282,21 @@ Win32InitVulkan(memory_arena* temp_memory, memory_arena* persistent_memory,
 			
 			{ //// Create instance
 				VkApplicationInfo app_info = {};
-				app_info.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
-				app_info.pApplicationName = application_name;
+				app_info.sType				= VK_STRUCTURE_TYPE_APPLICATION_INFO;
+				app_info.pApplicationName	= application_name;
 				app_info.applicationVersion = application_version;
-				app_info.pEngineName = "Ant Engine";
-				app_info.engineVersion = ANT_VERSION;
-				app_info.apiVersion = VK_API_VERSION_1_0;
+				app_info.pEngineName		= "Ant Engine";
+				app_info.engineVersion		= ANT_VERSION;
+				app_info.apiVersion			= VK_API_VERSION_1_0;
 
 				VkInstanceCreateInfo create_info = {};
-				create_info.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
-				create_info.pNext = NULL;
-				create_info.flags = 0;
-				create_info.pApplicationInfo = &app_info;
-				create_info.enabledLayerCount = ARRAY_COUNT(required_layers);
-				create_info.ppEnabledLayerNames = required_layers;
-				create_info.enabledExtensionCount = ARRAY_COUNT(required_instance_extensions);
+				create_info.sType					= VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
+				create_info.pNext					= NULL;
+				create_info.flags					= 0;
+				create_info.pApplicationInfo		= &app_info;
+				create_info.enabledLayerCount		= ARRAY_COUNT(required_layers);
+				create_info.ppEnabledLayerNames		= required_layers;
+				create_info.enabledExtensionCount	= ARRAY_COUNT(required_instance_extensions);
 				create_info.ppEnabledExtensionNames = required_instance_extensions;
 
 				VK_CHECK(VulkanAPI->vkCreateInstance(&create_info, NULL, &VulkanState->instance));
@@ -307,7 +307,7 @@ Win32InitVulkan(memory_arena* temp_memory, memory_arena* persistent_memory,
 				VulkanAPI->##func = (PFN_##func) VulkanAPI->vkGetInstanceProcAddr(VulkanState->instance, STRINGIFY(func));\
 				if (!VulkanAPI->##func)\
 				{\
-					WIN32LOG_ERROR("Failed to load instance level function '" STRINGIFY(func) "'.");\
+					WIN32LOG_FATAL("Failed to load instance level function '" STRINGIFY(func) "'.");\
 					break;\
 				}
 			
@@ -334,14 +334,14 @@ Win32InitVulkan(memory_arena* temp_memory, memory_arena* persistent_memory,
 											  | VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
 
 				create_info.pfnUserCallback = &Win32VulkanDebugCallback;
-				create_info.pUserData = NULL;
+				create_info.pUserData		= NULL;
 
 				PFN_vkCreateDebugUtilsMessengerEXT vkCreateDebugUtilsMessengerEXT =
 					(PFN_vkCreateDebugUtilsMessengerEXT) VulkanAPI->vkGetInstanceProcAddr(VulkanState->instance, "vkCreateDebugUtilsMessengerEXT");
 				
 				if (!vkCreateDebugUtilsMessengerEXT)
 				{
-					WIN32LOG_ERROR("Failed to load the instance level function 'vkCreateDebugUtilsMessengerEXT'.");
+					WIN32LOG_FATAL("Failed to load the instance level function 'vkCreateDebugUtilsMessengerEXT'.");
 					break;
 				}
 
@@ -363,7 +363,7 @@ Win32InitVulkan(memory_arena* temp_memory, memory_arena* persistent_memory,
 
 				if (!vkCreateWin32SurfaceKHR)
 				{
-					WIN32LOG_ERROR("Failed to load the instance level function 'vkCreateWin32SurfaceKHR'.");
+					WIN32LOG_FATAL("Failed to load the instance level function 'vkCreateWin32SurfaceKHR'.");
 					break;
 				}
 
@@ -525,7 +525,7 @@ Win32InitVulkan(memory_arena* temp_memory, memory_arena* persistent_memory,
 
 				if (chosen_device == VK_NULL_HANDLE)
 				{
-					WIN32LOG_ERROR("Failed to find a suitable device supporting vulkan");
+					WIN32LOG_FATAL("Failed to find a suitable device supporting vulkan");
 					break;
 				}
 
@@ -536,10 +536,10 @@ Win32InitVulkan(memory_arena* temp_memory, memory_arena* persistent_memory,
 			}
 
 			{ //// Acquire queue families
-				VulkanState->graphics_family			= -1;
-				VulkanState->compute_family			= -1;
+				VulkanState->graphics_family		   = -1;
+				VulkanState->compute_family			   = -1;
 				VulkanState->dedicated_transfer_family = -1;
-				VulkanState->present_family			= -1;
+				VulkanState->present_family			   = -1;
 
 				u32 queue_family_count;
 				VulkanAPI->vkGetPhysicalDeviceQueueFamilyProperties(VulkanState->physical_device, &queue_family_count, NULL);
@@ -551,7 +551,7 @@ Win32InitVulkan(memory_arena* temp_memory, memory_arena* persistent_memory,
 				{
 					if (queue_family_properties[i].queueCount != 0)
 					{
-						if (queue_family_properties[i].queueFlags & VK_QUEUE_GRAPHICS_BIT
+						if ((queue_family_properties[i].queueFlags & VK_QUEUE_GRAPHICS_BIT)
 							&& VulkanState->graphics_family == -1)
 						{
 							VulkanState->graphics_family = (i32) i;
@@ -583,7 +583,7 @@ Win32InitVulkan(memory_arena* temp_memory, memory_arena* persistent_memory,
 
 				if (VulkanState->graphics_family == -1 || VulkanState->present_family == -1)
 				{
-					WIN32LOG_ERROR("Failed to acquire graphics and/or present queue families.");
+					WIN32LOG_FATAL("Failed to acquire graphics and/or present queue families.");
 					break;
 				}
 
@@ -592,7 +592,7 @@ Win32InitVulkan(memory_arena* temp_memory, memory_arena* persistent_memory,
 						&& queue_family_properties[VulkanState->compute_family].queueCount < 2))
 				{
 					VulkanState->supports_compute = false;
-					VulkanState->compute_family = -1;
+					VulkanState->compute_family	  = -1;
 				}
 
 				else if ((VulkanState->compute_family == VulkanState->present_family
@@ -600,14 +600,14 @@ Win32InitVulkan(memory_arena* temp_memory, memory_arena* persistent_memory,
 						 && queue_family_properties[VulkanState->compute_family].queueCount < 3)
 				{
 					VulkanState->supports_compute = false;
-					VulkanState->compute_family = -1;
+					VulkanState->compute_family   = -1;
 
 					if (VulkanState->dedicated_transfer_family == VulkanState->graphics_family
 						|| (VulkanState->dedicated_transfer_family == VulkanState->present_family
 							&& queue_family_properties[VulkanState->present_family].queueCount < 2))
 					{
 						VulkanState->supports_dedicated_transfer = false;
-						VulkanState->dedicated_transfer_family = -1;
+						VulkanState->dedicated_transfer_family   = -1;
 					}
 
 					else if (VulkanState->dedicated_transfer_family != -1)
@@ -724,7 +724,7 @@ Win32InitVulkan(memory_arena* temp_memory, memory_arena* persistent_memory,
 				VulkanAPI->##func = (PFN_##func) VulkanAPI->vkGetDeviceProcAddr(VulkanState->device, #func);\
 				if (!VulkanAPI->##func)\
 				{\
-					WIN32LOG_ERROR("Failed to load device level function '" #func "'.");\
+					WIN32LOG_FATAL("Failed to load device level function '" #func "'.");\
 					break;\
 				}
 			
@@ -804,7 +804,7 @@ Win32InitVulkan(memory_arena* temp_memory, memory_arena* persistent_memory,
 
 					if ((capabilities.supportedUsageFlags & VK_IMAGE_USAGE_TRANSFER_DST_BIT) == 0)
 					{
-						WIN32LOG_ERROR("Failed to create swapchain, as the surface does not support image transfers to the swapchain images.");
+						WIN32LOG_FATAL("Failed to create swapchain, as the surface does not support image transfers to the swapchain images.");
 						break;
 					}
 
@@ -823,7 +823,7 @@ Win32InitVulkan(memory_arena* temp_memory, memory_arena* persistent_memory,
 
 					if (format_count == 0)
 					{
-						WIN32LOG_ERROR("Failed to retrieve surface formats for swapchain creation.");
+						WIN32LOG_FATAL("Failed to retrieve surface formats for swapchain creation.");
 						break;
 					}
 
@@ -836,7 +836,7 @@ Win32InitVulkan(memory_arena* temp_memory, memory_arena* persistent_memory,
 					if (format_count == 1 && formats[0].format == VK_FORMAT_UNDEFINED)
 					{
 						swapchain_format = {VK_FORMAT_B8G8R8A8_UNORM, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR};
-						found_format = true;
+						found_format	 = true;
 					}
 
 					else
@@ -846,7 +846,7 @@ Win32InitVulkan(memory_arena* temp_memory, memory_arena* persistent_memory,
 							if (formats[i].format == VK_FORMAT_B8G8R8A8_UNORM && formats[i].colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR)
 							{
 								swapchain_format = formats[i];
-								found_format = true;
+								found_format	 = true;
 								break;
 							}
 						}
@@ -876,6 +876,7 @@ Win32InitVulkan(memory_arena* temp_memory, memory_arena* persistent_memory,
 						if (present_modes[i] == VK_PRESENT_MODE_FIFO_RELAXED_KHR)
 						{
 							swapchain_present_mode = present_modes[i];
+							best_score = 1000;
 							break;
 						}
 
@@ -897,11 +898,12 @@ Win32InitVulkan(memory_arena* temp_memory, memory_arena* persistent_memory,
 
 					if (!best_score)
 					{
-						WIN32LOG_ERROR("Failed to find a suitable present mode for swapchain creation");
+						WIN32LOG_FATAL("Failed to find a suitable present mode for swapchain creation");
+						break;
 					}
 				}
 
-				VulkanState->swapchain.extent		   = swapchain_extent;
+				VulkanState->swapchain.extent		  = swapchain_extent;
 				VulkanState->swapchain.surface_format = swapchain_format;
 				VulkanState->swapchain.present_mode   = swapchain_present_mode;
 
@@ -928,43 +930,16 @@ Win32InitVulkan(memory_arena* temp_memory, memory_arena* persistent_memory,
 				VK_CHECK(VulkanAPI->vkGetSwapchainImagesKHR(VulkanState->device, VulkanState->swapchain.handle,
 														   &VulkanState->swapchain.image_count, NULL));
 
-				VulkanState->swapchain.images		= PushArray(persistent_memory, VkImage, VulkanState->swapchain.image_count);
-// 				VulkanState->swapchain.image_views = PushArray(persistent_memory, VkImageView, VulkanState->swapchain.image_count);
+				VulkanState->swapchain.images = PushArray(persistent_memory, VkImage, VulkanState->swapchain.image_count);
 
 				VK_CHECK(VulkanAPI->vkGetSwapchainImagesKHR(VulkanState->device, VulkanState->swapchain.handle,
 														   &VulkanState->swapchain.image_count, VulkanState->swapchain.images));
 
-					VulkanState->swapchain.subresource_range.aspectMask		= VK_IMAGE_ASPECT_COLOR_BIT;
-					VulkanState->swapchain.subresource_range.baseMipLevel	= 0;
-					VulkanState->swapchain.subresource_range.levelCount		= 1;
-					VulkanState->swapchain.subresource_range.baseArrayLayer = 0;
-					VulkanState->swapchain.subresource_range.layerCount		= 1;
-
-// 				bool encountered_errors = false;
-// 				for (u32 i = 0; i < VulkanState->swapchain.image_count; ++i)
-// 				{
-// 					VkImageViewCreateInfo create_info = {};
-// 					create_info.sType			 = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-// 					create_info.pNext			 = NULL;
-// 					create_info.flags			 = 0;
-// 					create_info.image			 = VulkanState->swapchain.images[i];
-// 					create_info.viewType		 = VK_IMAGE_VIEW_TYPE_2D;
-// 					create_info.format			 = VulkanState->swapchain.surface_format.format;
-// 
-// 					create_info.components		 = {VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY,
-// 													VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY};
-// 
-// 					create_info.subresourceRange = VulkanState->swapchain.subresource_range;
-// 
-// 					VK_NESTED_CHECK(VulkanAPI->vkCreateImageView(VulkanState->device, &create_info, NULL, &VulkanState->swapchain.image_views[i]),
-// 																encountered_errors);
-// 				}
-// 
-// 				if (encountered_errors)
-// 				{
-// 					WIN32LOG_ERROR("Failed to create image views for the swapchain images");
-// 					break;
-// 				}
+				VulkanState->swapchain.subresource_range.aspectMask		= VK_IMAGE_ASPECT_COLOR_BIT;
+				VulkanState->swapchain.subresource_range.baseMipLevel	= 0;
+				VulkanState->swapchain.subresource_range.levelCount		= 1;
+				VulkanState->swapchain.subresource_range.baseArrayLayer = 0;
+				VulkanState->swapchain.subresource_range.layerCount		= 1;
 			}
 
 			{ //// Create swapchain semaphores
@@ -1046,7 +1021,7 @@ Win32InitVulkan(memory_arena* temp_memory, memory_arena* persistent_memory,
 
 				if (selected_memory_type == -1)
 				{
-					WIN32LOG_ERROR("Failed to find an appropriate memory type for the main render target image");
+					WIN32LOG_FATAL("Failed to find an appropriate memory type for the main render target image");
 					break;
 				}
 
@@ -1156,7 +1131,7 @@ Win32InitVulkan(memory_arena* temp_memory, memory_arena* persistent_memory,
 				create_info.sType			  = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
 				create_info.pNext			  = NULL;
 				create_info.flags			  = 0;
-				create_info.queueFamilyIndex = VulkanState->graphics_family;
+				create_info.queueFamilyIndex  = VulkanState->graphics_family;
 
 				VK_CHECK(VulkanAPI->vkCreateCommandPool(VulkanState->device, &create_info, NULL, &VulkanState->render_target.render_pool));
 
@@ -1253,11 +1228,12 @@ Win32InitVulkan(memory_arena* temp_memory, memory_arena* persistent_memory,
 
 				if (encountered_errors)
 				{
-					WIN32LOG_ERROR("Failed to record swapchain present command buffers");
+					WIN32LOG_FATAL("Failed to record swapchain present command buffers");
 					break;
 				}
 			}
 
+			#undef VK_NESTED_CHECK
 			#undef VK_CHECK
 
 			succeeded = true;
@@ -1267,7 +1243,7 @@ Win32InitVulkan(memory_arena* temp_memory, memory_arena* persistent_memory,
 
 	else
 	{
-		WIN32LOG_ERROR("Failed to load vulkan-1.dll");
+		WIN32LOG_FATAL("Failed to load vulkan-1.dll");
 	}
 
 	return succeeded;
@@ -1824,9 +1800,6 @@ int CALLBACK WinMain(HINSTANCE instance,
 												&vulkan_binding, &memory.vulkan_state,
 												instance, window_handle,
 												APPLICATION_NAME, APPLICATION_VERSION);
-
-			VulkanAPI	= &vulkan_binding.api;
-			VulkanState = &memory.vulkan_state;
 
 			// Misc
 			QueryPerformanceFrequency(&PerformanceCounterFreq);
