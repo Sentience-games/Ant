@@ -3,63 +3,103 @@
 layout(points) in;
 layout(triangle_strip, max_vertices = 3) out;
 
-//
-layout(location = 0) in vec4  color_or_texture[];
-layout(location = 1) in vec4 rotation_dimensions[];
-
-// NOTE(soimn): type and flags are currently unused, but are planned to hold info about textures and ui element type
-layout(location = 2) in ivec4 count_type_flags[];
+layout(location = 0) in vec4 color[];
+layout(location = 1) in vec4 ec_size_offset[];
+layout(location = 2) in float rotation[];
+layout(location = 3) in vec2 uv[][64];
 
 layout(location = 0) out vec4 frag_color;
 layout(location = 1) out vec2 frag_texture_coord;
 
+mat2 GetRotation(float rads)
+{
+	mat2 result;
+	vec2 col_1 = vec2(cos(rads), sin(rads));
+	vec2 col_2 = vec2(-sin(rads), cos(rads));
+	result[0] = col_1;
+	result[1] = col_2;
+
+	return result;
+}
+
+mat2 GetScale(float width, float height)
+{
+	mat2 result;
+	vec2 col_1 = vec2(width, 0);
+	vec2 col_2 = vec2(0, height);
+	result[0] = col_1;
+	result[1] = col_2;
+
+	return result;
+}
+    
+const float PI = 3.1415926535;
+
 void main () {
-	vec2 root_pos	  = gl_in[0].gl_Position.xy;
-	vec2 dimensions	  = rotation_dimensions[0].yz;
-	vec4 color		  = color_or_texture[0];
-	vec2 tex_coord	  = color_or_texture[0].xy;
-	uint vertex_count = count_type_flags[0].x;
+	vec2 first_vertex;
+	vec2 previous_vertex;
+	uint edge_count = uint(ec_size_offset[0].x);
+	float size = ec_size_offset[0].y;
+	float offset = ec_size_offset[0].z;
+    float width = gl_in[0].gl_Position.z;
+    float height = gl_in[0].gl_Position.w;
+	mat2 adjustment = GetRotation(rotation[0]) * GetScale(width, height) * GetRotation(offset);
 
-	vec2 previous_vertex = root_pos;
-
-	if (vertex_count == 4)
+	if (edge_count > 64)
 	{
-		vec2 UPLE = vec2(-1.0, 1.0);
-		vec2 UPRI = vec2(dimensions.x, 1.0);
-		vec2 LOLE = vec2(-1.0, -dimensions.y);
-		vec2 LORI = vec2(dimensions.x, dimensions.y);
+		edge_count = 64;
+	}
 
-		UPLE += root_pos;
-		UPRI += root_pos;
-		LOLE += root_pos;
-		LORI += root_pos;
+	float central_angle = (2.0 * PI) / float(edge_count);
+	float current_angle = 0.0;
 
-		gl_Position = vec4(UPRI, 0.0 , 0.0);
-		frag_color = color;
+	float radius = size;
+
+	first_vertex = adjustment * vec2(radius, 0);
+	gl_Position = vec4(first_vertex, 0.0, 0.0);
+	frag_color = color[0];
+    frag_texture_coord = uv[0][0];
+	EmitVertex();
+	previous_vertex = first_vertex;
+	current_angle += central_angle;
+
+	previous_vertex = adjustment * GetRotation(current_angle) * previous_vertex;
+	gl_Position = vec4(previous_vertex, 0.0, 0.0);
+	frag_color = color[0];
+    frag_texture_coord = uv[0][1];
+	EmitVertex();
+	current_angle += central_angle;
+
+	previous_vertex = adjustment * GetRotation(current_angle) * previous_vertex;
+	gl_Position = vec4(previous_vertex, 0.0, 0.0);
+	frag_color = color[0];
+    frag_texture_coord = uv[0][2];
+	EmitVertex();
+	current_angle += central_angle;
+
+	EndPrimitive();
+
+    uint current_uv_index = 3;
+	while (current_angle < (2 * PI - central_angle))
+	{
+		gl_Position = vec4(first_vertex, 0.0, 0.0);
+		frag_color = color[0];
+        frag_texture_coord = uv[0][0];
 		EmitVertex();
 
-		gl_Position = vec4(UPLE, 0.0 , 0.0);
-		frag_color = color;
+		gl_Position = vec4(previous_vertex, 0.0, 0.0);
+		frag_color = color[0];
+        frag_texture_coord = uv[0][current_uv_index];
+		EmitVertex();
+		current_angle += central_angle;
+        ++current_uv_index;
+
+		previous_vertex = adjustment * GetRotation(current_angle) * previous_vertex;
+		gl_Position = vec4(previous_vertex, 0.0, 0.0);
+		frag_color = color[0];
+        frag_texture_coord = uv[0][current_uv_index];
 		EmitVertex();
 
-		gl_Position = vec4(LOLE, 0.0 , 0.0);
-		frag_color = color;
-		EmitVertex();
-
-		EndPrimitive();
-
-		gl_Position = vec4(LOLE, 0.0 , 0.0);
-		frag_color = color;
-		EmitVertex();
-
-		gl_Position = vec4(LORI, 0.0 , 0.0);
-		frag_color = color;
-		EmitVertex();
-
-		gl_Position = vec4(UPRI, 0.0 , 0.0);
-		frag_color = color;
-		EmitVertex();
-	
 		EndPrimitive();
 	}
 }
