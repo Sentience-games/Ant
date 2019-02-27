@@ -1,32 +1,37 @@
 #version 450
 
-layout(push_constant) uniform pushConstants {
+layout(push_constant) uniform PushConstants {
 	vec2 position;
-	float width;
-	float height;
 	uint edge_count;
 	float size;
-	float offset;
-    vec4 color;
-	float rotation;
+	vec4 color;
+
+	#if 0
+	bool use_uv;
+	vec2 uv;
+	#endif
 } push_info;
 
-layout(binding = 0) uniform TextCoords
-{
-	vec2 uv[64];
-} uv_data;
+layout(location = 0) out uint edge_count;
+layout(location = 1) out float size;
+layout(location = 2) out vec4 color;
 
-layout(location = 0) out vec4 color;
-layout(location = 1) out vec4 ec_size_offset;
-layout(location = 2) out float rotation;
-layout(location = 3) out vec2 out_uv[64];
+#if 0
+layout(location = 3) out vec2 uv;
+#endif
 
 void main () {
-	gl_Position = vec4(push_info.position, push_info.width, push_info.height);
-	color = push_info.color;
-	ec_size_offset = vec4(float(push_info.edge_count), push_info.size, push_info.offset, 0.0);
-	rotation = push_info.rotation;
-    out_uv = uv_data.uv;
-}
+	#if 0
+	gl_Position = vec4(position, (push_info.use_uv ? 1.0 : 0.0), 1.0);
+	#else
+	gl_Position = vec4(position, 0.0, 1.0);
+	#endif
 
-// D:\VulkanSDK\1.1.92.1\bin\glslangValidator.exe -V -o run_tree/polygon_g.spv run_tree\polygon.geom 
+	edge_count = push_info.edge_count;
+	size = push_info.size;
+	color = push_info.color;
+
+	#if 0
+	uv = push_info.uv;
+	#endif
+}

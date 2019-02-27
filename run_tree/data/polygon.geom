@@ -1,107 +1,67 @@
 #version 450
 
 layout(points) in;
-layout(triangle_strip, max_vertices = 3) out;
+layout(triangle_strip, max_vertices = 3)
 
-layout(location = 0) in vec4 color[];
-layout(location = 1) in vec4 ec_size_offset[];
-layout(location = 2) in float rotation[];
-layout(location = 3) in vec2 uv[][64];
+layout(location = 0) in uint in_edge_count[];
+layout(location = 1) in uint in_size[];
+layout(location = 2) in vec4 in_color[];
 
-layout(location = 0) out vec4 frag_color;
-layout(location = 1) out vec2 frag_texture_coord;
+#if 0
+layout(location = 3) in vec2 in_uv[];
+#endif
 
-mat2 GetRotation(float rads)
-{
-	mat2 result;
-	vec2 col_1 = vec2(cos(rads), sin(rads));
-	vec2 col_2 = vec2(-sin(rads), cos(rads));
-	result[0] = col_1;
-	result[1] = col_2;
+layout(location = 0) out vec4 out_color;
+layout(location = 1) out vec3 out_uv;
 
-	return result;
-}
-
-mat2 GetScale(float width, float height)
-{
-	mat2 result;
-	vec2 col_1 = vec2(width, 0);
-	vec2 col_2 = vec2(0, height);
-	result[0] = col_1;
-	result[1] = col_2;
-
-	return result;
-}
-    
 const float PI = 3.1415926535;
 
-void main () {
-	vec2 first_vertex;
-	vec2 previous_vertex;
-	uint edge_count = uint(ec_size_offset[0].x);
-	float size = ec_size_offset[0].y;
-	float offset = ec_size_offset[0].z;
-    float width = gl_in[0].gl_Position.z;
-    float height = gl_in[0].gl_Position.w;
-	mat2 adjustment = GetRotation(rotation[0]) * GetScale(width, height) * GetRotation(offset);
+void main ()
+{
+	vec2 position = gl_in[0].gl_Position.xy;
+	uint edge_count = in_edge_count[0];
 
-	if (edge_count > 64)
+	float central_angle = (2 * PI) / edge_count;
+	mat2 walk_matrix =  mat2(cos(central_angle), sin(central_angle),
+							-sin(central_angle), cos(central_angle));
+	
+	float radius = in_size[0];
+
+	vec4 first_vertex = vec4(radius, 0.0, 0.0, 1.0);
+	vec4 previous_vertex = walk_matrix * first_vertex;
+	
+	#if 0
+	use_uv_flag = gl_in[0].gl_Position.z;
+
+	vec2 first_uv = vec4(in_uv[0], 0.0, 0.0) + vec4(radius, 0.0);
+	vec2 prev_uv = first_uv;
+	#endif
+
+	for (uint i = 0; i < edge_count; ++i)
 	{
-		edge_count = 64;
-	}
-
-	float central_angle = (2.0 * PI) / float(edge_count);
-	float current_angle = 0.0;
-
-	float radius = size;
-
-	first_vertex = adjustment * vec2(radius, 0);
-	gl_Position = vec4(first_vertex, 0.0, 0.0);
-	frag_color = color[0];
-    frag_texture_coord = uv[0][0];
-	EmitVertex();
-	previous_vertex = first_vertex;
-	current_angle += central_angle;
-
-	previous_vertex = adjustment * GetRotation(current_angle) * previous_vertex;
-	gl_Position = vec4(previous_vertex, 0.0, 0.0);
-	frag_color = color[0];
-    frag_texture_coord = uv[0][1];
-	EmitVertex();
-	current_angle += central_angle;
-
-	previous_vertex = adjustment * GetRotation(current_angle) * previous_vertex;
-	gl_Position = vec4(previous_vertex, 0.0, 0.0);
-	frag_color = color[0];
-    frag_texture_coord = uv[0][2];
-	EmitVertex();
-	current_angle += central_angle;
-
-	EndPrimitive();
-
-    uint current_uv_index = 3;
-	while (current_angle < (2 * PI - central_angle))
-	{
-		gl_Position = vec4(first_vertex, 0.0, 0.0);
-		frag_color = color[0];
-        frag_texture_coord = uv[0][0];
+		gl_Position = first_vertex;
+		out_color = in_color[0];
+		#if 0
+		out_uv = vec3(first_uv, use_uv_flag);
+		#endif
 		EmitVertex();
 
-		gl_Position = vec4(previous_vertex, 0.0, 0.0);
-		frag_color = color[0];
-        frag_texture_coord = uv[0][current_uv_index];
+		gl_Position = previous_vertex;
+		out_color = in_color[0];
+		#if 0
+		out_uv = vec3(prev_uv, use_uv_flag);
+		#endif
 		EmitVertex();
-		current_angle += central_angle;
-        ++current_uv_index;
 
-		previous_vertex = adjustment * GetRotation(current_angle) * previous_vertex;
-		gl_Position = vec4(previous_vertex, 0.0, 0.0);
-		frag_color = color[0];
-        frag_texture_coord = uv[0][current_uv_index];
+		previous_vertex = walk_matrix * previous_vertex;
+		gl_Position = previous_vertex;
+		out_color = in_color[0];
+		#if 0
+		prev_uv = walk_matrix * prev_uv;
+		out_uv = vec3(prev_uv, use_uv_flag);
+		#endif
 		EmitVertex();
 
 		EndPrimitive();
 	}
 }
-
-// D:\VulkanSDK\1.1.92.1\bin\glslangValidator.exe -V -o run_tree/polygon_g.spv run_tree\polygon.geom 
