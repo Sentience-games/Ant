@@ -9,9 +9,6 @@ global_variable bool Running						 = false;
 global_variable float TargetFrameSecounds			 = (float) (1.0f / ((float)DEFAULT_TARGET_FPS * 1000.0f));
 global_variable LARGE_INTEGER PerformanceCounterFreq = {};
 
-global_variable vulkan_api_functions* VulkanAPI;
-global_variable vulkan_renderer_state* VulkanState;
-
 global_variable memory_arena FrameTempArena;
 
 ///
@@ -87,6 +84,323 @@ Win32HandleRawInput(UINT msgCode, WPARAM wParam,
 	UNUSED_PARAMETER(lParam);
 
 	WIN32LOG_DEBUG("Input!");
+}
+
+///
+/// File System Interaction
+///
+
+// TODO(soimn): see if this breaks when the path is long enough
+internal wchar_t*
+Win32GetCWD(memory_arena* persistent_memory, uint32* result_length)
+{
+	wchar_t* result = NULL;
+
+	// FIXME(soimn): this will most certainly span multiple pages, which may be a problem
+	struct temporary_memory { memory_arena arena; };
+	temporary_memory* temp_memory = BootstrapPushSize(temporary_memory, arena, KILOBYTES(32));
+
+	u32 file_path_growth_amount = 256 * sizeof(wchar_t);
+	u32 file_path_memory_size = file_path_growth_amount;
+
+	wchar_t* file_path = (wchar_t*) PushSize(&temp_memory->arena, file_path_growth_amount);
+	u32 path_length;
+
+	for (;;)
+	{
+		path_length = GetModuleFileNameW(NULL, file_path, file_path_memory_size);
+		
+		// NOTE(soimn): this asserts that this function succeeds
+		Assert(path_length);
+
+		if (path_length != file_path_memory_size)
+		{
+			break;
+		}
+
+		else
+		{
+			if (file_path_growth_amount >= temp_memory->arena.current_block->remaining_space)
+			{
+				WIN32LOG_FATAL("Failed to get the current working directory of the game, out of memory");
+				return NULL;
+			}
+
+			else
+			{
+				file_path_memory_size += file_path_growth_amount;
+
+				PushSize(&temp_memory->arena, file_path_memory_size);
+				continue;
+			}
+		}
+	}
+
+	u32 length = 0;
+	for (wchar_t* scan = file_path; *scan; ++scan)
+	{	
+		if (*scan == L'\\')
+		{
+			length = (u32)(scan - file_path);
+		}
+	}
+
+	if (length == 0)
+	{
+		WIN32LOG_FATAL("Failed to get the current working directory of the game, no path separator found");
+		return NULL;
+	}
+
+	++length;
+
+	result = (wchar_t*) PushSize(persistent_memory, sizeof(wchar_t) * (length + 1));
+	CopyArray(file_path, length, result);
+	result[length] = (wchar_t)(NULL);
+
+	*result_length = length;
+
+	return result;
+}
+
+
+// FIXME(soimn): produces ant_loaded.dl instead of ant_loaded.dll
+internal void
+Win32BuildFullyQualifiedPath(win32_game_info* game_info, const wchar_t* appendage,
+							 wchar_t* buffer, u32 buffer_length)
+{
+	u32 length_of_cwd = 0;
+	for (wchar_t* scan = (wchar_t*) game_info->cwd; *scan; ++scan)
+	{
+		++length_of_cwd;
+	}
+
+	i32 length_of_appendage = wstrlength(appendage, buffer_length);
+
+	Assert(length_of_appendage != -1);
+	Assert(length_of_cwd && buffer_length > (length_of_cwd + length_of_appendage));
+
+	CopyArray(game_info->cwd, length_of_cwd, buffer);
+	CopyArray(appendage, length_of_appendage, buffer + length_of_cwd);
+};
+
+// TODO(soimn): make this more robust to enable hot loading capability in release mode
+#ifdef ANT_ENABLE_HOT_RELOADING
+FILETIME
+Win32DebugGetFileCreateTime(const wchar_t* file_path)
+{
+	FILETIME result = {};
+
+	WIN32_FILE_ATTRIBUTE_DATA data;
+	if (GetFileAttributesExW(file_path, GetFileExInfoStandard, &data))
+	{
+		result = data.ftLastWriteTime;
+	}
+
+	return result;
+}
+#endif
+
+PLATFORM_GET_ALL_FILES_OF_TYPE_BEGIN_FUNCTION(Win32GetAllFilesOfTypeBegin)
+{
+	platform_file_group result = {};
+
+	win32_platform_file_group* win32_file_group = BootstrapPushSize(win32_platform_file_group, memory, KILOBYTES(1), alignof(win32_platform_file_group));
+	result.platform_data = win32_file_group;
+
+	wchar_t* directory = L"";
+	wchar_t* wildcard  = L"*.*";
+
+	switch(file_type)
+	{
+		case PlatformFileType_AssetFile:
+			directory = L"data\\";
+			wildcard  = L"data\\*.aaf";
+		break;
+
+
+		// NOTE(soimn): this is temporary
+		case PlatformFileType_ShaderFile:
+			directory = L"data\\";
+			wildcard  = L"data\\*.spv";
+		break;
+
+		INVALID_DEFAULT_CASE;
+	}
+
+	u32 directory_length = 0;
+
+	for (wchar_t* it = directory; *it; ++it)
+	{
+		++directory_length;
+	}
+
+	WIN32_FIND_DATAW find_data;
+	HANDLE find_handle = FindFirstFileW(wildcard, &find_data);
+	while(find_handle != INVALID_HANDLE_VALUE)
+	{
+		++result.file_count;
+		platform_file_info* info = PushStruct(&win32_file_group->memory, platform_file_info);
+		info->next = result.first_file_info;
+
+		FILETIME timestamp = find_data.ftLastWriteTime;
+		info->timestamp = ASSEMBLE_LARGE_INT(timestamp.dwHighDateTime, timestamp.dwLowDateTime);
+		info->file_size = ASSEMBLE_LARGE_INT(find_data.nFileSizeHigh, find_data.nFileSizeLow);
+
+		wchar_t* base_name_begin = find_data.cFileName;
+		wchar_t* base_name_end = NULL;
+		wchar_t* scan = base_name_begin;
+
+		while(*scan)
+		{
+			if (scan[0] == L'.')
+			{
+				base_name_end = scan;
+			}
+
+			++scan;
+		}
+
+		if (!base_name_end)
+		{
+			base_name_end = scan;
+		}
+
+		u32 base_name_length = (u32)(base_name_end - base_name_begin);
+		u32 required_base_name_storage = WideCharToMultiByte(CP_UTF8, 0,
+															 base_name_begin, base_name_length,
+															 info->base_name, 0,
+															 0, 0);
+
+		info->base_name = (char*) PushSize(&win32_file_group->memory, required_base_name_storage + 1);
+
+		required_base_name_storage = WideCharToMultiByte(CP_UTF8, 0, base_name_begin, base_name_length,
+														 info->base_name, required_base_name_storage, 0, 0);
+
+		info->base_name[required_base_name_storage] = 0;
+
+		u32 file_name_size = (u32)(scan - find_data.cFileName) + 1;
+		info->platform_data = PushArray(&win32_file_group->memory, wchar_t, directory_length + file_name_size);
+		CopyArray(directory, directory_length, info->platform_data);
+		CopyArray(find_data.cFileName, file_name_size, (wchar_t*)info->platform_data + directory_length);
+
+		result.first_file_info = info;
+		
+		if (!FindNextFileW(find_handle, &find_data))
+		{
+			break;
+		}
+	}
+
+	FindClose(find_handle);
+
+	return result;
+}
+
+PLATFORM_GET_ALL_FILES_OF_TYPE_END_FUNCTION(Win32GetAllFilesOfTypeEnd)
+{
+	win32_platform_file_group* win32_file_group = (win32_platform_file_group*)file_group->platform_data;
+
+	if (win32_file_group)
+	{
+		ClearMemoryArena(&win32_file_group->memory);
+	}
+}
+
+PLATFORM_OPEN_FILE_FUNCTION(Win32OpenFile)
+{
+	platform_file_handle result = {};
+	StaticAssert(sizeof(HANDLE) <= sizeof(result.platform_data));
+
+	DWORD access_permissions = 0;
+	DWORD creation_mode		= 0;
+
+	if (open_params & OpenFile_Read)
+	{
+		access_permissions |= GENERIC_READ;
+		creation_mode	   = OPEN_EXISTING;
+	}
+
+	if (open_params & OpenFile_Write)
+	{
+		access_permissions |= GENERIC_WRITE;
+		creation_mode	    = OPEN_ALWAYS;
+	}
+
+	wchar_t* file_name  = (wchar_t*) file_info->platform_data;
+	HANDLE win32_handle = CreateFileW(file_name, access_permissions,
+									  FILE_SHARE_READ, 0,
+									  creation_mode, 0, 0);
+
+	result.is_valid = (win32_handle != INVALID_HANDLE_VALUE);
+	*((HANDLE*) &result.platform_data) = win32_handle;
+
+	return result;
+}
+
+PLATFORM_CLOSE_FILE_FUNCTION(Win32CloseFile)
+{
+	HANDLE win32_handle = *((HANDLE*) &file_handle->platform_data);
+
+	if (win32_handle != INVALID_HANDLE_VALUE)
+	{
+		CloseHandle(win32_handle);
+	}
+}
+
+PLATFORM_READ_FROM_FILE_FUNCTION(Win32ReadFromFile)
+{
+	if (PLATFORM_FILE_IS_VALID(handle))
+	{
+		HANDLE win32_handle = *((HANDLE*) &handle->platform_data);
+
+		OVERLAPPED overlapped = {};
+		overlapped.Offset	  = LARGE_INT_LOW(offset);
+		overlapped.OffsetHigh = LARGE_INT_HIGH(offset);
+		
+		Assert(size <= UINT32_MAX);
+		u32 file_size_truncated = (u32) CLAMP(0, size, UINT32_MAX);
+
+		DWORD bytes_read;
+		if (ReadFile(win32_handle, dest, file_size_truncated, &bytes_read, &overlapped)
+			&& (file_size_truncated == bytes_read))
+		{
+			// NOTE(soimn): success
+		}
+
+		else
+		{
+			WIN32LOG_ERROR("Win32ReadFromFile failed to read the contents of the specified file");
+			handle->is_valid = false;
+		}
+	}
+}
+
+PLATFORM_WRITE_TO_FILE_FUNCTION(Win32WriteToFile)
+{
+	if (PLATFORM_FILE_IS_VALID(handle))
+	{
+		HANDLE win32_handle = *((HANDLE*) &handle->platform_data);
+
+		OVERLAPPED overlapped = {};
+		overlapped.Offset	  = LARGE_INT_LOW(offset);
+		overlapped.OffsetHigh = LARGE_INT_HIGH(offset);
+		
+		u32 file_size_truncated = (u32) CLAMP(0, size, UINT32_MAX);
+		Assert(size != file_size_truncated);
+
+		DWORD bytes_written;
+		if (WriteFile(win32_handle, source, file_size_truncated, &bytes_written, &overlapped)
+			&& (file_size_truncated == bytes_written))
+		{
+			// NOTE(soimn): success
+		}
+
+		else
+		{
+			WIN32LOG_ERROR("Win32WriteToFile failed to write the specified data to the file");
+			handle->is_valid = false;
+		}
+	}
 }
 
 ///
@@ -706,6 +1020,9 @@ Win32InitVulkan(memory_arena* temp_memory, memory_arena* persistent_memory,
 					}
 				}
 
+				VkPhysicalDeviceFeatures physical_device_features = {};
+				physical_device_features.geometryShader = VK_TRUE;
+
 				VkDeviceCreateInfo device_create_info = {};
 				device_create_info.sType				   = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
 				device_create_info.pNext				   = NULL;
@@ -714,7 +1031,7 @@ Win32InitVulkan(memory_arena* temp_memory, memory_arena* persistent_memory,
 				device_create_info.pQueueCreateInfos	   = &queue_create_info[0];
 				device_create_info.enabledExtensionCount   = ARRAY_COUNT(required_device_extensions);
 				device_create_info.ppEnabledExtensionNames = required_device_extensions;
-				device_create_info.pEnabledFeatures		   = NULL;
+				device_create_info.pEnabledFeatures		   = &physical_device_features;
 
 				VK_CHECK(VulkanAPI->vkCreateDevice(VulkanState->physical_device, &device_create_info, NULL, &VulkanState->device));
 			}
@@ -1126,11 +1443,169 @@ Win32InitVulkan(memory_arena* temp_memory, memory_arena* persistent_memory,
 				VK_CHECK(VulkanAPI->vkCreateSemaphore(VulkanState->device, &create_info, NULL, &VulkanState->render_target.render_done_semaphore));
 			}
 
+			{ //// Create render target immediate pipeline
+				platform_file_group file_group = Win32GetAllFilesOfTypeBegin(PlatformFileType_ShaderFile);
+
+				VkShaderModule vertex_shader   = {};
+				VkShaderModule frag_shader	   = {};
+				VkShaderModule geometry_shader = {};
+				VkPipelineShaderStageCreateInfo vertex_stage   = {};
+				VkPipelineShaderStageCreateInfo frag_stage	   = {};
+				VkPipelineShaderStageCreateInfo geometry_stage = {};
+
+				bool encountered_errors = false;
+				do
+				{
+					VkShaderModule* current_shader				   = NULL;
+					VkPipelineShaderStageCreateInfo* current_stage = NULL;
+					VkShaderStageFlagBits current_stage_flag	   = {};
+
+					if (strcompare(file_group.first_file_info->base_name, "polygon_v"))
+					{
+						current_stage = &vertex_stage;
+						current_shader = &vertex_shader;
+						current_stage_flag = VK_SHADER_STAGE_VERTEX_BIT;
+					}
+					
+					else if (strcompare(file_group.first_file_info->base_name, "polygon_f"))
+					{
+						current_stage = &frag_stage;
+						current_shader = &frag_shader;
+						current_stage_flag = VK_SHADER_STAGE_FRAGMENT_BIT;
+					}
+					
+					else if (strcompare(file_group.first_file_info->base_name, "polygon_g"))
+					{
+						current_stage = &geometry_stage;
+						current_shader = &geometry_shader;
+						current_stage_flag = VK_SHADER_STAGE_GEOMETRY_BIT;
+					}
+
+					if (current_shader && current_stage && current_stage_flag)
+					{
+						void* code_memory = PushSize(&FrameTempArena, file_group.first_file_info->file_size, alignof(u32), 0);
+
+						platform_file_handle file_handle = Win32OpenFile(file_group.first_file_info, OpenFile_Read);
+						Win32ReadFromFile(&file_handle, 0, file_group.first_file_info->file_size, code_memory);
+
+						VkShaderModuleCreateInfo create_info = {};
+						create_info.sType	 = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+						create_info.codeSize = file_group.first_file_info->file_size;
+						create_info.pCode	 = (u32*) code_memory;
+						
+						VK_NESTED_CHECK(VulkanAPI->vkCreateShaderModule(VulkanState->device, &create_info, NULL, current_shader),
+										encountered_errors);
+
+						Win32CloseFile(&file_handle);
+
+						current_stage->sType  = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+						current_stage->stage  = current_stage_flag;
+						current_stage->module = *current_shader;
+						current_stage->pName  = "main";
+					}
+
+					file_group.first_file_info = file_group.first_file_info->next;
+				}
+
+				while(file_group.first_file_info
+					  && (vertex_shader == VK_NULL_HANDLE || frag_shader == VK_NULL_HANDLE || geometry_shader == VK_NULL_HANDLE));
+
+				Win32GetAllFilesOfTypeEnd(&file_group);
+
+				if (encountered_errors || (vertex_shader == VK_NULL_HANDLE || frag_shader == VK_NULL_HANDLE || geometry_shader == VK_NULL_HANDLE))
+				{
+					WIN32LOG_FATAL("Could not find the immediate pipeline shader files");
+					break;
+				}
+
+				else
+				{
+					VkPipelineVertexInputStateCreateInfo vertex_input = {};
+					vertex_input.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+
+					VkPipelineInputAssemblyStateCreateInfo input_assembly = {};
+					input_assembly.sType	= VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+					input_assembly.topology = VK_PRIMITIVE_TOPOLOGY_POINT_LIST;
+
+					VkViewport viewport = {};
+					viewport.width	  = (float) VulkanState->swapchain.extent.width;
+					viewport.height   = (float) VulkanState->swapchain.extent.height;
+					viewport.maxDepth = 1.0f;
+
+					VkRect2D scissor = {};
+					scissor.extent	 = VulkanState->swapchain.extent;
+
+					VkPipelineViewportStateCreateInfo viewport_state = {};
+					viewport_state.sType		 = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+					viewport_state.viewportCount = 1;
+					viewport_state.pViewports	 = &viewport;
+					viewport_state.scissorCount  = 1;
+					viewport_state.pScissors	 = &scissor;
+
+					VkPipelineRasterizationStateCreateInfo rasterizer = {};
+					rasterizer.sType	   = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+					rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
+					rasterizer.lineWidth   = 1.0f;
+
+					VkPipelineMultisampleStateCreateInfo multisampling = {};
+					multisampling.sType				   = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+					multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+					multisampling.minSampleShading	   = 1.0f;
+
+					VkPipelineColorBlendAttachmentState color_blend_attachment = {};
+					color_blend_attachment.colorWriteMask =   VK_COLOR_COMPONENT_R_BIT
+															| VK_COLOR_COMPONENT_G_BIT
+															| VK_COLOR_COMPONENT_B_BIT
+															| VK_COLOR_COMPONENT_A_BIT;
+	
+					VkPipelineColorBlendStateCreateInfo color_blend = {};
+					color_blend.sType			= VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+					color_blend.attachmentCount = 1;
+					color_blend.pAttachments	= &color_blend_attachment;
+
+					VkPushConstantRange push_constant_range = {};
+					push_constant_range.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+					push_constant_range.offset	   = 0;
+					push_constant_range.size	   = sizeof(immediate_push_info);
+
+					VkPipelineLayoutCreateInfo pipeline_layout_info = {};
+					pipeline_layout_info.sType					= VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+					pipeline_layout_info.pushConstantRangeCount = 1;
+					pipeline_layout_info.pPushConstantRanges    = &push_constant_range;
+
+					VK_CHECK(VulkanAPI->vkCreatePipelineLayout(VulkanState->device, &pipeline_layout_info,
+															   NULL, &VulkanState->render_target.immediate_layout));
+
+					VkPipelineShaderStageCreateInfo shader_stages[] = {vertex_stage, frag_stage, geometry_stage};
+
+					VkGraphicsPipelineCreateInfo pipeline_info = {};
+					pipeline_info.sType				  = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+					pipeline_info.stageCount		  = ARRAY_COUNT(shader_stages);
+					pipeline_info.pStages			  = shader_stages;
+					pipeline_info.pVertexInputState	  = &vertex_input;
+					pipeline_info.pInputAssemblyState = &input_assembly;
+					pipeline_info.pViewportState	  = &viewport_state;
+					pipeline_info.pRasterizationState = &rasterizer;
+					pipeline_info.pMultisampleState	  = &multisampling;
+					pipeline_info.pColorBlendState	  = &color_blend;
+					pipeline_info.layout			  = VulkanState->render_target.immediate_layout;
+					pipeline_info.renderPass		  = VulkanState->render_target.render_pass;
+					pipeline_info.subpass			  = 0;
+
+					VK_CHECK(VulkanAPI->vkCreateGraphicsPipelines(VulkanState->device, VK_NULL_HANDLE, 1, &pipeline_info,
+																  NULL, &VulkanState->render_target.immediate_pipeline));
+
+					VulkanAPI->vkDestroyShaderModule(VulkanState->device, vertex_shader, NULL);
+					VulkanAPI->vkDestroyShaderModule(VulkanState->device, frag_shader, NULL);
+					VulkanAPI->vkDestroyShaderModule(VulkanState->device, geometry_shader, NULL);
+				}
+			}
+
 			{ //// Create render target command buffer
 				VkCommandPoolCreateInfo create_info = {};
 				create_info.sType			  = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
 				create_info.pNext			  = NULL;
-				create_info.flags			  = 0;
+				create_info.flags			  = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
 				create_info.queueFamilyIndex  = VulkanState->graphics_family;
 
 				VK_CHECK(VulkanAPI->vkCreateCommandPool(VulkanState->device, &create_info, NULL, &VulkanState->render_target.render_pool));
@@ -1166,7 +1641,7 @@ Win32InitVulkan(memory_arena* temp_memory, memory_arena* persistent_memory,
 					VkImageMemoryBarrier transition_to_transfer_barrier = {};
 					transition_to_transfer_barrier.sType				= VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
 					transition_to_transfer_barrier.pNext				= NULL;
-					transition_to_transfer_barrier.srcAccessMask		= VK_ACCESS_TRANSFER_WRITE_BIT;
+					transition_to_transfer_barrier.srcAccessMask		= 0;
 					transition_to_transfer_barrier.dstAccessMask		= VK_ACCESS_TRANSFER_WRITE_BIT;
 					transition_to_transfer_barrier.oldLayout			= VK_IMAGE_LAYOUT_UNDEFINED;
 					transition_to_transfer_barrier.newLayout			= VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
@@ -1211,7 +1686,7 @@ Win32InitVulkan(memory_arena* temp_memory, memory_arena* persistent_memory,
 					transition_to_present_barrier.sType				  = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
 					transition_to_present_barrier.pNext				  = NULL;
 					transition_to_present_barrier.srcAccessMask		  = VK_ACCESS_TRANSFER_WRITE_BIT;
-					transition_to_present_barrier.dstAccessMask		  = VK_ACCESS_TRANSFER_WRITE_BIT;
+					transition_to_present_barrier.dstAccessMask		  = 0;
 					transition_to_present_barrier.oldLayout			  = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
 					transition_to_present_barrier.newLayout			  = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
 					transition_to_present_barrier.srcQueueFamilyIndex = VulkanState->present_family;
@@ -1247,322 +1722,6 @@ Win32InitVulkan(memory_arena* temp_memory, memory_arena* persistent_memory,
 	}
 
 	return succeeded;
-}
-
-///
-/// File System Interaction
-///
-
-// TODO(soimn): see if this breaks when the path is long enough
-internal wchar_t*
-Win32GetCWD(memory_arena* persistent_memory, uint32* result_length)
-{
-	wchar_t* result = NULL;
-
-	// FIXME(soimn): this will most certainly span multiple pages, which may be a problem
-	struct temporary_memory { memory_arena arena; };
-	temporary_memory* temp_memory = BootstrapPushSize(temporary_memory, arena, KILOBYTES(32));
-
-	u32 file_path_growth_amount = 256 * sizeof(wchar_t);
-	u32 file_path_memory_size = file_path_growth_amount;
-
-	wchar_t* file_path = (wchar_t*) PushSize(&temp_memory->arena, file_path_growth_amount);
-	u32 path_length;
-
-	for (;;)
-	{
-		path_length = GetModuleFileNameW(NULL, file_path, file_path_memory_size);
-		
-		// NOTE(soimn): this asserts that this function succeeds
-		Assert(path_length);
-
-		if (path_length != file_path_memory_size)
-		{
-			break;
-		}
-
-		else
-		{
-			if (file_path_growth_amount >= temp_memory->arena.current_block->remaining_space)
-			{
-				WIN32LOG_FATAL("Failed to get the current working directory of the game, out of memory");
-				return NULL;
-			}
-
-			else
-			{
-				file_path_memory_size += file_path_growth_amount;
-
-				PushSize(&temp_memory->arena, file_path_memory_size);
-				continue;
-			}
-		}
-	}
-
-	u32 length = 0;
-	for (wchar_t* scan = file_path; *scan; ++scan)
-	{	
-		if (*scan == L'\\')
-		{
-			length = (u32)(scan - file_path);
-		}
-	}
-
-	if (length == 0)
-	{
-		WIN32LOG_FATAL("Failed to get the current working directory of the game, no path separator found");
-		return NULL;
-	}
-
-	++length;
-
-	result = (wchar_t*) PushSize(persistent_memory, sizeof(wchar_t) * (length + 1));
-	CopyArray(file_path, length, result);
-	result[length] = (wchar_t)(NULL);
-
-	*result_length = length;
-
-	return result;
-}
-
-internal void
-Win32BuildFullyQualifiedPath(win32_game_info* game_info, const wchar_t* appendage,
-							 wchar_t* buffer, u32 buffer_length)
-{
-	u32 length_of_cwd = 0;
-	for (wchar_t* scan = (wchar_t*) game_info->cwd; *scan; ++scan)
-	{
-		++length_of_cwd;
-	}
-
-	i32 length_of_appendage = wstrlength(appendage, buffer_length);
-
-	Assert(length_of_appendage != -1);
-	Assert(length_of_cwd && buffer_length > (length_of_cwd + length_of_appendage));
-
-	CopyArray(game_info->cwd, length_of_cwd, buffer);
-	CopyArray(appendage, length_of_cwd + 1, buffer + length_of_cwd);
-};
-
-// TODO(soimn): make this more robust to enable hot loading capability in release mode
-#ifdef ANT_ENABLE_HOT_RELOADING
-FILETIME
-Win32DebugGetFileCreateTime(const wchar_t* file_path)
-{
-	FILETIME result = {};
-
-	HANDLE file = CreateFileW(file_path, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
-	if (file != INVALID_HANDLE_VALUE)
-	{
-		GetFileTime(file, &result, NULL, NULL);
-		CloseHandle(file);
-	}
-
-	return result;
-}
-#endif
-
-PLATFORM_GET_ALL_FILES_OF_TYPE_BEGIN_FUNCTION(Win32GetAllFilesOfTypeBegin)
-{
-	platform_file_group result = {};
-
-	win32_platform_file_group* win32_file_group = BootstrapPushSize(win32_platform_file_group, memory, KILOBYTES(1), alignof(win32_platform_file_group));
-	result.platform_data = win32_file_group;
-
-	wchar_t* directory = L"";
-	wchar_t* wildcard  = L"*.*";
-
-	switch(file_type)
-	{
-		case PlatformFileType_AssetFile:
-			directory = L"data\\";
-			wildcard  = L"data\\*.aaf";
-		break;
-
-
-		// NOTE(soimn): this is temporary
-		case PlatformFileType_ShaderFile:
-			directory = L"data\\";
-			wildcard  = L"data\\*.spv";
-		break;
-
-		INVALID_DEFAULT_CASE;
-	}
-
-	u32 directory_length = 0;
-
-	for (wchar_t* it = directory; *it; ++it)
-	{
-		++directory_length;
-	}
-
-	WIN32_FIND_DATAW find_data;
-	HANDLE find_handle = FindFirstFileW(wildcard, &find_data);
-	while(find_handle != INVALID_HANDLE_VALUE)
-	{
-		++result.file_count;
-		platform_file_info* info = PushStruct(&win32_file_group->memory, platform_file_info);
-		info->next = result.first_file_info;
-
-		FILETIME timestamp = find_data.ftLastWriteTime;
-		info->timestamp = ASSEMBLE_LARGE_INT(timestamp.dwHighDateTime, timestamp.dwLowDateTime);
-		info->file_size = ASSEMBLE_LARGE_INT(find_data.nFileSizeHigh, find_data.nFileSizeLow);
-
-		wchar_t* base_name_begin = find_data.cFileName;
-		wchar_t* base_name_end = NULL;
-		wchar_t* scan = base_name_begin;
-
-		while(*scan)
-		{
-			if (scan[0] == L'.')
-			{
-				base_name_end = scan;
-			}
-
-			++scan;
-		}
-
-		if (!base_name_end)
-		{
-			base_name_end = scan;
-		}
-
-		u32 base_name_length = (u32)(base_name_end - base_name_begin);
-		u32 required_base_name_storage = WideCharToMultiByte(CP_UTF8, 0,
-															 base_name_begin, base_name_length,
-															 info->base_name, 0,
-															 0, 0);
-
-		info->base_name = (char*) PushSize(&win32_file_group->memory, required_base_name_storage + 1);
-
-		required_base_name_storage = WideCharToMultiByte(CP_UTF8, 0, base_name_begin, base_name_length,
-														 info->base_name, required_base_name_storage, 0, 0);
-
-		info->base_name[required_base_name_storage] = 0;
-
-		u32 file_name_size = (u32)(scan - find_data.cFileName) + 1;
-		info->platform_data = PushArray(&win32_file_group->memory, wchar_t, directory_length + file_name_size);
-		CopyArray(directory, directory_length, info->platform_data);
-		CopyArray(find_data.cFileName, file_name_size, (wchar_t*)info->platform_data + directory_length);
-
-		result.first_file_info = info;
-		
-		if (!FindNextFileW(find_handle, &find_data))
-		{
-			break;
-		}
-	}
-
-	FindClose(find_handle);
-
-	return result;
-}
-
-PLATFORM_GET_ALL_FILES_OF_TYPE_END_FUNCTION(Win32GetAllFilesOfTypeEnd)
-{
-	win32_platform_file_group* win32_file_group = (win32_platform_file_group*)file_group->platform_data;
-
-	if (win32_file_group)
-	{
-		ClearMemoryArena(&win32_file_group->memory);
-	}
-}
-
-PLATFORM_OPEN_FILE_FUNCTION(Win32OpenFile)
-{
-	platform_file_handle result = {};
-	StaticAssert(sizeof(HANDLE) <= sizeof(result.platform_data));
-
-	DWORD access_permissions = 0;
-	DWORD creation_mode		= 0;
-
-	if (open_params & OpenFile_Read)
-	{
-		access_permissions |= GENERIC_READ;
-		creation_mode	   = OPEN_EXISTING;
-	}
-
-	if (open_params & OpenFile_Write)
-	{
-		access_permissions |= GENERIC_WRITE;
-		creation_mode	    = OPEN_ALWAYS;
-	}
-
-	wchar_t* file_name  = (wchar_t*) file_info->platform_data;
-	HANDLE win32_handle = CreateFileW(file_name, access_permissions,
-									  FILE_SHARE_READ, 0,
-									  creation_mode, 0, 0);
-
-	result.is_valid = (win32_handle != INVALID_HANDLE_VALUE);
-	*((HANDLE*) &result.platform_data) = win32_handle;
-
-	return result;
-}
-
-PLATFORM_CLOSE_FILE_FUNCTION(Win32CloseFile)
-{
-	HANDLE win32_handle = *((HANDLE*) &file_handle->platform_data);
-
-	if (win32_handle != INVALID_HANDLE_VALUE)
-	{
-		CloseHandle(win32_handle);
-	}
-}
-
-PLATFORM_READ_FROM_FILE_FUNCTION(Win32ReadFromFile)
-{
-	if (PLATFORM_FILE_IS_VALID(handle))
-	{
-		HANDLE win32_handle = *((HANDLE*) &handle->platform_data);
-
-		OVERLAPPED overlapped = {};
-		overlapped.Offset	  = LARGE_INT_LOW(offset);
-		overlapped.OffsetHigh = LARGE_INT_HIGH(offset);
-		
-		u32 file_size_truncated = (u32) CLAMP(0, size, UINT32_MAX);
-		Assert(size != file_size_truncated);
-
-		DWORD bytes_read;
-		if (ReadFile(win32_handle, dest, file_size_truncated, &bytes_read, &overlapped)
-			&& (file_size_truncated == bytes_read))
-		{
-			// NOTE(soimn): success
-		}
-
-		else
-		{
-			WIN32LOG_ERROR("Win32ReadFromFile failed to read the contents of the specified file");
-			handle->is_valid = false;
-		}
-	}
-}
-
-PLATFORM_WRITE_TO_FILE_FUNCTION(Win32WriteToFile)
-{
-	if (PLATFORM_FILE_IS_VALID(handle))
-	{
-		HANDLE win32_handle = *((HANDLE*) &handle->platform_data);
-
-		OVERLAPPED overlapped = {};
-		overlapped.Offset	  = LARGE_INT_LOW(offset);
-		overlapped.OffsetHigh = LARGE_INT_HIGH(offset);
-		
-		u32 file_size_truncated = (u32) CLAMP(0, size, UINT32_MAX);
-		Assert(size != file_size_truncated);
-
-		DWORD bytes_written;
-		if (WriteFile(win32_handle, source, file_size_truncated, &bytes_written, &overlapped)
-			&& (file_size_truncated == bytes_written))
-		{
-			// NOTE(soimn): success
-		}
-
-		else
-		{
-			WIN32LOG_ERROR("Win32WriteToFile failed to write the specified data to the file");
-			handle->is_valid = false;
-		}
-	}
 }
 
 ///
@@ -1638,7 +1797,7 @@ Win32LoadGameCode(const wchar_t* dll_path, const wchar_t* loaded_dll_path)
 
 		if (game_code.game_init_func && game_code.game_update_and_render_func && game_code.game_cleanup_func)
 		{
-			game_code.is_valid = true;
+			game_code.is_valid  = true;
 			game_code.timestamp = Win32DebugGetFileCreateTime(dll_path);
 		}
 	}
@@ -1650,9 +1809,9 @@ Win32LoadGameCode(const wchar_t* dll_path, const wchar_t* loaded_dll_path)
 
 	if (!game_code.is_valid)
 	{
-		game_code.game_init_func = &GameInitStub;
+		game_code.game_init_func			  = &GameInitStub;
 		game_code.game_update_and_render_func = &GameUpdateAndRenderStub;
-		game_code.game_cleanup_func = &GameCleanupStub;
+		game_code.game_cleanup_func			  = &GameCleanupStub;
 
 		WIN32LOG_FATAL("Could not load game code. Reason: could not find update, cleanup and init functions");
 	}
@@ -1739,10 +1898,12 @@ int CALLBACK WinMain(HINSTANCE instance,
 			// Memory
 			game_memory memory = {};
 
-			DefaultMemoryArenaAllocationRoutines = {&Win32AllocateMemoryBlock, &Win32FreeMemoryBlock,
-													&Win32AllocateMemoryBlock, &Win32FreeMemoryBlock,
-													MEGABYTES(1), KILOBYTES(1),
-													BYTES(16), 4, 4};
+			memory.default_allocation_routines = {&Win32AllocateMemoryBlock, &Win32FreeMemoryBlock,
+												  &Win32AllocateMemoryBlock, &Win32FreeMemoryBlock,
+												  MEGABYTES(1), KILOBYTES(1),
+												  BYTES(16), 4, 4};
+
+			DefaultMemoryArenaAllocationRoutines = memory.default_allocation_routines;
 
 			memory.persistent_arena.current_block	= Win32AllocateMemoryBlock(MEGABYTES(64), 4);
 			++memory.persistent_arena.block_count;
@@ -1818,6 +1979,8 @@ int CALLBACK WinMain(HINSTANCE instance,
 												&vulkan_binding, &memory.vulkan_state,
 												instance, window_handle,
 												APPLICATION_NAME, APPLICATION_VERSION);
+
+			memory.vulkan_api = vulkan_binding.api;
 
 			// Misc
 			QueryPerformanceFrequency(&PerformanceCounterFreq);
@@ -1933,11 +2096,14 @@ int CALLBACK WinMain(HINSTANCE instance,
 								submit_info.sType				 = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 								submit_info.pNext				 = NULL;
 
-								// TODO(soimn): add VulkanState->render_target.render_done_semaphore to the list of wait semaphores
-								submit_info.waitSemaphoreCount	 = 1;
-								submit_info.pWaitSemaphores		 = &VulkanState->swapchain.image_available_semaphore;
+								VkSemaphore wait_semaphores[] = {VulkanState->swapchain.image_available_semaphore,
+																 VulkanState->render_target.render_done_semaphore};
 
-								VkPipelineStageFlags wait_stages[] = {VK_PIPELINE_STAGE_TRANSFER_BIT};
+								submit_info.waitSemaphoreCount	 = ARRAY_COUNT(wait_semaphores);
+								submit_info.pWaitSemaphores		 = wait_semaphores;
+
+								VkPipelineStageFlags wait_stages[] = {VK_PIPELINE_STAGE_TRANSFER_BIT,
+																	  VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
 								submit_info.pWaitDstStageMask	 = wait_stages;
 
 								submit_info.commandBufferCount	 = 1;

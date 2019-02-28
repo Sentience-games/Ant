@@ -6,6 +6,7 @@
 
 typedef struct memory_block
 {
+	memory_block* next;
 	memory_block* previous;
 
 	void* memory;
@@ -110,19 +111,38 @@ ClearMemoryArena(memory_arena* arena)
 		arena->free_function = DefaultMemoryArenaAllocationRoutines.free_function;
 	}
 
-	if (arena->current_block)
-	{
-		memory_block* block		 = arena->current_block;
-		memory_block* next_block = NULL;
-		while (block)
-		{
-			next_block = block->previous;
-			arena->free_function(block);
-			block = next_block;
-		}
+	memory_block* block		 = arena->current_block;
+	memory_block* next_block = NULL;
 
-		arena->block_count = 0;
-		arena->used_memory = 0;
+	while (block)
+	{
+		next_block = block->previous;
+		arena->free_function(block);
+		block = next_block;
+	}
+
+	arena->block_count = 0;
+	arena->used_memory = 0;
+}
+
+inline void
+ResetMemoryArena(memory_arena* arena)
+{
+	memory_block* block		 = arena->current_block;
+
+	while(block)
+	{
+		u8* prev_push_ptr = block->push_ptr;
+
+		void* memory_start = (memory_block*) Align(block->memory, alignof(memory_block)) + 1;
+
+		block->push_ptr = (u8*) Align(memory_start, arena->defaults.alignment);
+
+		memory_index delta = (memory_index)(prev_push_ptr - block->push_ptr);
+		block->remaining_space += delta;
+		arena->used_memory -= delta;
+
+		block = block->previous;
 	}
 }
 
@@ -168,26 +188,40 @@ PushSize_(memory_arena* arena, memory_index size,
 
 	if (!arena->current_block || arena->current_block->remaining_space < total_size + arena->defaults.minimum_fragment_size)
 	{
-		if (!arena->defaults.block_size)
+		if (arena->current_block && arena->current_block->next)
 		{
-			arena->defaults.block_size = DefaultMemoryArenaAllocationRoutines.block_size;
+			arena->current_block = arena->current_block->next;
 		}
 
-		if (!arena->defaults.block_alignment)
+		else
 		{
-			arena->defaults.block_alignment = DefaultMemoryArenaAllocationRoutines.block_alignment;
+			if (!arena->defaults.block_size)
+			{
+				arena->defaults.block_size = DefaultMemoryArenaAllocationRoutines.block_size;
+			}
+
+			if (!arena->defaults.block_alignment)
+			{
+				arena->defaults.block_alignment = DefaultMemoryArenaAllocationRoutines.block_alignment;
+			}
+
+			memory_index new_block_size = MAX(arena->defaults.block_size, total_size);
+			u8 new_block_alignment		= arena->defaults.block_alignment;
+
+			memory_block* new_block    = arena->allocate_function(new_block_size, new_block_alignment);
+			new_block->previous		   = arena->current_block;
+
+			if (arena->current_block)
+			{
+				arena->current_block->next = new_block;
+			}
+
+			arena->current_block	   = new_block;
+			++arena->block_count;
+
+			adjustment = AlignOffset(arena->current_block->push_ptr, alignment);
+			total_size = size + adjustment;
 		}
-
-		memory_index new_block_size = MAX(arena->defaults.block_size, total_size);
-		u8 new_block_alignment = arena->defaults.block_alignment;
-
-		memory_block* new_block = arena->allocate_function(new_block_size, new_block_alignment);
-		new_block->previous		= arena->current_block;
-		arena->current_block	= new_block;
-		++arena->block_count;
-
-		adjustment = AlignOffset(arena->current_block->push_ptr, alignment);
-		total_size = size + adjustment;
 	}
 
 	memory_block* block = arena->current_block;

@@ -17,6 +17,7 @@ IF [%1] == [game_only] (
 del /s ant.* > nul 2>&1
 del /s ant_******.pdb > nul 2>&1
 del /s ant_loaded.dll > nul 2>&1
+del /s ../run_tree/ant.dll > nul 2>&1
 cl %common_compiler_flags% %engine_compiler_flags% %vulkan_compiler_flags% /Fmant.map %src%\ant.cpp /LD /link /DLL /PDB:ant_%time:~3,2%%time:~6,2%%time:~9,2%.pdb %common_linker_flags% /out:ant.dll
 echo Build finished at %time%
 GOTO move_files_to_run_tree
@@ -26,6 +27,9 @@ del /s ant.* 1>nul
 del /s ant_******.pdb > nul 2>&1
 del /s win32_ant.* > nul 2>&1
 del /s ant_loaded.dll > nul 2>&1
+del /s ../run_tree/win32_ant.exe > nul 2>&1
+del /s ../run_tree/ant.dll > nul 2>&1
+del /s ../run_tree/ant_loaded.dll > nul 2>&1
 
 REM Building the engine and the game
 :compile_engine
