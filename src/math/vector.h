@@ -175,12 +175,6 @@ LengthSq(const v2& v)
 	return Inner(v, v);
 }
 
-inline v2
-Lerp(const v2& v_i, float t, const v2& v_f)
-{
-	return (1 - t) * v_i + t * v_f;
-}
-
 
 /// V3
 
@@ -277,13 +271,6 @@ LengthSq(const v3& v)
 {
 	return Inner(v, v);
 }
-
-inline v3
-Lerp(const v3& v_i, float t, const v3& v_f)
-{
-	return (1 - t) * v_i + t * v_f;
-}
-
 
 
 /// V4
@@ -383,10 +370,4 @@ inline float
 LengthSq(const v4& v)
 {
 	return Inner(v, v);
-}
-
-inline v4
-Lerp(const v4& v_i, float t, const v4& v_f)
-{
-	return (1 - t) * v_i + t * v_f;
 }
