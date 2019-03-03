@@ -23,6 +23,11 @@ mat2 GetScale (float width, float height)
 				0, height);
 }
 
+vec2 TransformToViewport(mat2 viewport, vec2 v)
+{
+	return 2.0 * (viewport * v) - vec2(1.0, 1.0);
+}
+
 void main ()
 {
 	vec2 position			 = gl_in[0].gl_Position.xy;
@@ -46,32 +51,77 @@ void main ()
 		first_vertex = GetRotation(-walk_angle / 2.0) * first_vertex;
 	}
 
-	vec2 previous_vertex = GetRotation(walk_angle) * first_vertex;
+	vec2 previous_vertex		  = GetRotation(walk_angle) * first_vertex;
 
-	mat2 correction_matrix = GetRotation(rotation) * GetScale(dimensions.x, dimensions.y);
-	mat2 viewport_matrix   = GetScale(1.0 / viewport_dimensions.x, 1.0 / viewport_dimensions.y);
+	mat2 correction_matrix		  = GetRotation(rotation) * GetScale(dimensions.x, dimensions.y);
+	mat2 viewport_matrix		  = GetScale(1.0 / viewport_dimensions.x, 1.0 / viewport_dimensions.y);
 
-	vec2 first_vertex_adjusted	  = viewport_matrix * (position + correction_matrix * first_vertex);
-	vec2 previous_vertex_adjusted = viewport_matrix * (position + correction_matrix * previous_vertex);
-	
-	for (uint i = 0; i < edge_count; ++i)
+	vec2 first_vertex_adjusted	  = TransformToViewport(viewport_matrix, (position + correction_matrix * first_vertex));
+	vec2 previous_vertex_adjusted = TransformToViewport(viewport_matrix, (position + correction_matrix * previous_vertex));
+
+	if (edge_count == 4)
 	{
-		gl_Position = vec4(first_vertex_adjusted, 0.0, 1.0);
+		vec2 upper_left  = position;
+		vec2 upper_right = position + vec2(dimensions.x, 0.0);
+		vec2 lower_left  = position + vec2(0.0, dimensions.y);
+		vec2 lower_right = position + dimensions;
+
+		vec2 translation = lower_right - (lower_right - upper_left) / 2.0;
+		mat2 q_rot		 = GetRotation(rotation);
+
+		upper_left		 = TransformToViewport(viewport_matrix, translation + q_rot * (upper_left - translation));
+		upper_right		 = TransformToViewport(viewport_matrix, translation + q_rot * (upper_right - translation));
+		lower_left		 = TransformToViewport(viewport_matrix, translation + q_rot * (lower_left - translation));
+		lower_right		 = TransformToViewport(viewport_matrix, translation + q_rot * (lower_right - translation));
+
+		gl_Position = vec4(upper_right, 0.0, 1.0);
 		out_color	= in_color[0];
 		EmitVertex();
 
-		gl_Position = vec4(previous_vertex_adjusted, 0.0, 1.0);
+		gl_Position = vec4(upper_left, 0.0, 1.0);
 		out_color	= in_color[0];
 		EmitVertex();
 
-		previous_vertex			 = GetRotation(i * walk_angle) * first_vertex;
-		previous_vertex_adjusted = viewport_matrix * (position + correction_matrix * previous_vertex);
-
-		gl_Position = vec4(previous_vertex_adjusted, 0.0, 1.0);
+		gl_Position = vec4(lower_right, 0.0, 1.0);
 		out_color	= in_color[0];
-
 		EmitVertex();
 
 		EndPrimitive();
+
+		gl_Position = vec4(lower_right, 0.0, 1.0);
+		out_color	= in_color[0];
+		EmitVertex();
+
+		gl_Position = vec4(upper_left, 0.0, 1.0);
+		out_color	= in_color[0];
+		EmitVertex();
+
+		gl_Position = vec4(lower_left, 0.0, 1.0);
+		out_color	= in_color[0];
+		EmitVertex();
+	}
+
+	else
+	{
+		for (uint i = 0; i < edge_count; ++i)
+		{
+			gl_Position = vec4(first_vertex_adjusted, 0.0, 1.0);
+			out_color	= in_color[0];
+			EmitVertex();
+
+			gl_Position = vec4(previous_vertex_adjusted, 0.0, 1.0);
+			out_color	= in_color[0];
+			EmitVertex();
+
+			previous_vertex			 = GetRotation(i * walk_angle) * first_vertex;
+			previous_vertex_adjusted = TransformToViewport(viewport_matrix, (position + correction_matrix * previous_vertex));
+
+			gl_Position = vec4(previous_vertex_adjusted, 0.0, 1.0);
+			out_color	= in_color[0];
+
+			EmitVertex();
+
+			EndPrimitive();
+		}
 	}
 }
