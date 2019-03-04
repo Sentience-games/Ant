@@ -4,6 +4,11 @@
 #include "ant_types.h"
 #include "utils/assert.h"
 
+#define MEMORY_8BIT_ALIGNED  1
+#define MEMORY_16BIT_ALIGNED 2
+#define MEMORY_32BIT_ALIGNED 4
+#define MEMORY_64BIT_ALIGNED 8
+
 typedef struct memory_block
 {
 	memory_block* next;
@@ -299,8 +304,10 @@ PushString(memory_arena* arena, char* cstring, memory_index length,
 #define PushStruct(arena, type, ...) (type*) PushSize_((arena), sizeof(type), alignof(type), ##__VA_ARGS__)
 #define PushArray(arena, type, count, ...) (type*) PushArray_((arena), sizeof(type), count, alignof(type), ##__VA_ARGS__)
 
-// NOTE(soimn): this takes all parameters
+// NOTE(soimn): these take all parameters
 #define PushSize(arena, size, ...) PushSize_((arena), size, ##__VA_ARGS__)
+#define PushAlignedStruct(arena, type, alignment, ...) (type*) PushSize_((arena), sizeof(type), alignment, ##__VA_ARGS__)
+#define PushAlignedArray(arena, type, count, alignment, ...) (type*) PushArray_((arena), sizeof(type), count, alignment, ##__VA_ARGS__)
 
 // NOTE(soimn): these only take alignment parameters
 #define PushCopy(arena, size, source, ...) Copy((source), size, PushSize(arena, size, ##__VA_ARGS__), size)
@@ -331,4 +338,17 @@ BootstrapPushSize_(memory_index struct_size, u8 struct_alignment,
 	*((memory_arena*)((u8*) result + offset_to_arena)) = bootstrap_arena;
 
 	return result;
+}
+
+
+#define CopyBufferedArray(arena, source, count, dest) CopyBuffered(arena, (void*)(source), (count) * sizeof(*(source)), (dest))
+inline void*
+CopyBuffered(memory_arena* temp_arena, void* source, memory_index source_length, void* dest)
+{
+	void* temp_memory = PushSize_(temp_arena, source_length, MEMORY_8BIT_ALIGNED);
+
+	Copy(source, source_length, temp_memory);
+	Copy(temp_memory, source_length, dest);
+
+	return dest;
 }

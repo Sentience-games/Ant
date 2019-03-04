@@ -10,13 +10,18 @@ EXPORT GAME_INIT_FUNCTION(GameInit)
 	VulkanState = &memory->vulkan_state;
 
 	DefaultMemoryArenaAllocationRoutines = memory->default_allocation_routines;
-	DebugArena = &memory->debug_arena;
+	FrameTempArena = &memory->frame_temp_arena;
+	DebugArena	   = &memory->debug_arena;
+
+	NewInput = &memory->new_input;
+	OldInput = &memory->old_input;
 
 	bool failed_memory_initiaization = false;
 	if (!memory->is_initialized)
 	{
 
-		VulkanState->render_target.immediate_viewport_dimension = {16.0f, 9.0f};
+		// TODO(soimn): set this to the current windows aspect ratio
+		VulkanState->render_target.immediate_viewport_dimensions = {16.0f, 9.0f};
 
 		memory->is_initialized = true;
 	}
@@ -26,9 +31,9 @@ EXPORT GAME_INIT_FUNCTION(GameInit)
 	return succeeded;
 }
 
-// TODO(soimn): find out how to keep track of command submission and frames in flight
 EXPORT GAME_UPDATE_AND_RENDER_FUNCTION(GameUpdateAndRender)
 {
+	// TODO(soimn); consider waiting on fence before calling this
 	VulkanAPI->vkResetCommandPool(VulkanState->device, VulkanState->render_target.render_pool, 0);
 
 	VkCommandBufferBeginInfo begin_info = {};
@@ -50,6 +55,8 @@ EXPORT GAME_UPDATE_AND_RENDER_FUNCTION(GameUpdateAndRender)
 
 	VulkanAPI->vkCmdBeginRenderPass(VulkanState->render_target.render_buffer, &render_pass_info, VK_SUBPASS_CONTENTS_INLINE);
 
+	UIRender();
+	
 	RenderImmediateCalls(VulkanState->render_target.render_buffer);
 
 	VulkanAPI->vkCmdEndRenderPass(VulkanState->render_target.render_buffer);
@@ -65,8 +72,6 @@ EXPORT GAME_UPDATE_AND_RENDER_FUNCTION(GameUpdateAndRender)
 	submit_info.pSignalSemaphores = &VulkanState->render_target.render_done_semaphore;
 
 	VulkanAPI->vkQueueSubmit(VulkanState->graphics_queue, 1, &submit_info, VK_NULL_HANDLE);
-
-	FlushImmediateCalls();
 }
 
 EXPORT GAME_CLEANUP_FUNCTION(GameCleanup)

@@ -45,13 +45,7 @@ typedef u32 b32;
 #define enum32(type) u32
 #define enum64(type) u64
 
-#ifdef USE_32BIT_POINTER_TYPES
-typedef u32 memory_index;
-#define MEMORY_INDEX_MAX UINT32_MAX
-#else
 typedef u64 memory_index;
-#define MEMORY_INDEX_MAX UINT64_MAX
-#endif
 
 struct buffer
 {
@@ -60,5 +54,3 @@ struct buffer
 };
 
 typedef buffer string;
-
-#define CONST_STRING(STR) { sizeof(STR) - 1, (u8*)(STR) }

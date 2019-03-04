@@ -9,7 +9,7 @@ global_variable bool Running						 = false;
 global_variable float TargetFrameSecounds			 = (float) (1.0f / ((float)DEFAULT_TARGET_FPS * 1000.0f));
 global_variable LARGE_INTEGER PerformanceCounterFreq = {};
 
-global_variable memory_arena FrameTempArena;
+global_variable memory_arena* FrameTempArena;
 
 ///
 /// Logging
@@ -17,15 +17,15 @@ global_variable memory_arena FrameTempArena;
 
 WIN32_EXPORT PLATFORM_LOG_INFO_FUNCTION(Win32LogInfo)
 {
-	char buffer[512 + 15] = {};
-	char formatted_message[1024] = {};
+// 	char buffer[512 + 15] = {};
+// 	char formatted_message[1024] = {};
+// 
+// 	strconcat("[%s] [%s] %s @ %u: ", message, buffer, ARRAY_COUNT(buffer));
+// 	strcopy("\n", buffer + strlength(buffer), ARRAY_COUNT(buffer) - strlength(buffer));
+// 
+// 	wsprintf(formatted_message, buffer, module, (is_debug ? "DEBUG" : "INFO"), function_name, line_nr);
 
-	strconcat("[%s] [%s] %s @ %u: ", message, buffer, ARRAY_COUNT(buffer));
-	strcopy("\n", buffer + strlength(buffer), ARRAY_COUNT(buffer) - strlength(buffer));
-
-	wsprintf(formatted_message, buffer, module, (is_debug ? "DEBUG" : "INFO"), function_name, line_nr);
-
-	OutputDebugStringA(formatted_message);
+	OutputDebugStringA(message);
 }
 
 WIN32_EXPORT PLATFORM_LOG_ERROR_FUNCTION(Win32LogError)
@@ -44,47 +44,43 @@ WIN32_EXPORT PLATFORM_LOG_ERROR_FUNCTION(Win32LogError)
 		Running = false;
 }
 
+
 ///
 /// Raw Input
 ///
 
-internal bool
-Win32InitRawInput()
+internal inline bool
+Win32RegisterRawInputDevices(HWND window_handle)
 {
-	RAWINPUTDEVICE rawInputDevices[2];
+	bool result = false;
 
-	// Keyboard
-	rawInputDevices[0].usUsagePage = 0x01;
-	rawInputDevices[0].usUsage	   = 0x06;
-	rawInputDevices[0].dwFlags	   = RIDEV_NOHOTKEYS; // TODO(soimn): check if RIDEV_NOLEGACY improves performance
-	rawInputDevices[0].hwndTarget  = NULL;
+	RAWINPUTDEVICE devices[2];
 
-	// Mouse
-	rawInputDevices[1].usUsagePage = 0x01;
-	rawInputDevices[1].usUsage	   = 0x02;
-	rawInputDevices[1].dwFlags	   = 0x00;  // TODO(soimn): check if RIDEV_NOLEGACY improves performance
-	rawInputDevices[1].hwndTarget  = NULL;
+	devices[0].usUsagePage = 0x1;
+	devices[0].usUsage	   = 0x6;
+	devices[0].dwFlags	   = RIDEV_DEVNOTIFY
+							 | RIDEV_NOHOTKEYS
+							 | RIDEV_NOLEGACY;
+	devices[0].hwndTarget  = window_handle;
 
-	BOOL result = RegisterRawInputDevices((PRAWINPUTDEVICE)&rawInputDevices, 2, sizeof(RAWINPUTDEVICE));
-	
-	if (!result)
+	devices[1].usUsagePage = 0x1;
+	devices[1].usUsage	   = 0x2;
+	devices[1].dwFlags	   = RIDEV_DEVNOTIFY;
+	devices[1].hwndTarget  = window_handle;
+
+	if (RegisterRawInputDevices(devices, 2, sizeof(RAWINPUTDEVICE)) == FALSE)
 	{
-		WIN32LOG_ERROR("Failed to register raw input devices");
+		WIN32LOG_FATAL("Failed to register raw input devices");
+	}
+
+	else
+	{
+		result = true;
 	}
 
 	return result;
 }
 
-internal void
-Win32HandleRawInput(UINT msgCode, WPARAM wParam,
-					LPARAM lParam)
-{
-	UNUSED_PARAMETER(msgCode);
-	UNUSED_PARAMETER(wParam);
-	UNUSED_PARAMETER(lParam);
-
-	WIN32LOG_DEBUG("Input!");
-}
 
 ///
 /// File System Interaction
@@ -1483,7 +1479,7 @@ Win32InitVulkan(memory_arena* temp_memory, memory_arena* persistent_memory,
 
 					if (current_shader && current_stage && current_stage_flag)
 					{
-						void* code_memory = PushSize(&FrameTempArena, file_group.first_file_info->file_size, alignof(u32), 0);
+						void* code_memory = PushSize(FrameTempArena, file_group.first_file_info->file_size, alignof(u32), 0);
 
 						platform_file_handle file_handle = Win32OpenFile(file_group.first_file_info, OpenFile_Read);
 						Win32ReadFromFile(&file_handle, 0, file_group.first_file_info->file_size, code_memory);
@@ -1832,12 +1828,13 @@ Win32UnloadGameCode(win32_game_code* game_code)
 	game_code->game_update_and_render_func = &GameUpdateAndRenderStub;
 }
 
-LRESULT CALLBACK Win32MainWindowProc(HWND windowHandle, UINT msgCode,
-									 WPARAM wParam, LPARAM lParam)
+LRESULT CALLBACK
+Win32MainWindowProc(HWND window_handle, UINT msg_code,
+					WPARAM w_param, LPARAM l_param)
 {
 	LRESULT result = 0;
 
-	switch (msgCode)
+	switch (msg_code)
 	{
 		// TODO(soimn): call games' exit handler instead of closing immediately
 		case WM_CLOSE:
@@ -1848,14 +1845,112 @@ LRESULT CALLBACK Win32MainWindowProc(HWND windowHandle, UINT msgCode,
 			Running = false;
 		break;
 
+// 		case WM_INPUT: INVALID_CODE_PATH; break;
+
 		default:
-			result = DefWindowProc(windowHandle, msgCode, wParam, lParam);
+			result = DefWindowProc(window_handle, msg_code, w_param, l_param);
 		break;
 	}
 
 	return result;
 }
 
+internal void
+Win32ProcessPendingMessages(HWND window_handle, platform_game_input* old_input, platform_game_input* new_input)
+{
+	MSG message  {};
+
+	while (PeekMessageA(&message, window_handle, 0, 0, PM_REMOVE))
+	{
+		switch(message.message)
+		{
+			case WM_QUIT:
+				Running = false;
+			break;
+
+			case WM_LBUTTONUP:
+				new_input->mouse.left = false;
+			break;
+
+			case WM_LBUTTONDOWN:
+				new_input->mouse.left = true;
+			break;
+
+
+            case WM_INPUT:
+			{
+				u8 buffer[50];
+				u32 required_buffer_size;
+
+				if (GetRawInputData((HRAWINPUT) message.lParam, RID_INPUT, NULL, &required_buffer_size, sizeof(RAWINPUTHEADER)) == 0
+					&& required_buffer_size > ARRAY_COUNT(buffer))
+				{
+					WIN32LOG_DEBUG("Input was not captured, as the input buffer is too small");
+				}
+
+
+				else
+				{
+					if (GetRawInputData((HRAWINPUT) message.lParam, RID_INPUT, (void*) buffer, &required_buffer_size, sizeof(RAWINPUTHEADER)))
+					{
+						PRAWINPUT input = (PRAWINPUT) buffer;
+
+						switch (input->header.dwType)
+						{
+							case RIM_TYPEKEYBOARD:
+							{
+								u32 keycode = (u32) input->data.keyboard.VKey;
+
+								bool is_down  = input->data.keyboard.Flags == RI_KEY_MAKE;
+
+								if (is_down)
+								{
+									if ((((!new_input->current_key_buffer_size && old_input->current_key_buffer_size)
+												&& old_input->key_buffer[old_input->current_key_buffer_size - 1].code == (u8) keycode)
+												&& old_input->last_key_down)
+										|| (new_input->current_key_buffer_size != 0
+												&& (new_input->key_buffer[new_input->current_key_buffer_size - 1].code == (u8) keycode
+												&& new_input->last_key_down)))
+									{
+										// NOTE(soimn): this is a repeated keystroke
+									}
+
+									else
+									{
+										new_input->last_key_down = true;
+
+										if (new_input->current_key_buffer_size < PLATFORM_GAME_INPUT_KEYBUFFER_MAX_SIZE)
+										{
+											new_input->key_buffer[new_input->current_key_buffer_size++].code = (u8) keycode;
+										}
+									}
+								}
+
+								// NOTE(soimn): Game action input here
+								switch (keycode)
+								{
+									default:
+									break;
+								}
+							} break;
+
+							case RIM_TYPEMOUSE:
+							break;
+
+							default:
+								INVALID_CODE_PATH;
+							break;
+						}
+					}
+				}
+			} break;
+
+			default:
+				Win32MainWindowProc(window_handle, message.message, message.wParam, message.lParam);
+			break;
+		}
+	}
+}
 
 ///
 /// Entry Point
@@ -1908,14 +2003,13 @@ int CALLBACK WinMain(HINSTANCE instance,
 			memory.persistent_arena.current_block	= Win32AllocateMemoryBlock(MEGABYTES(64), 4);
 			++memory.persistent_arena.block_count;
 
-			memory.transient_arena.current_block	= Win32AllocateMemoryBlock(GIGABYTES(1), 4);
-			++memory.transient_arena.block_count;
+			memory.frame_temp_arena.current_block	= Win32AllocateMemoryBlock(GIGABYTES(1), 4);
+			++memory.frame_temp_arena.block_count;
 
 			memory.debug_arena.current_block		= Win32AllocateMemoryBlock(GIGABYTES(1), 4);
-			++memory.transient_arena.block_count;
+			++memory.debug_arena.block_count;
 
-			FrameTempArena.current_block			= Win32AllocateMemoryBlock(MEGABYTES(1), 4);
-			++FrameTempArena.block_count;
+			FrameTempArena = &memory.frame_temp_arena;
 
 			// Platform API function pointers
 			memory.platform_api = {};
@@ -1950,8 +2044,8 @@ int CALLBACK WinMain(HINSTANCE instance,
 				Win32BuildFullyQualifiedPath(&game_info, appendage, (wchar_t*) game_info.loaded_dll_path, buffer_length);
 			}
 
-			// Set working directory
-			{
+			
+			{ //// Set working directory
 				BOOL successfully_set_wd = SetCurrentDirectoryW(game_info.cwd);
 
 				if (successfully_set_wd == FALSE)
@@ -1962,7 +2056,10 @@ int CALLBACK WinMain(HINSTANCE instance,
 				game_info_valid = (successfully_set_wd != 0);
 			}
 
-			// Game code
+			//// Raw Input
+			bool input_ready = Win32RegisterRawInputDevices(window_handle);
+
+			//// Game code
 			win32_game_code game_code = {};
 
 			if (game_info_valid)
@@ -1970,24 +2067,18 @@ int CALLBACK WinMain(HINSTANCE instance,
 				game_code = Win32LoadGameCode(game_info.dll_path, game_info.loaded_dll_path);
 			}
 
-			// Raw input
-			bool input_ready = Win32InitRawInput();
-
-			// Vulkan
+			//// Vulkan
 			win32_vulkan_binding vulkan_binding = {};
-			bool vulkan_ready = Win32InitVulkan(&FrameTempArena, &memory.persistent_arena,
+			bool vulkan_ready = Win32InitVulkan(FrameTempArena, &memory.persistent_arena,
 												&vulkan_binding, &memory.vulkan_state,
 												instance, window_handle,
 												APPLICATION_NAME, APPLICATION_VERSION);
 
 			memory.vulkan_api = vulkan_binding.api;
 
-			// Misc
-			QueryPerformanceFrequency(&PerformanceCounterFreq);
+			ClearMemoryArena(FrameTempArena);
 
-			ClearMemoryArena(&FrameTempArena);
-
-			if (game_info_valid && game_code.is_valid && input_ready && vulkan_ready)
+			if (input_ready && game_info_valid && game_code.is_valid && vulkan_ready)
 			{
 				Running = true;
 
@@ -1995,25 +2086,32 @@ int CALLBACK WinMain(HINSTANCE instance,
 
 				if (game_code.game_init_func(&memory))
 				{
+					// TODO(soimn): adjust this to support dynamically changing the balance of game time and real time
+					f32 game_update_dt = 1.0f / 60.0f;
 
-					/// Main Loop
+					platform_game_input* new_input = &memory.new_input;
+					platform_game_input* old_input = &memory.new_input;
+
+					//// Main Loop
 					while (Running)
 					{
-						LARGE_INTEGER frame_start_time = Win32GetWallClock();
-
 						// TODO(soimn): check if the window was resized, and recreate swapchain if resized or the recreate flag is set
+						
+						*new_input = *old_input;
+						new_input->frame_dt = game_update_dt;
 
-						MSG message;
-						while (PeekMessage(&message, window_handle, 0, 0, PM_REMOVE))
+						Win32ProcessPendingMessages(window_handle, &memory.old_input, &memory.new_input);
+
 						{
-// 							if (message.message == WM_INPUT)
-// 							{
-// 								Win32HandleRawInput(message.message, message.wParam,
-// 													message.lParam);
-// 							}
-							
-							Win32MainWindowProc(message.hwnd, message.message,
-												message.wParam, message.lParam);
+							POINT cursor_position = {};
+							RECT window_rect	  = {};
+							GetCursorPos(&cursor_position);
+							ScreenToClient(window_handle, &cursor_position);
+							GetClientRect(window_handle, &window_rect);
+							new_input->mouse.position = {
+								((f32) (cursor_position.x) / (f32) (window_rect.right)) * 16.0f,
+								((f32) (cursor_position.y) / (f32) (window_rect.bottom)) * 9.0f
+							};
 						}
 
 						#ifdef ANT_ENABLE_HOT_RELOADING
@@ -2045,7 +2143,7 @@ int CALLBACK WinMain(HINSTANCE instance,
 						}
 						#endif
 
-						game_code.game_update_and_render_func(&memory, TargetFrameSecounds);
+						game_code.game_update_and_render_func(&memory, game_update_dt);
 
 						{//// Present render target
 							u32 image_index;
@@ -2127,18 +2225,24 @@ int CALLBACK WinMain(HINSTANCE instance,
 							}
 						}
 
-						LARGE_INTEGER frame_end_time = Win32GetWallClock();
+						if (new_input->current_key_buffer_size != 0)
+						{
+							char buffer[50];
 
-// 						float frame_time_elapsed = Win32GetSecoundsElapsed(frame_start_time, frame_end_time);
-// 
-// 						while (frame_time_elapsed < TargetFrameSecounds)
-// 						{
-// 							frame_time_elapsed += Win32GetSecoundsElapsed(frame_start_time, Win32GetWallClock());
-// 						}
+							for (u32 i = 0; i < new_input->current_key_buffer_size; ++i)
+							{
+								wsprintf(buffer, "%c", new_input->key_buffer[i].code);
+								WIN32LOG_DEBUG(buffer);
+							}
+						}
 
-						// TODO(soimn): reset temporary frame local memory
+						platform_game_input* temp_input = old_input;
+						old_input = new_input;
+						new_input = temp_input;
+
+						ResetMemoryArena(FrameTempArena);
 					}
-					/// Main Loop End
+					//// Main Loop End
 				}
 
 				else
@@ -2163,14 +2267,11 @@ int CALLBACK WinMain(HINSTANCE instance,
 
 /* TODO(soimn):
  *
- *	- Setup game input abstraction supporting future rebinding of keys
  *	- Refactor input handling to allow more explicit additions and deletions of devices
- *	- Implement support for DirectInput
  *	- Setup XAudio2
  *	- Implement a solution for freeing allocations instead of entire arenas
- *	- Change the explicit sleep at the end of the global loop to a wait on v-blank, and
- *	  find a way to handle 144 Hz monitor refresh rates and update synchronization, and consider
- *	  supporting several frames in flight.
+ *	- Handle window interaction and system keys via raw input instead of default event proc
+ *	- Set viewport dimensions and implement restricted resizing of the window
  */
 
 // FIXME(soimn):
@@ -2178,4 +2279,5 @@ int CALLBACK WinMain(HINSTANCE instance,
  *	- vkGetPhysicalDeviceFeatures fails with the error message "invalid physicalDevice object handle"
  *	  find out if this is a bug in vulkan or in the Win32InitVulkan code. The application seems to work
  *	  when the device features are not queried.
+ *	- The application crashes without an error log when the data directory is not found.
  */

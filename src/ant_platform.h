@@ -8,11 +8,16 @@
 #define ASSERTION_ENABLED
 #endif
 
+#include "ant_shared.h"
+
 #include "utils/assert.h"
 #include "utils/utility_defines.h"
 #include "utils/memory_utils.h"
-#include "ant_types.h"
+#include "utils/cstring.h"
+
 #include "math/vector.h"
+#include "math/interpolation.h"
+
 #include "vulkan.h"
 
 global_variable vulkan_api_functions* VulkanAPI;
@@ -43,6 +48,8 @@ typedef PLATFORM_LOG_ERROR_FUNCTION(platform_log_error_function);
 #define LOG_INFO(message)
 #define LOG_DEBUG(message)
 #endif
+
+/// PLATFORM API
 
 /// File API
 
@@ -109,6 +116,64 @@ typedef PLATFORM_WRITE_TO_FILE_FUNCTION(platform_write_to_file_function);
 
 #define PLATFORM_FILE_IS_VALID(handle) ((handle)->is_valid)
 
+/// Input
+
+// TODO(soimn):
+// typedef struct platform_game_input_button
+// {
+// 	b32 ended_down;
+// 	u32 half_transition_count;
+// 
+// 	// NOTE(soimn): this value is far from accurate, since frame time may differ
+// 	f32 ms_since_last_transition;
+// } platform_game_input_button;
+// 
+// typedef struct platform_game_input_axial
+// {
+// 	v2 value;
+// } platform_game_input_axial;
+
+#define PLATFORM_GAME_INPUT_KEYBUFFER_MAX_SIZE 16
+
+typedef struct platform_key_code
+{
+	alignas(MEMORY_32BIT_ALIGNED)
+	// NOTE(soimn): This is the key code for the keypress.
+	//				Alphanumeric key codes are encoded with the ascii character value.
+	//				Special ascii values often requires a modifier key to access, such as ':',
+	//				are encoded with the ascii character values, and the modifier keys are not registered.
+	//
+	//				<Enter>		0x0D
+	//				<Esc>		0x1B
+	//				<Backspace> 0x08
+	//				<Space>		0x20
+	//				<Del>		0x7F
+	//				<Tab>		0x09
+	
+	u8 code; 
+	u8 modifiers;
+	u8 Reserved_[2];
+} platform_key_code;
+
+typedef struct platform_game_input
+{
+	f32 frame_dt;
+	
+	/// UI INTERACTION ///
+	
+	struct mouse
+	{
+		v2 position; // This is the screen space position of the mouse cursor
+
+		bool right, left, middle;
+	} mouse;
+
+	u32 current_key_buffer_size;
+	bool last_key_down;
+	platform_key_code key_buffer[PLATFORM_GAME_INPUT_KEYBUFFER_MAX_SIZE];
+
+} platform_game_input;
+
 typedef struct platform_api_functions
 {
 	platform_log_info_function* LogInfo;
@@ -131,11 +196,14 @@ typedef struct game_memory
 
 	vulkan_renderer_state vulkan_state;
 
+	platform_game_input new_input;
+	platform_game_input old_input;
+
 	default_memory_arena_allocation_routines default_allocation_routines;
 	memory_arena persistent_arena;
-	memory_arena transient_arena;
+	memory_arena frame_temp_arena;
+
 	memory_arena debug_arena;
-	memory_arena renderer_arena;
 } game_memory;
 
 #define GAME_INIT_FUNCTION(name) bool name (game_memory* memory)

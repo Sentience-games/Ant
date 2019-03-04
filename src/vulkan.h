@@ -64,7 +64,7 @@ typedef struct vulkan_renderer_state
 		VkCommandPool render_pool;
 		VkCommandBuffer render_buffer;
 
-		v2 immediate_viewport_dimension;
+		v2 immediate_viewport_dimensions;
 		VkPipelineLayout immediate_layout;
 		VkPipeline immediate_pipeline;
 	} render_target;

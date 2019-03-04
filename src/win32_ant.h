@@ -32,6 +32,10 @@
 
 #define WIN32_EXPORT extern "C" __declspec(dllexport)
 
+#ifndef _WIN64
+#error 32-bit builds are not supported
+#endif
+
 /// Debug
 
 #define WIN32LOG_FATAL(message) Win32LogError("WIN32", true, __FUNCTION__, __LINE__, message)
