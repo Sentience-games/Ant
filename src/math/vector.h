@@ -12,10 +12,10 @@ struct v2
 	{
 		struct
 		{
-			float x, y;
+			f32 x, y;
 		};
 
-		float E[2];
+		f32 E[2];
 	};
 };
 
@@ -25,22 +25,22 @@ struct v3
 	{
 		struct
 		{
-			float x, y, z;
+			f32 x, y, z;
 		};
 
 		struct
 		{
 			v2 xy;
-			float _ignored01;
+			f32 _ignored01;
 		};
 
 		struct
 		{
 			v2 yz;
-			float _ignored02;
+			f32 _ignored02;
 		};
 
-		float E[3];
+		f32 E[3];
 	};
 };
 
@@ -50,7 +50,7 @@ struct v4
 	{
 		struct
 		{
-			float x, y, z, w;
+			f32 x, y, z, w;
 		};
 
 		struct
@@ -60,29 +60,35 @@ struct v4
 
 		struct
 		{
-			float _ignored01;
+			f32 _ignored01;
 			v2 yz;
-			float _ignored02;
+			f32 _ignored02;
 		};
 
 		struct
 		{
 			v3 xyz;
-			float _ignored03;
+			f32 _ignored03;
 		};
 
 		struct
 		{
-			float _ignored04;
+			f32 _ignored04;
 			v3 yzw;
 		};
 
-		float E[4];
+		f32 E[4];
 	};
 };
 
 
 /// V2
+
+inline v2
+Vec2(f32 x, f32 y)
+{
+	return {x, y};
+}
 
 inline
 v2 operator + (const v2& v_1, const v2& v_2)
@@ -118,19 +124,19 @@ v2& operator -= (v2& rhs, const v2& lhs)
 }
 
 inline
-v2 operator * (float s, const v2& v)
+v2 operator * (f32 s, const v2& v)
 {
 	return {s * v.x, s * v.y};
 }
 
 inline
-v2 operator * (const v2& v, float s)
+v2 operator * (const v2& v, f32 s)
 {
 	return s * v;
 }
 
 inline
-v2& operator *= (v2& v, float s)
+v2& operator *= (v2& v, f32 s)
 {
 	v.x *= s;
 	v.y *= s;
@@ -138,26 +144,26 @@ v2& operator *= (v2& v, float s)
 }
 
 inline
-v2 operator / (float s, const v2& v)
+v2 operator / (f32 s, const v2& v)
 {
 	return {s / v.x, s / v.y};
 }
 
 inline
-v2 operator / (const v2& v, float s)
+v2 operator / (const v2& v, f32 s)
 {
-	return s / v;
+	return v * (1.0f / s);
 }
 
 inline
-v2& operator /= (v2& v, float s)
+v2& operator /= (v2& v, f32 s)
 {
 	v.x /= s;
 	v.y /= s;
 	return v;
 }
 
-inline float
+inline f32
 Inner(const v2& v_1, const v2& v_2)
 {
 	return v_1.x * v_2.x + v_1.y * v_2.y;
@@ -169,7 +175,7 @@ Hadamard(const v2& v_1, const v2& v_2)
 	return {v_1.x * v_2.x, v_1.y * v_2.y};
 }
 
-inline float
+inline f32
 LengthSq(const v2& v)
 {
 	return Inner(v, v);
@@ -213,19 +219,19 @@ v3& operator -= (v3& rhs, const v3& lhs)
 };
 
 inline
-v3 operator * (float s, const v3& v)
+v3 operator * (f32 s, const v3& v)
 {
 	return {s * v.x, s * v.y, s * v.z};
 }
 
 inline
-v3 operator * (const v3& v, float s)
+v3 operator * (const v3& v, f32 s)
 {
 	return s * v;
 }
 
 inline
-v3& operator *= (v3& v, float s)
+v3& operator *= (v3& v, f32 s)
 {
 	v.x *= s;
 	v.y *= s;
@@ -234,19 +240,19 @@ v3& operator *= (v3& v, float s)
 }
 
 inline
-v3 operator / (float s, const v3& v)
+v3 operator / (f32 s, const v3& v)
 {
 	return {s / v.x, s / v.y, s / v.z};
 }
 
 inline
-v3 operator / (const v3& v, float s)
+v3 operator / (const v3& v, f32 s)
 {
-	return s / v;
+	return v * (1.0f / s);
 }
 
 inline
-v3& operator /= (v3& v, float s)
+v3& operator /= (v3& v, f32 s)
 {
 	v.x /= s;
 	v.y /= s;
@@ -254,7 +260,7 @@ v3& operator /= (v3& v, float s)
 	return v;
 }
 
-inline float
+inline f32
 Inner(const v3& v_1, const v3& v_2)
 {
 	return v_1.x * v_2.x + v_1.y * v_2.y + v_1.z * v_2.z;
@@ -266,7 +272,7 @@ Hadamard(const v3& v_1, const v3& v_2)
 	return {v_1.x * v_2.x, v_1.y * v_2.y, v_1.z * v_2.z};
 }
 
-inline float
+inline f32
 LengthSq(const v3& v)
 {
 	return Inner(v, v);
@@ -311,19 +317,19 @@ v4& operator -= (v4& rhs, const v4& lhs)
 };
 
 inline
-v4 operator * (float s, const v4& v)
+v4 operator * (f32 s, const v4& v)
 {
 	return {s * v.x, s * v.y, s * v.z, s * v.w};
 }
 
 inline
-v4 operator * (const v4& v, float s)
+v4 operator * (const v4& v, f32 s)
 {
 	return s * v;
 }
 
 inline
-v4& operator *= (v4& v, float s)
+v4& operator *= (v4& v, f32 s)
 {
 	v.x *= s;
 	v.y *= s;
@@ -333,19 +339,19 @@ v4& operator *= (v4& v, float s)
 }
 
 inline
-v4 operator / (float s, const v4& v)
+v4 operator / (f32 s, const v4& v)
 {
 	return {s / v.x, s / v.y, s / v.z, s / v.w};
 }
 
 inline
-v4 operator / (const v4& v, float s)
+v4 operator / (const v4& v, f32 s)
 {
-	return s / v;
+	return v * (1.0f / s);
 }
 
 inline
-v4& operator /= (v4& v, float s)
+v4& operator /= (v4& v, f32 s)
 {
 	v.x /= s;
 	v.y /= s;
@@ -354,7 +360,7 @@ v4& operator /= (v4& v, float s)
 	return v;
 }
 
-inline float
+inline f32
 Inner(const v4& v_1, const v4& v_2)
 {
 	return v_1.x * v_2.x + v_1.y * v_2.y + v_1.z * v_2.z + v_1.w * v_2.w;
@@ -366,7 +372,7 @@ Hadamard(const v4& v_1, const v4& v_2)
 	return {v_1.x * v_2.x, v_1.y * v_2.y, v_1.z * v_2.z, v_1.w * v_2.w};
 }
 
-inline float
+inline f32
 LengthSq(const v4& v)
 {
 	return Inner(v, v);
