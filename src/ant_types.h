@@ -40,6 +40,11 @@ typedef double f64;
 
 typedef u32 b32;
 
+#define flag8(type)  u8
+#define flag16(type) u16
+#define flag32(type) u32
+#define flag64(type) u64
+
 #define enum8(type)  u8
 #define enum16(type) u16
 #define enum32(type) u32
