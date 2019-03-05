@@ -45,7 +45,7 @@ enum UI_ELEMENT_LAYOUT
 
 enum UI_ELEMENT_TYPE
 {
-	UIElement_NOID
+	UIElement_NOID,
 
 	UIElement_Button,
 
@@ -114,7 +114,8 @@ v4 ui_colors[UI_COLORS_COUNT] = {
 };
 
 v2 ui_element_dimensions[UI_ELEMENT_TYPE_COUNT] = {
-	{1.0f, 0.5f}
+	{-1.0f, -1.0f}, // NOID
+	{1.0f, 0.5f}    // Button
 };
 
 global_variable
@@ -158,9 +159,9 @@ UIActiveElementIsCapturing()
 {
 	bool result = false;
 
-	swicth(UIState.active_element.element.type)
+	switch(UIState.active_element.element.type)
 	{
-		case UIElement_NOID
+		case UIElement_NOID:
 			result = false;
 		break;
 
@@ -191,7 +192,16 @@ UIDrawPanel_(ui_panel* panel)
 inline void
 UIDrawPanelElement_(ui_panel* panel, ui_element* element)
 {
+	switch(element->type)
+	{
+		case UIElement_Button:
+			PushIMQuad(element->position, element->dimensions, ui_colors[UIColor_Button]);
+		break;
 
+		default:
+			INVALID_CODE_PATH;
+		break;
+	}
 }
 
 inline void
@@ -267,6 +277,8 @@ UIRender()
 
 		ordered_panels[i]->first_element   = NULL;
 		ordered_panels[i]->current_element = NULL;
+		ordered_panels[i]->at_x			   = 0;
+		ordered_panels[i]->at_y			   = 0;
 	}
 
 	UIState.hot_panel   = NULL;
@@ -428,8 +440,12 @@ UIAddElementToPanel_(enum32(UI_PANEL_ID) panel_id, flag8(UI_ELEMENT_LAYOUT) elem
 		panel->current_element->next = element;
 		panel->current_element		 = element;
 	}
+	
+	v2 anchor		  = panel->position + Vec2(0.0f, UI_PANEL_TITLEBAR_HEIGHT + UI_PANEL_MIN_ELEMENT_PADDING_HEIGHT);
+	element->position = anchor + element->position;
 }
 
+// TODO(soimn): extract is_hot and is_active, and fix problem with the function allways returning false on consecutive presses
 inline bool
 UIButton(enum32(UI_PANEL_ID) panel_id, const char* label, enum8(UI_ELEMENT_LAYOUT) layout = UIElementLayout_NewRow)
 {
@@ -439,7 +455,7 @@ UIButton(enum32(UI_PANEL_ID) panel_id, const char* label, enum8(UI_ELEMENT_LAYOU
 
 	element->type		= UIElement_Button;
 	element->label		= label;
-	element->dimensions = ui_element_dimensions[element_type];
+	element->dimensions = ui_element_dimensions[element->type];
 
 	UIAddElementToPanel_(panel_id, layout, element);
 
@@ -448,11 +464,11 @@ UIButton(enum32(UI_PANEL_ID) panel_id, const char* label, enum8(UI_ELEMENT_LAYOU
 	{
 		UIState.hot_element = *element;
 
-		if (UIState.active_element.type == UIPanel_NOID
+		if (UIState.active_element.element.type == UIPanel_NOID
 			&& NewInput->mouse.left)
 		{
 			UIState.active_element.element		= *element;
-			UIState.active_element.panel_id		= panel_id;
+			UIState.active_element.owner_id		= panel_id;
 			UIState.active_element.is_capturing = false;
 
 			result = true;
@@ -460,9 +476,10 @@ UIButton(enum32(UI_PANEL_ID) panel_id, const char* label, enum8(UI_ELEMENT_LAYOU
 	}
 
 	// NOTE(soimn) char* comparison is intended, as the string is not stored in the UI system
-	else if (UIState.active_element.owner_id == panel_id
-		&& UIState.active_element.element.type == UIElement_Button
-		&& UIState.active_element.element.label == label)
+	else if (UIState.active_element.owner_id	   == panel_id
+		&& UIState.active_element.element.type	   == UIElement_Button
+		&& UIState.active_element.element.label    == label
+		&& UIState.active_element.element.position == element->position)
 	{
 		UIState.active_element = {};
 	}

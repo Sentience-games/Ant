@@ -90,73 +90,79 @@ Vec2(f32 x, f32 y)
 	return {x, y};
 }
 
-inline
-v2 operator + (const v2& v_1, const v2& v_2)
+inline bool
+operator == (const v2& v_1, const v2& v_2)
+{
+	return (v_1.x == v_2.x && v_1.y == v_2.y);
+}
+
+inline v2
+operator + (const v2& v_1, const v2& v_2)
 {
 	return {v_1.x + v_2.x, v_1.y + v_2.y};
 }
 
-inline
-v2 operator - (const v2& v_1, const v2& v_2)
+inline v2
+operator - (const v2& v_1, const v2& v_2)
 {
 	return {v_1.x - v_2.x, v_1.y - v_2.y};
 }
 
-inline
-v2 operator - (const v2& v)
+inline v2
+operator - (const v2& v)
 {
 	return {-v.x, -v.y};
 }
 
-inline
-v2& operator += (v2& rhs, const v2& lhs)
+inline v2
+& operator += (v2& rhs, const v2& lhs)
 {
 	rhs.x += lhs.x;
 	rhs.y += lhs.y;
 	return rhs;
 }
 
-inline
-v2& operator -= (v2& rhs, const v2& lhs)
+inline v2
+& operator -= (v2& rhs, const v2& lhs)
 {
 	rhs += -lhs;
 	return rhs;
 }
 
-inline
-v2 operator * (f32 s, const v2& v)
+inline v2
+operator * (f32 s, const v2& v)
 {
 	return {s * v.x, s * v.y};
 }
 
-inline
-v2 operator * (const v2& v, f32 s)
+inline v2
+operator * (const v2& v, f32 s)
 {
 	return s * v;
 }
 
-inline
-v2& operator *= (v2& v, f32 s)
+inline v2
+& operator *= (v2& v, f32 s)
 {
 	v.x *= s;
 	v.y *= s;
 	return v;
 }
 
-inline
-v2 operator / (f32 s, const v2& v)
+inline v2
+operator / (f32 s, const v2& v)
 {
 	return {s / v.x, s / v.y};
 }
 
-inline
-v2 operator / (const v2& v, f32 s)
+inline v2
+operator / (const v2& v, f32 s)
 {
 	return v * (1.0f / s);
 }
 
-inline
-v2& operator /= (v2& v, f32 s)
+inline v2
+& operator /= (v2& v, f32 s)
 {
 	v.x /= s;
 	v.y /= s;
@@ -184,26 +190,26 @@ LengthSq(const v2& v)
 
 /// V3
 
-inline
-v3 operator + (const v3& v_1, const v3& v_2)
+inline v3
+operator + (const v3& v_1, const v3& v_2)
 {
 	return {v_1.x + v_2.x, v_1.y + v_2.y, v_1.z + v_2.z};
 };
 
-inline
-v3 operator - (const v3& v_1, const v3& v_2)
+inline v3
+operator - (const v3& v_1, const v3& v_2)
 {
 	return {v_1.x - v_2.x, v_1.y - v_2.y, v_1.z - v_2.z};
 };
 
-inline
-v3 operator - (const v3& v)
+inline v3
+operator - (const v3& v)
 {
 	return {-v.x, -v.y, -v.z};
 };
 
-inline
-v3& operator += (v3& rhs, const v3& lhs)
+inline v3
+& operator += (v3& rhs, const v3& lhs)
 {
 	rhs.x += lhs.x;
 	rhs.y += lhs.y;
@@ -211,27 +217,27 @@ v3& operator += (v3& rhs, const v3& lhs)
 	return rhs;
 };
 
-inline
-v3& operator -= (v3& rhs, const v3& lhs)
+inline v3
+& operator -= (v3& rhs, const v3& lhs)
 {
 	rhs += -lhs;
 	return rhs;
 };
 
-inline
-v3 operator * (f32 s, const v3& v)
+inline v3
+operator * (f32 s, const v3& v)
 {
 	return {s * v.x, s * v.y, s * v.z};
 }
 
-inline
-v3 operator * (const v3& v, f32 s)
+inline v3
+operator * (const v3& v, f32 s)
 {
 	return s * v;
 }
 
-inline
-v3& operator *= (v3& v, f32 s)
+inline v3
+& operator *= (v3& v, f32 s)
 {
 	v.x *= s;
 	v.y *= s;
@@ -239,20 +245,20 @@ v3& operator *= (v3& v, f32 s)
 	return v;
 }
 
-inline
-v3 operator / (f32 s, const v3& v)
+inline v3
+operator / (f32 s, const v3& v)
 {
 	return {s / v.x, s / v.y, s / v.z};
 }
 
-inline
-v3 operator / (const v3& v, f32 s)
+inline v3
+operator / (const v3& v, f32 s)
 {
 	return v * (1.0f / s);
 }
 
-inline
-v3& operator /= (v3& v, f32 s)
+inline v3
+& operator /= (v3& v, f32 s)
 {
 	v.x /= s;
 	v.y /= s;
@@ -281,26 +287,26 @@ LengthSq(const v3& v)
 
 /// V4
 
-inline
-v4 operator + (const v4& v_1, const v4& v_2)
+inline v4
+operator + (const v4& v_1, const v4& v_2)
 {
 	return {v_1.x + v_2.x, v_1.y + v_2.y, v_1.z + v_2.z, v_1.w + v_2.w};
 };
 
-inline
-v4 operator - (const v4& v_1, const v4& v_2)
+inline v4
+operator - (const v4& v_1, const v4& v_2)
 {
 	return {v_1.x - v_2.x, v_1.y - v_2.y, v_1.z - v_2.z, v_1.w - v_2.w};
 };
 
-inline
-v4 operator - (const v4& v)
+inline v4
+operator - (const v4& v)
 {
 	return {-v.x, -v.y, -v.z, -v.w};
 };
 
-inline
-v4& operator += (v4& rhs, const v4& lhs)
+inline v4
+& operator += (v4& rhs, const v4& lhs)
 {
 	rhs.x += lhs.x;
 	rhs.y += lhs.y;
@@ -309,27 +315,27 @@ v4& operator += (v4& rhs, const v4& lhs)
 	return rhs;
 };
 
-inline
-v4& operator -= (v4& rhs, const v4& lhs)
+inline v4
+& operator -= (v4& rhs, const v4& lhs)
 {
 	rhs += -lhs;
 	return rhs;
 };
 
-inline
-v4 operator * (f32 s, const v4& v)
+inline v4
+operator * (f32 s, const v4& v)
 {
 	return {s * v.x, s * v.y, s * v.z, s * v.w};
 }
 
-inline
-v4 operator * (const v4& v, f32 s)
+inline v4
+operator * (const v4& v, f32 s)
 {
 	return s * v;
 }
 
-inline
-v4& operator *= (v4& v, f32 s)
+inline v4
+& operator *= (v4& v, f32 s)
 {
 	v.x *= s;
 	v.y *= s;
@@ -338,20 +344,20 @@ v4& operator *= (v4& v, f32 s)
 	return v;
 }
 
-inline
-v4 operator / (f32 s, const v4& v)
+inline v4
+operator / (f32 s, const v4& v)
 {
 	return {s / v.x, s / v.y, s / v.z, s / v.w};
 }
 
-inline
-v4 operator / (const v4& v, f32 s)
+inline v4
+operator / (const v4& v, f32 s)
 {
 	return v * (1.0f / s);
 }
 
-inline
-v4& operator /= (v4& v, f32 s)
+inline v4
+& operator /= (v4& v, f32 s)
 {
 	v.x /= s;
 	v.y /= s;
