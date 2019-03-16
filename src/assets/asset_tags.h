@@ -1,7 +1,6 @@
 #pragma once
 
-// NOTE(soimn):
-// format: AssetTag_[qualified name]
-enum AssetTag
+enum ASSET_TAG
 {
+    Asset_DefaultFont,
 };

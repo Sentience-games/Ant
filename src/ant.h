@@ -11,4 +11,4 @@ global_variable memory_arena* FrameTempArena;
 global_variable memory_arena* DebugArena;
 
 #include "immediate/rendering.h"
-#include "immediate/ui.h"
+#include "editor/gui.h"

@@ -191,6 +191,12 @@ LengthSq(const v2& v)
 /// V3
 
 inline v3
+Vec3(f32 x, f32 y, f32 z)
+{
+	return {x, y, z};
+}
+
+inline v3
 operator + (const v3& v_1, const v3& v_2)
 {
 	return {v_1.x + v_2.x, v_1.y + v_2.y, v_1.z + v_2.z};
@@ -286,6 +292,12 @@ LengthSq(const v3& v)
 
 
 /// V4
+
+inline v4
+Vec4(f32 x, f32 y, f32 z, f32 w)
+{
+	return {x, y, z, w};
+}
 
 inline v4
 operator + (const v4& v_1, const v4& v_2)

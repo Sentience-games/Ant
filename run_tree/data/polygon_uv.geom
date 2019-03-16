@@ -5,9 +5,10 @@ layout(triangle_strip, max_vertices = 128) out;
 
 layout(location = 0) in vec4  in_color[];
 layout(location = 1) in vec4  in_dimensions[];
-layout(location = 2) in float in_rotation[];
+layout(location = 2) in vec4 in_rotation_uv[];
 
 layout(location = 0) out vec4 out_color;
+layout(location = 1) out vec3 out_uv;
 
 const float PI = 3.1415926535;
 
@@ -35,7 +36,8 @@ void main ()
 	vec2 viewport_dimensions = in_dimensions[0].zw;
 	uint edge_count			 = uint(gl_in[0].gl_Position.w);
 	float radius			 = gl_in[0].gl_Position.z;
-	float rotation			 = in_rotation[0];
+	float rotation			 = in_rotation_uv[0].x;
+	vec3 uv_base			 = in_rotation_uv[0].yzw;
 
 	float walk_angle = (2 * PI) / edge_count;
 
@@ -59,6 +61,9 @@ void main ()
 	vec2 first_vertex_adjusted	  = TransformToViewport(viewport_matrix, (position + correction_matrix * first_vertex));
 	vec2 previous_vertex_adjusted = TransformToViewport(viewport_matrix, (position + correction_matrix * previous_vertex));
 
+	vec2 first_uv				  = first_vertex;
+	vec2 previous_uv			  = previous_vertex;
+
 	if (edge_count == 4)
 	{
 		vec2 upper_left  = position;
@@ -76,28 +81,34 @@ void main ()
 
 		gl_Position = vec4(upper_right, 0.0, 1.0);
 		out_color	= in_color[0];
+		out_uv		= uv_base + vec3(upper_right, 0.0);
 		EmitVertex();
 
 		gl_Position = vec4(upper_left, 0.0, 1.0);
 		out_color	= in_color[0];
+		out_uv		= uv_base + vec3(upper_left, 0.0);
 		EmitVertex();
 
 		gl_Position = vec4(lower_right, 0.0, 1.0);
 		out_color	= in_color[0];
+		out_uv		= uv_base + vec3(lower_right, 0.0);
 		EmitVertex();
 
 		EndPrimitive();
 
 		gl_Position = vec4(lower_right, 0.0, 1.0);
 		out_color	= in_color[0];
+		out_uv		= uv_base + vec3(lower_right, 0.0);
 		EmitVertex();
 
 		gl_Position = vec4(upper_left, 0.0, 1.0);
 		out_color	= in_color[0];
+		out_uv		= uv_base + vec3(upper_left, 0.0);
 		EmitVertex();
 
 		gl_Position = vec4(lower_left, 0.0, 1.0);
 		out_color	= in_color[0];
+		out_uv		= uv_base + vec3(lower_left, 0.0);
 		EmitVertex();
 	}
 
@@ -107,17 +118,22 @@ void main ()
 		{
 			gl_Position = vec4(first_vertex_adjusted, 0.0, 1.0);
 			out_color	= in_color[0];
+			out_uv		= uv_base + vec3(first_uv, 0.0);
 			EmitVertex();
 
 			gl_Position = vec4(previous_vertex_adjusted, 0.0, 1.0);
 			out_color	= in_color[0];
+			out_uv		= uv_base + vec3(previous_uv, 0.0);
 			EmitVertex();
 
 			previous_vertex			 = GetRotation(i * walk_angle) * first_vertex;
 			previous_vertex_adjusted = TransformToViewport(viewport_matrix, (position + correction_matrix * previous_vertex));
 
+			previous_uv				 = GetRotation(i * walk_angle) * first_uv;
+
 			gl_Position = vec4(previous_vertex_adjusted, 0.0, 1.0);
 			out_color	= in_color[0];
+			out_uv		= uv_base + vec3(previous_uv, 0.0);
 			EmitVertex();
 
 			EndPrimitive();

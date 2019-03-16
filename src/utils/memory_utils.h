@@ -13,10 +13,10 @@ typedef struct memory_block
 {
 	memory_block* next;
 	memory_block* previous;
-
+    
 	void* memory;
 	memory_index remaining_space;
-	uint8* push_ptr;
+	u8* push_ptr;
 } memory_block;
 
 #define MEMORY_ALLOCATE_MEMORY_BLOCK_FUNCTION(name) memory_block* name (memory_index size, u8 alignment)
@@ -31,7 +31,7 @@ typedef struct default_memory_arena_allocation_routines
 	memory_free_memory_block_function* free_function;
 	memory_allocate_memory_block_function* bootstrap_allocate_function;
 	memory_free_memory_block_function* bootstrap_free_function;
-
+    
 	memory_index block_size;
 	memory_index bootstrap_block_size;
 	memory_index minimum_fragment_size;
@@ -55,43 +55,56 @@ typedef struct memory_arena
 	memory_block* current_block;
 	memory_index used_memory;
 	memory_index block_count;
-
+    
 	memory_allocate_memory_block_function* allocate_function;
 	memory_free_memory_block_function* free_function;
-
+    
 	memory_arena_default_params defaults;
 } memory_arena;
 
+
 inline void*
-Align(void* ptr, uint8 alignment)
+AlignLarge(void* ptr, memory_index alignment)
 {
-	return (void*)((uint8*) ptr + (uint8)(((~((uintptr) ptr)) + 1) & (uint8)(alignment - 1)));
+	return (void*)((u8*) ptr + (memory_index)(((~((uintptr) ptr)) + 1) & (memory_index)(alignment - 1)));
 }
 
-inline uint8
-AlignOffset(void* ptr, uint8 alignment)
+inline void*
+Align(void* ptr, u8 alignment)
 {
-	return (uint8)((uint8*) Align(ptr, alignment) - (uint8*) ptr);
+    return AlignLarge(ptr, (memory_index) alignment);
 }
 
 inline memory_index
-RoundToAligned(memory_index size, uint8 alignment)
+AlignOffsetLarge(void* ptr, memory_index alignment)
 {
-	return size + AlignOffset((void*) ((uint8*)0 + size), alignment);
+	return (memory_index)((u8*) AlignLarge(ptr, alignment) - (u8*) ptr);
+}
+
+inline u8
+AlignOffset(void* ptr, u8 alignment)
+{
+    return (u8) AlignOffsetLarge(ptr, (memory_index) alignment);
+}
+
+inline memory_index
+RoundToAligned(memory_index size, u8 alignment)
+{
+	return size + AlignOffset((void*) ((u8*)0 + size), alignment);
 }
 
 #define CopyArray(source, count, dest) Copy((void*)(source), (count) * sizeof(*(source)), (dest))
 inline void*
 Copy(void* source, memory_index source_length, void* dest)
 {
-	uint8* source_ptr = (uint8*) source;
-	uint8* dest_ptr	  = (uint8*) dest;
-
-	while (dest_ptr < (uint8*) dest + source_length)
+	u8* source_ptr = (u8*) source;
+	u8* dest_ptr	  = (u8*) dest;
+    
+	while (dest_ptr < (u8*) dest + source_length)
 	{
 		*dest_ptr++ = *source_ptr++;
 	}
-
+    
 	return dest;
 }
 
@@ -101,7 +114,7 @@ inline void
 ZeroSize(void* ptr, memory_index size)
 {
 	u8* byte_ptr = (u8*) ptr;
-
+    
 	while (byte_ptr < (u8*) ptr + size)
 	{
 		*byte_ptr = 0;
@@ -115,17 +128,17 @@ ClearMemoryArena(memory_arena* arena)
 	{
 		arena->free_function = DefaultMemoryArenaAllocationRoutines.free_function;
 	}
-
+    
 	memory_block* block		 = arena->current_block;
 	memory_block* next_block = NULL;
-
+    
 	while (block)
 	{
 		next_block = block->previous;
 		arena->free_function(block);
 		block = next_block;
 	}
-
+    
 	arena->block_count = 0;
 	arena->used_memory = 0;
 }
@@ -134,19 +147,27 @@ inline void
 ResetMemoryArena(memory_arena* arena)
 {
 	memory_block* block		 = arena->current_block;
-
+    
 	while(block)
 	{
 		u8* prev_push_ptr = block->push_ptr;
-
+        
 		void* memory_start = (memory_block*) Align(block->memory, alignof(memory_block)) + 1;
-
-		block->push_ptr = (u8*) Align(memory_start, arena->defaults.alignment);
-
+        
+        if (arena->defaults.alignment)
+        {
+            block->push_ptr = (u8*) Align(memory_start, arena->defaults.alignment);
+        }
+		
+        else
+        {
+            block->push_ptr = (u8*) Align(memory_start, DefaultMemoryArenaAllocationRoutines.block_alignment);
+        }
+        
 		memory_index delta = (memory_index)(prev_push_ptr - block->push_ptr);
 		block->remaining_space += delta;
 		arena->used_memory -= delta;
-
+        
 		block = block->previous;
 	}
 }
@@ -156,92 +177,92 @@ PushSize_(memory_arena* arena, memory_index size,
 		  u8 passed_alignment = 0, i8 should_zero_memory = -1)
 {
 	Assert((should_zero_memory <= -1 && should_zero_memory <= 1) || "Non-ternary value passed as should zero memory");
-
+    
 	void* result = NULL;
-
+    
 	if (!arena->allocate_function)
 	{
 		arena->allocate_function = DefaultMemoryArenaAllocationRoutines.allocate_function;
 	}
-
+    
 	u8 alignment	 = (!passed_alignment		 ? arena->defaults.alignment   : passed_alignment);
 	i8 should_zero	 = (should_zero_memory == -1 ? arena->defaults.should_zero : should_zero_memory);
-
+    
 	if (!alignment)
 	{
 		alignment = 1;
 	}
-
+    
 	if (should_zero == -1)
 	{
 		should_zero = 0;
 	}
-
+    
 	u8 adjustment = 0;
 	memory_index total_size = 0;
-
+    
 	if (arena->current_block)
 	{
 		adjustment = AlignOffset(arena->current_block->push_ptr, alignment);
 		total_size = size + adjustment;
 	}
-
+    
 	if (arena->defaults.minimum_fragment_size == 0)
 	{
 		arena->defaults.minimum_fragment_size = DefaultMemoryArenaAllocationRoutines.minimum_fragment_size;
 	}
-
+    
 	if (!arena->current_block || arena->current_block->remaining_space < total_size + arena->defaults.minimum_fragment_size)
 	{
 		if (arena->current_block && arena->current_block->next)
 		{
 			arena->current_block = arena->current_block->next;
 		}
-
+        
 		else
 		{
 			if (!arena->defaults.block_size)
 			{
 				arena->defaults.block_size = DefaultMemoryArenaAllocationRoutines.block_size;
 			}
-
+            
 			if (!arena->defaults.block_alignment)
 			{
 				arena->defaults.block_alignment = DefaultMemoryArenaAllocationRoutines.block_alignment;
 			}
-
+            
 			memory_index new_block_size = MAX(arena->defaults.block_size, total_size);
 			u8 new_block_alignment		= arena->defaults.block_alignment;
-
+            
 			memory_block* new_block    = arena->allocate_function(new_block_size, new_block_alignment);
 			new_block->previous		   = arena->current_block;
-
+            
 			if (arena->current_block)
 			{
 				arena->current_block->next = new_block;
 			}
-
+            
 			arena->current_block	   = new_block;
 			++arena->block_count;
-
+            
 			adjustment = AlignOffset(arena->current_block->push_ptr, alignment);
 			total_size = size + adjustment;
 		}
 	}
-
+    
 	memory_block* block = arena->current_block;
-
+    
 	result = Align(block->push_ptr, alignment);
-
+    
 	if (should_zero)
 	{
 		ZeroSize(result, total_size);
 	}
-
+    
 	block->push_ptr += total_size;
 	block->remaining_space -= total_size;
 	arena->used_memory += total_size;
-
+    
 	return result;
 }
 
@@ -250,53 +271,60 @@ PushArray_(memory_arena* arena, memory_index size, memory_index count,
 		   u8 passed_alignment = 0, i8 should_zero_memory = -1)
 {
 	Assert((should_zero_memory <= -1 && should_zero_memory <= 1) || "Non-ternary value passed as should zero memory");
-
+    
 	u8 alignment	 = (!passed_alignment		 ? arena->defaults.alignment   : passed_alignment);
 	i8 should_zero	 = (should_zero_memory == -1 ? arena->defaults.should_zero : should_zero_memory);
-
+    
 	if (!alignment)
 	{
 		alignment = 1;
 	}
-
+    
 	if (should_zero == -1)
 	{
 		should_zero = 0;
 	}
-
+    
 	memory_index total_size = count * RoundToAligned(size, alignment);
 	return PushSize_(arena, total_size, alignment);
 }
 
 inline char*
-PushString(memory_arena* arena, char* cstring, memory_index length,
-		   u8 passed_alignment = 0, i8 should_zero_memory = -1)
+PushUnterminatedString(memory_arena* arena, char* cstring, memory_index length,
+					   u8 passed_alignment = MEMORY_8BIT_ALIGNED, i8 should_zero_memory = -1)
 {
 	Assert((should_zero_memory <= -1 && should_zero_memory <= 1) || "Non-ternary value passed as should zero memory");
-
+    
 	char* result = NULL;
-
-	u8 alignment	 = (!passed_alignment		 ? arena->defaults.alignment   : passed_alignment);
+    
 	i8 should_zero	 = (should_zero_memory == -1 ? arena->defaults.should_zero : should_zero_memory);
-
-	if (!alignment)
-	{
-		alignment = 1;
-	}
-
+    
 	if (should_zero == -1)
 	{
 		should_zero = 0;
 	}
-
-	void* memory = PushSize_(arena, sizeof(char) * length + 1);
+    
+	void* memory = PushSize_(arena, sizeof(char) * length, passed_alignment, should_zero);
 	result = (char*) Copy((void*) cstring, length, memory);
+    
+	return result;
+}
 
+inline char*
+PushString(memory_arena* arena, char* cstring, memory_index length,
+		   u8 passed_alignment = MEMORY_8BIT_ALIGNED, i8 should_zero_memory = -1)
+{
+	Assert((should_zero_memory <= -1 && should_zero_memory <= 1) || "Non-ternary value passed as should zero memory");
+    
+	char* result = NULL;
+    
+	result = PushUnterminatedString(arena, cstring, length + 1, passed_alignment, should_zero_memory);
+    
 	if (result)
 	{
 		result[length] = NULL;
 	}
-
+    
 	return result;
 }
 
@@ -322,21 +350,21 @@ BootstrapPushSize_(memory_index struct_size, u8 struct_alignment,
 				   u8 passed_block_alignment = 0)
 {
 	void* result = NULL;
-
+    
 	memory_index block_size = (!passed_block_size	   ? DefaultMemoryArenaAllocationRoutines.bootstrap_block_size		: passed_block_size);
 	u8 block_alignment		= (!passed_block_alignment ? DefaultMemoryArenaAllocationRoutines.bootstrap_block_alignment : passed_block_alignment);
-
+    
 	Assert((block_size && block_alignment) || "Defaults not setup properly, bootstrap_block_size and/or bootstrap_block_alignment are NULL");
-
+    
 	memory_arena bootstrap_arena = {};
 	bootstrap_arena.allocate_function		 = DefaultMemoryArenaAllocationRoutines.bootstrap_allocate_function;
 	bootstrap_arena.free_function			 = DefaultMemoryArenaAllocationRoutines.bootstrap_free_function;
 	bootstrap_arena.defaults.block_size		 = block_size;
 	bootstrap_arena.defaults.block_alignment = block_alignment;
-
+    
 	result = PushSize(&bootstrap_arena, struct_size, struct_alignment);
 	*((memory_arena*)((u8*) result + offset_to_arena)) = bootstrap_arena;
-
+    
 	return result;
 }
 
@@ -346,9 +374,9 @@ inline void*
 CopyBuffered(memory_arena* temp_arena, void* source, memory_index source_length, void* dest)
 {
 	void* temp_memory = PushSize_(temp_arena, source_length, MEMORY_8BIT_ALIGNED);
-
+    
 	Copy(source, source_length, temp_memory);
 	Copy(temp_memory, source_length, dest);
-
+    
 	return dest;
 }

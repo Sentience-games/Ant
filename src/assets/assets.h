@@ -4,23 +4,61 @@
 #include "assets/asset_tags.h"
 #include "utils/memory_utils.h"
 
-enum AssetFormatTag
+#include "assets/asset_tags.h"
+
+struct font_glyph_info
 {
-	Asset_Model,
-	Asset_Bitmap,
-	Asset_Sound,
-	Asset_Font
+	f32 ascent;
+	f32 advance;
+	f32 bearing_x;
+	v4 dimensions;
 };
 
-enum AssetStateTag
+struct aaf_mesh
+{
+    
+};
+
+struct aaf_texture
+{
+    
+};
+
+struct aaf_sound
+{
+    
+};
+
+struct aaf_font
+{
+	f32 max_ascent;
+	f32 max_descent;
+    
+	aaf_texture atlas;
+    
+	font_glyph_info* glyph_infos;
+};
+
+enum ASSET_TYPE
+{
+	Asset_NOYPE,
+    
+	Asset_Model,
+	Asset_Texture,	
+	Asset_Sound,
+	Asset_Font,
+    
+	ASSET_TYPE_COUNT
+};
+
+enum ASSET_STATE
 {
 	Asset_NotLoaded = 0x0,
 	Asset_Queued    = 0x1,
 	Asset_Loaded	= 0x2
 };
 
-alignas(8)
-struct asset_name_tag
+struct alignas(MEMORY_64BIT_ALIGNED) asset_name_tag
 {
 	string name;
 	enum32(AssetNameTag) tag;
@@ -32,6 +70,7 @@ struct asset_name_tag
 // one to be used in asset files.
 global_variable asset_name_tag AssetNameTable[] =
 {
+	{CONST_STRING("DefaultFont"), Asset_DefaultFont}
 };
 
 // NOTE(soimn):
@@ -46,49 +85,21 @@ global_variable asset_name_tag AssetNameTable[] =
 // reg-file as the search key.
 
 #pragma pack(push, 1)
-alignas(8)
-struct asset_entry
+struct alignas(MEMORY_64BIT_ALIGNED) aaf_asset
 {
-	enum32(AssetFormatTag) type;
-	enum32(AssetStateTag) state;
+	enum32(ASSET_TYPE) type;
+	enum32(ASSET_STATE) state;
 	asset_name_tag name;
 	u32 asset_file_id;
 	u64 offset;
 	u32 size;
-
+    
 	union
 	{
-		u32 model_id;
-		u32 bitmap_id;
-		u32 sound_id;
-		u32 MAX_UNION_SIZE[3];
+		aaf_mesh    mesh;
+		aaf_texture texture;
+		aaf_sound   sound;
+		aaf_font    font;
 	};
-};
-
-StaticAssert(sizeof(asset_entry) == 2 * sizeof(u32) + sizeof(asset_name_tag) + sizeof(u32) + sizeof(u64) + 3 * sizeof(u64));
-
-#define AAF_CODE(a, b, c, d) (((u32)(a) << 0) | ((u32)(b) << 8) | ((u32)(c) << 16) | ((u32)(d) << 24))
-#define AAF_MAGIC_VALUE AAF_CODE('a', 'a', 'f', 'c')
-#define AAF_VERSION 1
-
-struct asset_reg_header
-{
-	u32 magic_value;
-	u32 version;
-
-	u32 asset_count;
-	b32 has_external_assets;
-
-	u32 reserved_[12];
-};
-
-struct asset_header
-{
-	u32 magic_value;
-	u32 version;
-
-	u32 asset_count;
-
-	u32 reserved_[13];
 };
 #pragma pack(pop)

@@ -33,7 +33,7 @@
 #define WIN32_EXPORT extern "C" __declspec(dllexport)
 
 #ifndef _WIN64
-#error 32-bit builds are not supported
+#error "32-bit builds are not supported"
 #endif
 
 /// Debug
@@ -59,7 +59,6 @@ struct win32_platform_file_group
 struct win32_vulkan_binding
 {
 	HMODULE module;
-	vulkan_api_functions api;
 };
 
 /// Game

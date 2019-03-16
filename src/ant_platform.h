@@ -1,9 +1,5 @@
 #pragma once
 
-#define VK_NO_PROTOTYPES
-#include <vulkan/vulkan.h>
-#undef VK_NO_PROTOTYPES
-
 #ifdef ANT_DEBUG
 #define ASSERTION_ENABLED
 #endif
@@ -18,10 +14,11 @@
 #include "math/vector.h"
 #include "math/interpolation.h"
 
-#include "vulkan.h"
+#include "assets/assets.h"
 
-global_variable vulkan_api_functions* VulkanAPI;
-global_variable vulkan_renderer_state* VulkanState;
+#include "vulkan/vulkan_header.h"
+
+global_variable vulkan_renderer_state* Vulkan;
 
 #include "immediate/immediate.h"
 
@@ -32,12 +29,12 @@ global_variable vulkan_renderer_state* VulkanState;
 /// Logging
 
 #define PLATFORM_LOG_INFO_FUNCTION(name) void name (const char* module, bool is_debug, const char* function_name,\
-													unsigned int line_nr, const char* message)
+unsigned int line_nr, const char* message)
 typedef PLATFORM_LOG_INFO_FUNCTION(platform_log_info_function);
 #define PLATFORM_LOG_ERROR_FUNCTION(name) void name (const char* module, bool is_fatal, const char* function_name,\
-													 unsigned int line_nr, const char* message)
+unsigned int line_nr, const char* message)
 typedef PLATFORM_LOG_ERROR_FUNCTION(platform_log_error_function);
-	
+
 #define LOG_FATAL(message) Platform->LogError("GAME", true, __FUNCTION__, __LINE__, message)
 #define LOG_ERROR(message) Platform->LogError("GAME", false, __FUNCTION__, __LINE__, message)
 
@@ -65,7 +62,7 @@ struct platform_file_info
 	u64 file_size;
 	char* base_name;
 	void* platform_data;
-
+    
 	platform_file_info* next;
 };
 
@@ -80,13 +77,13 @@ enum PlatformFileTypeTag
 {
 	PlatformFileType_AssetFile,
 	PlatformFileType_SaveFile,
-	PlatformFileType_PNG,
+	PlatformFileType_DDS,
 	PlatformFileType_WAV,
-	PlatformFileType_OBJ,
-
+	PlatformFileType_AAMF,
+    
 	// NOTE(soimn): this is mostly for debugging
 	PlatformFileType_ShaderFile,
-
+    
 	PlatformFileType_TagCount
 };
 
@@ -138,19 +135,19 @@ typedef PLATFORM_WRITE_TO_FILE_FUNCTION(platform_write_to_file_function);
 typedef struct platform_key_code
 {
 	alignas(MEMORY_32BIT_ALIGNED)
-	// NOTE(soimn): This is the key code for the keypress.
-	//				Alphanumeric key codes are encoded with the ascii character value.
-	//				Special ascii values often requires a modifier key to access, such as ':',
-	//				are encoded with the ascii character values, and the modifier keys are not registered.
-	//
-	//				<Enter>		0x0D
-	//				<Esc>		0x1B
-	//				<Backspace> 0x08
-	//				<Space>		0x20
-	//				<Del>		0x7F
-	//				<Tab>		0x09
+        // NOTE(soimn): This is the key code for the keypress.
+        //				Alphanumeric key codes are encoded with the ascii character value.
+        //				Special ascii values often requires a modifier key to access, such as ':',
+        //				are encoded with the ascii character values, and the modifier keys are not registered.
+        //
+        //				<Enter>		0x0D
+        //				<Esc>		0x1B
+        //				<Backspace> 0x08
+        //				<Space>		0x20
+        //				<Del>		0x7F
+        //				<Tab>		0x09
 	
-	u8 code; 
+        u8 code; 
 	u8 modifiers;
 	u8 Reserved_[2];
 } platform_key_code;
@@ -163,22 +160,25 @@ typedef struct platform_game_input
 	
 	struct mouse
 	{
-		v2 position; // This is the screen space position of the mouse cursor
-
+		v2 position;
+        
 		bool right, left, middle;
 	} mouse;
-
+    
+	bool tab;
+	bool enter;
+    
 	u32 current_key_buffer_size;
 	bool last_key_down;
 	platform_key_code key_buffer[PLATFORM_GAME_INPUT_KEYBUFFER_MAX_SIZE];
-
+    
 } platform_game_input;
 
 typedef struct platform_api_functions
 {
 	platform_log_info_function* LogInfo;
 	platform_log_error_function* LogError;
-
+    
 	platform_get_all_files_of_type_begin_function* GetAllFilesOfTypeBegin;
 	platform_get_all_files_of_type_end_function* GetAllFilesOfTypeEnd;
 	platform_open_file_function* OpenFile;
@@ -190,19 +190,18 @@ typedef struct platform_api_functions
 typedef struct game_memory
 {
 	bool is_initialized;
-
+    
 	platform_api_functions platform_api;
-	vulkan_api_functions vulkan_api;
-
+    
 	vulkan_renderer_state vulkan_state;
-
+    
 	platform_game_input new_input;
 	platform_game_input old_input;
-
+    
 	default_memory_arena_allocation_routines default_allocation_routines;
 	memory_arena persistent_arena;
 	memory_arena frame_temp_arena;
-
+    
 	memory_arena debug_arena;
 } game_memory;
 
