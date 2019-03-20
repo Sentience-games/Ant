@@ -2,60 +2,40 @@
 
 #include <stdint.h>
 
-typedef int8_t	int8;
-typedef int16_t int16;
-typedef int32_t int32;
-typedef int64_t int64;
-
-typedef uint8_t	 uint8;
-typedef uint16_t uint16;
-typedef uint32_t uint32;
-typedef uint64_t uint64;
-
-typedef int_fast8_t	 fast_int8;
-typedef int_fast16_t fast_int16;
-typedef int_fast32_t fast_int32;
-typedef int_fast64_t fast_int64;
-
-typedef uint_fast8_t  fast_uint8;
-typedef uint_fast16_t fast_uint16;
-typedef uint_fast32_t fast_uint32;
-typedef uint_fast64_t fast_uint64;
-
 typedef intptr_t intptr;
 typedef uintptr_t uintptr;
 
-typedef int8  i8;
-typedef int16 i16;
-typedef int32 i32;
-typedef int64 i64;
+typedef int8_t  I8;
+typedef int16_t I16;
+typedef int32_t I32;
+typedef int64_t I64;
 
-typedef uint8  u8;
-typedef uint16 u16;
-typedef uint32 u32;
-typedef uint64 u64;
+typedef uint8_t  U8;
+typedef uint16_t U16;
+typedef uint32_t U32;
+typedef uint64_t U64;
 
-typedef float  f32;
-typedef double f64;
+typedef float  F32;
+typedef double F64;
 
-typedef u32 b32;
+typedef U32 B32;
 
-#define flag8(type)  u8
-#define flag16(type) u16
-#define flag32(type) u32
-#define flag64(type) u64
+#define Flag8(type)  U8
+#define Flag16(type) U16
+#define Flag32(type) U32
+#define Flag64(type) U64
 
-#define enum8(type)  u8
-#define enum16(type) u16
-#define enum32(type) u32
-#define enum64(type) u64
+#define Enum8(type)  U8
+#define Enum16(type) U16
+#define Enum32(type) U32
+#define Enum64(type) U64
 
-typedef u64 memory_index;
+typedef U64 Memory_Index;
 
-struct buffer
+struct Buffer
 {
-	memory_index size;
-	u8* data;
+	Memory_Index size;
+	U8* data;
 };
 
-typedef buffer string;
+typedef Buffer String;

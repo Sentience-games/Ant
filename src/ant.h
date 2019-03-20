@@ -2,13 +2,12 @@
 
 #include "ant_platform.h"
 
-global_variable platform_api_functions* Platform;
+#include "utils/memory_utils.h"
 
-global_variable platform_game_input* NewInput;
-global_variable platform_game_input* OldInput;
-
-global_variable memory_arena* FrameTempArena;
-global_variable memory_arena* DebugArena;
-
-#include "immediate/rendering.h"
-#include "editor/gui.h"
+struct game_state
+{
+    bool initialized;
+    
+    Memory_Arena persistent_memory;
+    Memory_Arena frame_local_memory;
+};

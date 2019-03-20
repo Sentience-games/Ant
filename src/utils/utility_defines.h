@@ -1,6 +1,7 @@
 #pragma once
 
 #define internal static
+#define global static
 #define global_variable static
 #define local_persist static
 
@@ -16,9 +17,9 @@
 #define MAX(x, y) ((x) < (y) ? (y) : (x))
 #define MIN(x, y) ((x) > (y) ? (y) : (x))
 #define CLAMP(min, x, max) ((x) < min ? min : (max < (x) ? max : (x)))
-#define LARGE_INT_LOW(number) (((u64)(number)  >> 0)  & UINT32_MAX)
-#define LARGE_INT_HIGH(number) (((u64)(number) >> 32) & UINT32_MAX)
-#define ASSEMBLE_LARGE_INT(high, low) (u64)(((u64)(high) << 32) | ((u64)(low) << 0))
+#define LARGE_INT_LOW(number) (((U64)(number)  >> 0)  & UINT32_MAX)
+#define LARGE_INT_HIGH(number) (((U64)(number) >> 32) & UINT32_MAX)
+#define ASSEMBLE_LARGE_INT(high, low) (U64)(((U64)(high) << 32) | ((U64)(low) << 0))
 
 #define CONCAT_(x, y) x##y
 #define CONCAT(x, y) CONCAT_(x, y)
@@ -34,5 +35,5 @@
 #define INVALID_DEFAULT_CASE default: INVALID_CODE_PATH; break
 
 #define BREAK_ON_FALSE(EX, boolean)\
-	boolean = EX;\
-	if (!(boolean)) break
+boolean = EX;\
+if (!(boolean)) break

@@ -5,20 +5,18 @@
 #undef WIN32_LEAN_AND_MEAN
 
 #ifdef ANT_DEBUG
-	
-	#ifndef ASSERTION_ENABLED
-	#define ASSERTION_ENABLED
-	#endif
 
-	#ifndef ANT_ENABLE_HOT_RELOADING
-	#define	ANT_ENABLE_HOT_RELOADING
-	#endif
+#ifndef ASSERTION_ENABLED
+#define ASSERTION_ENABLED
+#endif
+
+#ifndef ANT_ENABLE_HOT_RELOADING
+#define ANT_ENABLE_HOT_RELOADING
+#endif
 
 #endif
 
-#define VK_USE_PLATFORM_WIN32_KHR
-#include "ant_platform.h"
-#undef VK_USE_PLATFORM_WIN32_KHR
+#include "ant.h"
 
 #include "utils/utility_defines.h"
 #include "utils/memory_utils.h"
@@ -52,27 +50,12 @@
 /// FILE API
 struct win32_platform_file_group
 {
-	memory_arena memory;
-};
-
-/// Vulkan
-struct win32_vulkan_binding
-{
-	HMODULE module;
+	Memory_Arena memory;
 };
 
 /// Game
 
-GAME_INIT_FUNCTION(GameInitStub)
-{
-	return 0;
-}
-
 GAME_UPDATE_AND_RENDER_FUNCTION(GameUpdateAndRenderStub)
-{
-}
-
-GAME_CLEANUP_FUNCTION(GameCleanupStub)
 {
 }
 
@@ -81,20 +64,18 @@ struct win32_game_code
 	FILETIME timestamp;
 	HMODULE module;
 	bool is_valid;
-
-	game_init_function* game_init_func;
+    
 	game_update_and_render_function* game_update_and_render_func;
-	game_cleanup_function* game_cleanup_func;
 };
 
 struct win32_game_info
 {
 	const char* name;
-	const uint32 version;
-
+	const U32 version;
+    
 	const wchar_t* cwd;
-	const u32 cwd_length;
-
+	const U32 cwd_length;
+    
 	const wchar_t* dll_path;
 	const wchar_t* loaded_dll_path;
 };
