@@ -46,7 +46,7 @@
 #endif
 
 /// FILE API
-struct win32_platform_file_group
+struct Win32_File_Group
 {
 	Memory_Arena memory;
 };
@@ -57,7 +57,7 @@ GAME_UPDATE_AND_RENDER_FUNCTION(GameUpdateAndRenderStub)
 {
 }
 
-struct win32_game_code
+struct Win32_Game_Code
 {
 	FILETIME timestamp;
 	HMODULE module;
@@ -66,7 +66,7 @@ struct win32_game_code
 	game_update_and_render_function* game_update_and_render_func;
 };
 
-struct win32_game_info
+struct Win32_Game_Info
 {
 	const char* name;
 	const U32 version;

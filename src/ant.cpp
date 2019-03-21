@@ -1,12 +1,12 @@
 #include "ant.h"
 
-platform_api_functions* Platform;
+Platform_API_Functions* Platform;
 
 extern "C"
 GAME_UPDATE_AND_RENDER_FUNCTION(GameUpdateAndRender)
 {
     Platform = &memory->platform_api;
-    game_state* state = memory->state;
+    Game_State* state = memory->state;
     
     if (!state->initialized)
     {

@@ -4,7 +4,7 @@
 
 #include "ant_memory.h"
 
-struct game_state
+struct Game_State
 {
     bool initialized;
     

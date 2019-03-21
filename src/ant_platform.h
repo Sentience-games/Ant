@@ -40,65 +40,65 @@ typedef PLATFORM_LOG_ERROR_FUNCTION(platform_log_error_function);
 
 /// File API
 
-struct platform_file_handle
+struct Platform_File_Handle
 {
 	void* platform_data;
 	B32 is_valid;
 };
 
-struct platform_file_info
+struct Platform_File_Info
 {
 	U64 timestamp;
 	U64 file_size;
 	char* base_name;
 	void* platform_data;
     
-	platform_file_info* next;
+	Platform_File_Info* next;
 };
 
-struct platform_file_group
+struct Platform_File_Group
 {
 	U32 file_count;
-	platform_file_info* first_file_info;
+	Platform_File_Info* first_file_info;
 	void* platform_data;
 };
 
-enum PlatformFileTypeTag
+enum PLATFORM_FILE_TYPE
 {
 	PlatformFileType_AssetFile,
 	PlatformFileType_SaveFile,
 	PlatformFileType_DDS,
 	PlatformFileType_WAV,
 	PlatformFileType_AAMF,
+    PlatformFileType_Vars,
     
-	// NOTE(soimn): this is mostly for debugging
-	PlatformFileType_ShaderFile,
-    
-	PlatformFileType_TagCount
+	PLATFORM_FILE_TYPE_COUNT
 };
 
-enum PlatformOpenFileOpenFlags
+enum PLATFORM_OPEN_FILE_FLAGS
 {
 	OpenFile_Read  = 0x1,
 	OpenFile_Write = 0x2
 };
 
-#define PLATFORM_GET_ALL_FILES_OF_TYPE_BEGIN_FUNCTION(name) platform_file_group name (Enum32(PlatformFileTypeTag) file_type)
+#define PLATFORM_GET_ALL_FILES_OF_TYPE_BEGIN_FUNCTION(name)\
+Platform_File_Group  name (Enum32(PLATFORM_FILE_TYPE) file_type)
 typedef PLATFORM_GET_ALL_FILES_OF_TYPE_BEGIN_FUNCTION(platform_get_all_files_of_type_begin_function);
 
-#define PLATFORM_GET_ALL_FILES_OF_TYPE_END_FUNCTION(name) void name (platform_file_group* file_group)
+#define PLATFORM_GET_ALL_FILES_OF_TYPE_END_FUNCTION(name) void name (Platform_File_Group* file_group)
 typedef PLATFORM_GET_ALL_FILES_OF_TYPE_END_FUNCTION(platform_get_all_files_of_type_end_function);
 
-#define PLATFORM_OPEN_FILE_FUNCTION(name) platform_file_handle name (platform_file_info* file_info, U8 open_params)
+#define PLATFORM_OPEN_FILE_FUNCTION(name)\
+Platform_File_Handle name (Platform_File_Info* file_info, Flag8(PLATFORM_OPEN_FILE_FLAGS) open_flags)
 typedef PLATFORM_OPEN_FILE_FUNCTION(platform_open_file_function);
 
-#define PLATFORM_CLOSE_FILE_FUNCTION(name) void name (platform_file_handle* file_handle)
+#define PLATFORM_CLOSE_FILE_FUNCTION(name) void name (Platform_File_Handle* file_handle)
 typedef PLATFORM_CLOSE_FILE_FUNCTION(platform_close_file_function);
 
-#define PLATFORM_READ_FROM_FILE_FUNCTION(name) void name (platform_file_handle* handle, U64 offset, U64 size, void* dest)
+#define PLATFORM_READ_FROM_FILE_FUNCTION(name) void name (Platform_File_Handle* handle, U64 offset, U64 size, void* dest)
 typedef PLATFORM_READ_FROM_FILE_FUNCTION(platform_read_from_file_function);
 
-#define PLATFORM_WRITE_TO_FILE_FUNCTION(name) void name (platform_file_handle* handle, U64 offset, U64 size, void* source)
+#define PLATFORM_WRITE_TO_FILE_FUNCTION(name) void name (Platform_File_Handle* handle, U64 offset, U64 size, void* source)
 typedef PLATFORM_WRITE_TO_FILE_FUNCTION(platform_write_to_file_function);
 
 #define PLATFORM_FILE_IS_VALID(handle) ((handle)->is_valid)
@@ -107,7 +107,7 @@ typedef PLATFORM_WRITE_TO_FILE_FUNCTION(platform_write_to_file_function);
 
 #define PLATFORM_GAME_INPUT_KEYBUFFER_MAX_SIZE 16
 
-struct platform_key_code
+struct Platform_Key_Code
 {
     // NOTE(soimn): This is the key code for the keypress.
     //			  Alphanumeric key codes are encoded with the ascii character value.
@@ -126,17 +126,17 @@ struct platform_key_code
 	U8 Reserved_[2];
 };
 
-struct platform_game_input
+struct Platform_Game_Input
 {
 	F32 frame_dt;
 	
 	U32 current_key_buffer_size;
 	bool last_key_down;
-	platform_key_code key_buffer[PLATFORM_GAME_INPUT_KEYBUFFER_MAX_SIZE];
+    Platform_Key_Code key_buffer[PLATFORM_GAME_INPUT_KEYBUFFER_MAX_SIZE];
     
 };
 
-struct platform_api_functions
+struct Platform_API_Functions
 {
     platform_allocate_Memory_Block_function* AllocateMemoryBlock;
     platform_free_Memory_Block_function* FreeMemoryBlock;
@@ -152,14 +152,14 @@ struct platform_api_functions
 	platform_write_to_file_function* WriteToFile;
 };
 
-extern platform_api_functions* Platform;
+extern Platform_API_Functions* Platform;
 
-struct game_memory
+struct Game_Memory
 {
-    struct game_state* state;
+    struct Game_State* state;
     
-	platform_api_functions platform_api;
+    Platform_API_Functions platform_api;
 };
 
-#define GAME_UPDATE_AND_RENDER_FUNCTION(name) void name (game_memory* memory, F32 delta_t, platform_game_input* old_input, platform_game_input* new_input)
+#define GAME_UPDATE_AND_RENDER_FUNCTION(name) void name (Game_Memory* memory, Platform_Game_Input* old_input, Platform_Game_Input* new_input)
 typedef GAME_UPDATE_AND_RENDER_FUNCTION(game_update_and_render_function);
