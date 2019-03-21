@@ -2,7 +2,7 @@
 
 #include "ant_platform.h"
 
-#include "utils/memory_utils.h"
+#include "ant_memory.h"
 
 struct game_state
 {

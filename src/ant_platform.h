@@ -4,7 +4,7 @@
 #define ASSERTION_ENABLED
 #endif
 
-#include "ant_types.h"
+#include "ant_shared.h"
 
 /// PLATFORM API
 

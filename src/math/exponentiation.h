@@ -1,29 +1,29 @@
 #pragma once
 
-#include "ant_types.h"
+#include "ant_shared.h"
 
-inline u32
-Square(u8 n)
+inline U32
+Square(U8 n)
 {
-	return ((u32)(n) * (u32)(n));
+	return ((U32)(n) * (U32)(n));
 }
 
-inline f32
-Square(f32 n)
+inline F32
+Square(F32 n)
 {
 	return n * n;
 }
 
 // TODO(soimn): replace this with an intrinsic
-inline f32
-Sqrt(f32 num, u8 precision = 5)
+inline F32
+Sqrt(F32 num, U8 precision = 5)
 {
-    f32 result = num / 2.0f;
+    F32 result = num / 2.0f;
     
     // TODO(soimn): see if there is a better solution
-    u32 num_iterations = (num < 10.0f ? precision : (num < 1000.0f ? 2 * precision : 4 * precision));
+    U32 num_iterations = (num < 10.0f ? precision : (num < 1000.0f ? 2 * precision : 4 * precision));
     
-    for (u32 i = 0; i < num_iterations; ++i)
+    for (U32 i = 0; i < num_iterations; ++i)
     {
         result = result - (Square(result) - num) / (2.0f * result);
     }
@@ -31,10 +31,10 @@ Sqrt(f32 num, u8 precision = 5)
     return result;
 }
 
-inline u64 Pow2(u8 exp);
+inline u64 Pow2(U8 exp);
 
 inline u64
-Pow(u64 num, u8 exp)
+Pow(u64 num, U8 exp)
 {
     Assert(exp < 64);
     
@@ -47,7 +47,7 @@ Pow(u64 num, u8 exp)
     
     else
     {
-        for (u32 i = 0; i < exp; ++i)
+        for (U32 i = 0; i < exp; ++i)
         {
             result *= exp;
         }
@@ -57,7 +57,7 @@ Pow(u64 num, u8 exp)
 }
 
 inline u64
-Pow2(u8 exp)
+Pow2(U8 exp)
 {
     Assert(exp < 64);
     

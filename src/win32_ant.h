@@ -17,10 +17,8 @@
 #endif
 
 #include "ant.h"
-
-#include "utils/utility_defines.h"
-#include "utils/memory_utils.h"
-#include "utils/assert.h"
+#include "ant_shared.h"
+#include "ant_memory.h"
 #include "utils/cstring.h"
 
 // TODO(soimn): move these to the build arguments

@@ -1,8 +1,6 @@
 #pragma once
 
-#include "utils/utility_defines.h"
-#include "utils/assert.h"
-#include "ant_types.h"
+#include "ant_shared.h"
 
 global_variable U32 npos = ~(0UL);
 

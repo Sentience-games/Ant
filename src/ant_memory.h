@@ -1,8 +1,6 @@
 #pragma once
 
-#include "utils/utility_defines.h"
-#include "ant_types.h"
-#include "utils/assert.h"
+#include "ant_shared.h"
 
 #define MEMORY_8BIT_ALIGNED  1
 #define MEMORY_16BIT_ALIGNED 2

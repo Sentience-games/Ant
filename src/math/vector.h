@@ -1,188 +1,190 @@
 #pragma once
 
+#include "ant_shared.h"
+
 // TODO(soimn):
 /*
  * - Validate existing functions
  * - Implement length, normalize, ...
  */
 
-struct v2
+struct V2
 {
 	union
 	{
 		struct
 		{
-			f32 x, y;
+			F32 x, y;
 		};
-
-		f32 E[2];
+        
+		F32 E[2];
 	};
 };
 
-struct v3
+struct V3
 {
 	union
 	{
 		struct
 		{
-			f32 x, y, z;
+			F32 x, y, z;
 		};
-
+        
 		struct
 		{
-			v2 xy;
-			f32 _ignored01;
+			V2 xy;
+			F32 _ignored01;
 		};
-
+        
 		struct
 		{
-			v2 yz;
-			f32 _ignored02;
+			V2 yz;
+			F32 _ignored02;
 		};
-
-		f32 E[3];
+        
+		F32 E[3];
 	};
 };
 
-struct v4
+struct V4
 {
 	union
 	{
 		struct
 		{
-			f32 x, y, z, w;
+			F32 x, y, z, w;
 		};
-
+        
 		struct
 		{
-			v2 xy, zw;
+			V2 xy, zw;
 		};
-
+        
 		struct
 		{
-			f32 _ignored01;
-			v2 yz;
-			f32 _ignored02;
+			F32 _ignored01;
+			V2 yz;
+			F32 _ignored02;
 		};
-
+        
 		struct
 		{
-			v3 xyz;
-			f32 _ignored03;
+			V3 xyz;
+			F32 _ignored03;
 		};
-
+        
 		struct
 		{
-			f32 _ignored04;
-			v3 yzw;
+			F32 _ignored04;
+			V3 yzw;
 		};
-
-		f32 E[4];
+        
+		F32 E[4];
 	};
 };
 
 
 /// V2
 
-inline v2
-Vec2(f32 x, f32 y)
+inline V2
+V2(F32 x, F32 y)
 {
 	return {x, y};
 }
 
 inline bool
-operator == (const v2& v_1, const v2& v_2)
+operator == (const V2& v_1, const V2& v_2)
 {
 	return (v_1.x == v_2.x && v_1.y == v_2.y);
 }
 
-inline v2
-operator + (const v2& v_1, const v2& v_2)
+inline V2
+operator + (const V2& v_1, const V2& v_2)
 {
 	return {v_1.x + v_2.x, v_1.y + v_2.y};
 }
 
-inline v2
-operator - (const v2& v_1, const v2& v_2)
+inline V2
+operator - (const V2& v_1, const V2& v_2)
 {
 	return {v_1.x - v_2.x, v_1.y - v_2.y};
 }
 
-inline v2
-operator - (const v2& v)
+inline V2
+operator - (const V2& v)
 {
 	return {-v.x, -v.y};
 }
 
-inline v2
-& operator += (v2& rhs, const v2& lhs)
+inline V2&
+operator += (V2& rhs, const V2& lhs)
 {
 	rhs.x += lhs.x;
 	rhs.y += lhs.y;
 	return rhs;
 }
 
-inline v2
-& operator -= (v2& rhs, const v2& lhs)
+inline V2&
+operator -= (V2& rhs, const V2& lhs)
 {
 	rhs += -lhs;
 	return rhs;
 }
 
-inline v2
-operator * (f32 s, const v2& v)
+inline V2
+operator * (F32 s, const V2& v)
 {
 	return {s * v.x, s * v.y};
 }
 
-inline v2
-operator * (const v2& v, f32 s)
+inline V2
+operator * (const V2& v, F32 s)
 {
 	return s * v;
 }
 
-inline v2
-& operator *= (v2& v, f32 s)
+inline V2&
+operator *= (V2& v, F32 s)
 {
 	v.x *= s;
 	v.y *= s;
 	return v;
 }
 
-inline v2
-operator / (f32 s, const v2& v)
+inline V2
+operator / (F32 s, const V2& v)
 {
 	return {s / v.x, s / v.y};
 }
 
-inline v2
-operator / (const v2& v, f32 s)
+inline V2
+operator / (const V2& v, F32 s)
 {
 	return v * (1.0f / s);
 }
 
-inline v2
-& operator /= (v2& v, f32 s)
+inline V2&
+operator /= (V2& v, F32 s)
 {
 	v.x /= s;
 	v.y /= s;
 	return v;
 }
 
-inline f32
-Inner(const v2& v_1, const v2& v_2)
+inline F32
+Inner(const V2& v_1, const V2& v_2)
 {
 	return v_1.x * v_2.x + v_1.y * v_2.y;
 }
 
-inline v2
-Hadamard(const v2& v_1, const v2& v_2)
+inline V2
+Hadamard(const V2& v_1, const V2& v_2)
 {
 	return {v_1.x * v_2.x, v_1.y * v_2.y};
 }
 
-inline f32
-LengthSq(const v2& v)
+inline F32
+LengthSq(const V2& v)
 {
 	return Inner(v, v);
 }
@@ -190,32 +192,32 @@ LengthSq(const v2& v)
 
 /// V3
 
-inline v3
-Vec3(f32 x, f32 y, f32 z)
+inline V3
+V3(F32 x, F32 y, F32 z)
 {
 	return {x, y, z};
 }
 
-inline v3
-operator + (const v3& v_1, const v3& v_2)
+inline V3
+operator + (const V3& v_1, const V3& v_2)
 {
 	return {v_1.x + v_2.x, v_1.y + v_2.y, v_1.z + v_2.z};
 };
 
-inline v3
-operator - (const v3& v_1, const v3& v_2)
+inline V3
+operator - (const V3& v_1, const V3& v_2)
 {
 	return {v_1.x - v_2.x, v_1.y - v_2.y, v_1.z - v_2.z};
 };
 
-inline v3
-operator - (const v3& v)
+inline V3
+operator - (const V3& v)
 {
 	return {-v.x, -v.y, -v.z};
 };
 
-inline v3
-& operator += (v3& rhs, const v3& lhs)
+inline V3&
+operator += (V3& rhs, const V3& lhs)
 {
 	rhs.x += lhs.x;
 	rhs.y += lhs.y;
@@ -223,27 +225,27 @@ inline v3
 	return rhs;
 };
 
-inline v3
-& operator -= (v3& rhs, const v3& lhs)
+inline V3&
+operator -= (V3& rhs, const V3& lhs)
 {
 	rhs += -lhs;
 	return rhs;
 };
 
-inline v3
-operator * (f32 s, const v3& v)
+inline V3
+operator * (F32 s, const V3& v)
 {
 	return {s * v.x, s * v.y, s * v.z};
 }
 
-inline v3
-operator * (const v3& v, f32 s)
+inline V3
+operator * (const V3& v, F32 s)
 {
 	return s * v;
 }
 
-inline v3
-& operator *= (v3& v, f32 s)
+inline V3&
+operator *= (V3& v, F32 s)
 {
 	v.x *= s;
 	v.y *= s;
@@ -251,20 +253,20 @@ inline v3
 	return v;
 }
 
-inline v3
-operator / (f32 s, const v3& v)
+inline V3
+operator / (F32 s, const V3& v)
 {
 	return {s / v.x, s / v.y, s / v.z};
 }
 
-inline v3
-operator / (const v3& v, f32 s)
+inline V3
+operator / (const V3& v, F32 s)
 {
 	return v * (1.0f / s);
 }
 
-inline v3
-& operator /= (v3& v, f32 s)
+inline V3&
+operator /= (V3& v, F32 s)
 {
 	v.x /= s;
 	v.y /= s;
@@ -272,20 +274,20 @@ inline v3
 	return v;
 }
 
-inline f32
-Inner(const v3& v_1, const v3& v_2)
+inline F32
+Inner(const V3& v_1, const V3& v_2)
 {
 	return v_1.x * v_2.x + v_1.y * v_2.y + v_1.z * v_2.z;
 }
 
-inline v3
-Hadamard(const v3& v_1, const v3& v_2)
+inline V3
+Hadamard(const V3& v_1, const V3& v_2)
 {
 	return {v_1.x * v_2.x, v_1.y * v_2.y, v_1.z * v_2.z};
 }
 
-inline f32
-LengthSq(const v3& v)
+inline F32
+LengthSq(const V3& v)
 {
 	return Inner(v, v);
 }
@@ -293,32 +295,32 @@ LengthSq(const v3& v)
 
 /// V4
 
-inline v4
-Vec4(f32 x, f32 y, f32 z, f32 w)
+inline V4
+V4(F32 x, F32 y, F32 z, F32 w)
 {
 	return {x, y, z, w};
 }
 
-inline v4
-operator + (const v4& v_1, const v4& v_2)
+inline V4
+operator + (const V4& v_1, const V4& v_2)
 {
 	return {v_1.x + v_2.x, v_1.y + v_2.y, v_1.z + v_2.z, v_1.w + v_2.w};
 };
 
-inline v4
-operator - (const v4& v_1, const v4& v_2)
+inline V4
+operator - (const V4& v_1, const V4& v_2)
 {
 	return {v_1.x - v_2.x, v_1.y - v_2.y, v_1.z - v_2.z, v_1.w - v_2.w};
 };
 
-inline v4
-operator - (const v4& v)
+inline V4
+operator - (const V4& v)
 {
 	return {-v.x, -v.y, -v.z, -v.w};
 };
 
-inline v4
-& operator += (v4& rhs, const v4& lhs)
+inline V4&
+operator += (V4& rhs, const V4& lhs)
 {
 	rhs.x += lhs.x;
 	rhs.y += lhs.y;
@@ -327,27 +329,27 @@ inline v4
 	return rhs;
 };
 
-inline v4
-& operator -= (v4& rhs, const v4& lhs)
+inline V4&
+operator -= (V4& rhs, const V4& lhs)
 {
 	rhs += -lhs;
 	return rhs;
 };
 
-inline v4
-operator * (f32 s, const v4& v)
+inline V4
+operator * (F32 s, const V4& v)
 {
 	return {s * v.x, s * v.y, s * v.z, s * v.w};
 }
 
-inline v4
-operator * (const v4& v, f32 s)
+inline V4
+operator * (const V4& v, F32 s)
 {
 	return s * v;
 }
 
-inline v4
-& operator *= (v4& v, f32 s)
+inline V4&
+operator *= (V4& v, F32 s)
 {
 	v.x *= s;
 	v.y *= s;
@@ -356,20 +358,20 @@ inline v4
 	return v;
 }
 
-inline v4
-operator / (f32 s, const v4& v)
+inline V4
+operator / (F32 s, const V4& v)
 {
 	return {s / v.x, s / v.y, s / v.z, s / v.w};
 }
 
-inline v4
-operator / (const v4& v, f32 s)
+inline V4
+operator / (const V4& v, F32 s)
 {
 	return v * (1.0f / s);
 }
 
-inline v4
-& operator /= (v4& v, f32 s)
+inline V4
+& operator /= (V4& v, F32 s)
 {
 	v.x /= s;
 	v.y /= s;
@@ -378,20 +380,20 @@ inline v4
 	return v;
 }
 
-inline f32
-Inner(const v4& v_1, const v4& v_2)
+inline F32
+Inner(const V4& v_1, const V4& v_2)
 {
 	return v_1.x * v_2.x + v_1.y * v_2.y + v_1.z * v_2.z + v_1.w * v_2.w;
 }
 
-inline v4
-Hadamard(const v4& v_1, const v4& v_2)
+inline V4
+Hadamard(const V4& v_1, const V4& v_2)
 {
 	return {v_1.x * v_2.x, v_1.y * v_2.y, v_1.z * v_2.z, v_1.w * v_2.w};
 }
 
-inline f32
-LengthSq(const v4& v)
+inline F32
+LengthSq(const V4& v)
 {
 	return Inner(v, v);
 }
