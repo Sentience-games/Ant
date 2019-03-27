@@ -1,6 +1,6 @@
 #include "win32_ant.h"
 
-// TODO(soimn): unsetting this is a hard quit. Implement soft quit with a hook for messages.
+// TODO(soimn): Implement soft quit with a hook for messages.
 global bool Running = false;
 
 ///
@@ -41,26 +41,33 @@ PLATFORM_FREE_MEMORY_BLOCK_FUNCTION(Win32FreeMemoryBlock)
 
 PLATFORM_LOG_INFO_FUNCTION(Win32LogInfo)
 {
-	char buffer[512 + 15] = {};
-	char formatted_message[1024] = {};
+    char formatted_message[1024] = {};
     
-	strconcat("[%s] [%s] %s @ %u: ", message, buffer, ARRAY_COUNT(buffer));
-	strcopy("\n", buffer + strlength(buffer), ARRAY_COUNT(buffer) - strlength(buffer));
+    Memory_Index chars_written = FormatString((char*) &formatted_message, ARRAY_COUNT(formatted_message), "[%s] [%s] %s @ %U: ", module, (is_debug ? "DEBUG" : "INFO"), function_name, line_nr);
     
-	wsprintf(formatted_message, buffer, module, (is_debug ? "DEBUG" : "INFO"), function_name, line_nr);
+    va_list arg_list;
+    va_start(arg_list, format);
+    
+    FormatString((char*) &formatted_message + chars_written, ARRAY_COUNT(formatted_message) - chars_written, format, arg_list);
+    
+    va_end(arg_list);
     
 	OutputDebugStringA(formatted_message);
+    OutputDebugStringA("\n");
 }
 
 PLATFORM_LOG_ERROR_FUNCTION(Win32LogError)
 {
-	char buffer[1024 + 61] = {};
-	char formatted_message[2048] = {};
+	char formatted_message[1024] = {};
     
-	Assert(strlength(message) < ARRAY_COUNT(buffer));
+	Memory_Index chars_written = FormatString((char*) &formatted_message, ARRAY_COUNT(formatted_message), "An error has occurred in the %s module.\nFunction: %s, line: %U\n\n", module, function_name, line_nr);
     
-	strconcat("An error has occurred in the %s module.\nFunction: %s, line: %u\n\n", message, buffer, ARRAY_COUNT(buffer));
-	wsprintf(formatted_message, buffer, module, function_name, line_nr);
+    va_list arg_list;
+    va_start(arg_list, format);
+    
+    FormatString((char*) &formatted_message + chars_written, ARRAY_COUNT(formatted_message) - chars_written, format, arg_list);
+    
+    va_end(arg_list);
     
 	MessageBoxA(NULL, formatted_message, APPLICATION_NAME, MB_ICONERROR | MB_OK);
     
@@ -494,7 +501,7 @@ Win32MainWindowProc(HWND window_handle, UINT msg_code,
         // 		case WM_INPUT: INVALID_CODE_PATH; break;
         
 		default:
-        result = DefWindowProc(window_handle, msg_code, w_param, l_param);
+        result = DefWindowProcW(window_handle, msg_code, w_param, l_param);
 		break;
 	}
     
@@ -605,22 +612,22 @@ int CALLBACK WinMain(HINSTANCE instance,
 	UNUSED_PARAMETER(window_show_mode);
     
 	HWND window_handle;
-	WNDCLASSEXA window_class = {};
+	WNDCLASSEXW window_class = {};
     
 	window_class.cbSize        = sizeof(WNDCLASSEX);
-	window_class.style         = CS_VREDRAW | CS_HREDRAW;
+	window_class.style         = CS_VREDRAW | CS_HREDRAW | CS_OWNDC;
 	window_class.lpfnWndProc   = &Win32MainWindowProc;
 	window_class.hInstance     = instance;
 	window_class.hbrBackground = 0;
-	window_class.lpszClassName = APPLICATION_NAME;
+	window_class.lpszClassName = CONCAT(L, APPLICATION_NAME);
     
-	if (RegisterClassExA(&window_class))
+	if (RegisterClassExW(&window_class))
 	{
 		window_handle =
-			CreateWindowExA(window_class.style,
+			CreateWindowExW(window_class.style,
 							window_class.lpszClassName,
-							APPLICATION_NAME,
-							WS_VISIBLE | WS_OVERLAPPED | WS_SYSMENU,
+							CONCAT(L, APPLICATION_NAME),
+							WS_OVERLAPPED | WS_SYSMENU,
 							CW_USEDEFAULT, CW_USEDEFAULT,
 							CW_USEDEFAULT, CW_USEDEFAULT,
 							NULL, NULL,
@@ -628,7 +635,7 @@ int CALLBACK WinMain(HINSTANCE instance,
 		if (window_handle)
 		{
 			/// Setup
-			
+            
 			// Memory
             
             Memory_Arena win32_persistent_memory   = {};
@@ -708,6 +715,9 @@ int CALLBACK WinMain(HINSTANCE instance,
 			{
 				game_code = Win32LoadGameCode(game_info.dll_path, game_info.loaded_dll_path);
 			}
+            
+            // TEMP
+            InitRenderer(instance, window_handle);
             
 			ClearMemoryArena(&memory->state->frame_local_memory);
             
@@ -794,16 +804,11 @@ int CALLBACK WinMain(HINSTANCE instance,
  *	- Refactor input handling to allow hot plugging of devices
  *	- Setup audio
  *	- Set viewport dimensions and implement restricted resizing of the window
- *	- Implement proper text input handling
  *	- Implement memory usage shadowing
  *    - Verify the memory allocator is working as excpected
-*    - Replace printf
  */
 
 // FIXME(soimn):
 /*
- *	- vkGetPhysicalDeviceFeatures fails with the error message "invalid physicalDevice object handle"
- *	  find out if this is a bug in vulkan or in the Win32InitVulkan code. The application seems to work
- *	  when the device features are not queried.
  *	- The application crashes without an error log when the data directory is not found.
  */

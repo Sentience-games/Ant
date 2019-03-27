@@ -3,6 +3,20 @@
 #include "ant_shared.h"
 
 // TODO(soimn): switch to intrinsic
+inline I32
+Abs(I32 num)
+{
+    return (num < 0 ? -num : num);
+}
+
+// TODO(soimn): switch to intrinsic
+inline F32
+Abs(F32 num)
+{
+    return (num < 0 ? -num : num);
+}
+
+// TODO(soimn): switch to intrinsic
 inline F32
 Floor(F32 num)
 {

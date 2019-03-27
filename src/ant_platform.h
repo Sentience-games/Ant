@@ -20,21 +20,21 @@ typedef PLATFORM_FREE_MEMORY_BLOCK_FUNCTION(platform_free_Memory_Block_function)
 /// Logging
 
 #define PLATFORM_LOG_INFO_FUNCTION(name) void name (const char* module, bool is_debug, const char* function_name,\
-unsigned int line_nr, const char* message)
+unsigned int line_nr, const char* format, ...)
 typedef PLATFORM_LOG_INFO_FUNCTION(platform_log_info_function);
 #define PLATFORM_LOG_ERROR_FUNCTION(name) void name (const char* module, bool is_fatal, const char* function_name,\
-unsigned int line_nr, const char* message)
+unsigned int line_nr, const char* format, ...)
 typedef PLATFORM_LOG_ERROR_FUNCTION(platform_log_error_function);
 
-#define LOG_FATAL(message) Platform->LogError("GAME", true, __FUNCTION__, __LINE__, message)
-#define LOG_ERROR(message) Platform->LogError("GAME", false, __FUNCTION__, __LINE__, message)
+#define LOG_FATAL(message, ...) Platform->LogError("Game", true, __FUNCTION__, __LINE__, message, __VA_ARGS__)
+#define LOG_ERROR(message, ...) Platform->LogError("Game", false, __FUNCTION__, __LINE__, message, __VA_ARGS__)
 
 #ifdef ANT_DEBUG
-#define LOG_INFO(message) Platform->LogInfo("GAME", false, __FUNCTION__, __LINE__, message)
-#define LOG_DEBUG(message) Platform->LogInfo("GAME", true, __FUNCTION__, __LINE__, message)
+#define LOG_INFO(message, ...) Platform->LogInfo("Game", false, __FUNCTION__, __LINE__, message, __VA_ARGS__)
+#define LOG_DEBUG(message, ...) Platform->LogInfo("Game", true, __FUNCTION__, __LINE__, message, __VA_ARGS__)
 #else
-#define LOG_INFO(message)
-#define LOG_DEBUG(message)
+#define LOG_INFO(message, ...)
+#define LOG_DEBUG(message, ...)
 #endif
 
 
@@ -66,11 +66,6 @@ struct Platform_File_Group
 enum PLATFORM_FILE_TYPE
 {
 	PlatformFileType_AssetFile,
-	PlatformFileType_SaveFile,
-	PlatformFileType_DDS,
-	PlatformFileType_WAV,
-	PlatformFileType_AAMF,
-    PlatformFileType_Vars,
     
 	PLATFORM_FILE_TYPE_COUNT
 };

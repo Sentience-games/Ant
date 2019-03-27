@@ -1,7 +1,7 @@
 @echo off
 
 set "common_compiler_flags= /MT /Gm- /FC /W4 /wd4100 /wd4201 /Od /Oi /std:c++17 /nologo /GR- /MP /Zo /Zf /Z7 /Ia:\src\ /DEBUG"
-set "common_linker_flags= /INCREMENTAL:NO user32.lib kernel32.lib /opt:ref"
+set "common_linker_flags= /INCREMENTAL:NO user32.lib kernel32.lib Gdi32.lib /opt:ref"
 set "engine_compiler_flags= /DANT_DEBUG /DANT_VERSION=1 /DANT_PLATFORM_WINDOWS"
 set "vulkan_compiler_flags= /I%VULKAN_SDK%\include\"
 set "src=a:\src"
@@ -15,9 +15,9 @@ echo.
 
 REM Building the game for hot reloading
 IF [%1] == [game_only] (
-del /Q "ant.*"				 > nul 2>&1
-del /Q "ant_******.pdb"		 > nul 2>&1
-del /Q "ant_loaded.dll"		 > nul 2>&1
+del /Q "ant.*"			   > nul 2>&1
+del /Q "ant_******.pdb"	  > nul 2>&1
+del /Q "ant_loaded.dll"	  > nul 2>&1
 del /Q "../run_tree/ant.dll" > nul 2>&1
 cl %common_compiler_flags% %engine_compiler_flags% %vulkan_compiler_flags% /Fmant.map %src%\ant.cpp /LD /link /DLL /PDB:ant_%time:~3,2%%time:~6,2%%time:~9,2%.pdb %common_linker_flags% /EXPORT:GameUpdateAndRender /out:ant.dll
 echo Build finished at %time%
@@ -27,10 +27,10 @@ GOTO move_files_to_run_tree
 REM Building the engine and the game
 :compile_engine
 
-del /Q "ant.*"						> nul 2>&1
-del /Q "ant_******.pdb"				> nul 2>&1
+del /Q "ant.*"					  > nul 2>&1
+del /Q "ant_******.pdb"			 > nul 2>&1
 del /Q "win32_ant.*"				> nul 2>&1
-del /Q "ant_loaded.dll"				> nul 2>&1
+del /Q "ant_loaded.dll"			 > nul 2>&1
 del /Q "../run_tree/win32_ant.exe"  > nul 2>&1
 del /Q "../run_tree/ant.dll"		> nul 2>&1
 del /Q "../run_tree/ant_loaded.dll" > nul 2>&1

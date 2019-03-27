@@ -1,8 +1,10 @@
 #pragma once
 
+#define NOMINMAX
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #undef WIN32_LEAN_AND_MEAN
+#undef NOMINMAX
 
 #ifdef ANT_DEBUG
 
@@ -19,14 +21,16 @@
 #include "ant.h"
 #include "ant_shared.h"
 #include "ant_memory.h"
+
 #include "utils/cstring.h"
+#include "utils/string.h"
 
-// TODO(soimn): move these to the build arguments
-#define APPLICATION_NAME "ant"
-#define APPLICATION_VERSION 0
-#define DEFAULT_TARGET_FPS 60
+/// Renderer
+PLATFORM_LOG_ERROR_FUNCTION(Win32LogError);
+PLATFORM_LOG_INFO_FUNCTION(Win32LogInfo);
 
-#define WIN32_EXPORT extern "C" __declspec(dllexport)
+#include "renderer/renderer.h"
+#include "renderer/renderer.cpp"
 
 #ifndef _WIN64
 #error "32-bit builds are not supported"
@@ -34,15 +38,15 @@
 
 /// Debug
 
-#define WIN32LOG_FATAL(message) Win32LogError("WIN32", true, __FUNCTION__, __LINE__, message)
-#define WIN32LOG_ERROR(message) Win32LogError("WIN32", false, __FUNCTION__, __LINE__, message)
+#define WIN32LOG_FATAL(message, ...) Win32LogError("Win32", true, __FUNCTION__, __LINE__, message, __VA_ARGS__)
+#define WIN32LOG_ERROR(message, ...) Win32LogError("Win32", false, __FUNCTION__, __LINE__, message, __VA_ARGS__)
 
 #ifdef ANT_DEBUG
-#define WIN32LOG_INFO(message) Win32LogInfo("WIN32", false, __FUNCTION__, __LINE__, message)
-#define WIN32LOG_DEBUG(message) Win32LogInfo("WIN32", true, __FUNCTION__, __LINE__, message)
+#define WIN32LOG_INFO(message, ...) Win32LogInfo("Win32", false, __FUNCTION__, __LINE__, message, __VA_ARGS__)
+#define WIN32LOG_DEBUG(message, ...) Win32LogInfo("Win32", true, __FUNCTION__, __LINE__, message, __VA_ARGS__)
 #else
-#define WIN32LOG_INFO(message)
-#define WIN32LOG_DEBUG(message)
+#define WIN32LOG_INFO(message, ...)
+#define WIN32LOG_DEBUG(message, ...)
 #endif
 
 /// FILE API

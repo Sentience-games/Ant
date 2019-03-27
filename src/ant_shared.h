@@ -29,15 +29,15 @@
 #define BITS(num) (1 << (num))
 #define ISBITSET(flag, bit) (((flag) & (bit)) != 0)
 
-#define OFFSETOF(obj, var) (uintptr) &(((obj*)0)->var)
+#define OFFSETOF(obj, var) (Uintptr) &(((obj*)0)->var)
 
 #define INVALID_CODE_PATH Assert(!"Invalid code path")
 #define INVALID_DEFAULT_CASE default: INVALID_CODE_PATH; break
 
-#define BREAK_ON_FALSE(EX, boolean)\
-boolean = EX;\
-if (!(boolean)) break
+#define BREAK_ON_FALSE(boolean) if ((boolean)); else break
 
+#define MAKE_VERSION(major, minor, patch)\
+(((major) << 22) | ((minor) << 12) | (patch))
 
 #include "ant_types.h"
 #include "utils/assert.h"

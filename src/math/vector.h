@@ -1,6 +1,6 @@
 #pragma once
 
-#include "ant_shared.h"
+#include "ant_types.h"
 
 // TODO(soimn):
 /*
@@ -17,7 +17,7 @@ struct V2
 			F32 x, y;
 		};
         
-		F32 E[2];
+		F32 e[2];
 	};
 };
 
@@ -42,7 +42,7 @@ struct V3
 			F32 _ignored02;
 		};
         
-		F32 E[3];
+		F32 e[3];
 	};
 };
 
@@ -79,7 +79,7 @@ struct V4
 			V3 yzw;
 		};
         
-		F32 E[4];
+		F32 e[4];
 	};
 };
 
@@ -87,7 +87,7 @@ struct V4
 /// V2
 
 inline V2
-V2(F32 x, F32 y)
+Vec2(F32 x, F32 y)
 {
 	return {x, y};
 }
@@ -193,7 +193,7 @@ LengthSq(const V2& v)
 /// V3
 
 inline V3
-V3(F32 x, F32 y, F32 z)
+Vec3(F32 x, F32 y, F32 z)
 {
 	return {x, y, z};
 }
@@ -296,7 +296,7 @@ LengthSq(const V3& v)
 /// V4
 
 inline V4
-V4(F32 x, F32 y, F32 z, F32 w)
+Vec4(F32 x, F32 y, F32 z, F32 w)
 {
 	return {x, y, z, w};
 }

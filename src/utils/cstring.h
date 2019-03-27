@@ -78,6 +78,19 @@ strcompare (const char* cstring_1, const char* cstring_2)
 	return result;
 }
 
+inline bool
+strcompare (const char* cstring_1, const char* cstring_2, Memory_Index cutoff)
+{
+    Assert(cstring_1 && cstring_2);
+    char* p1 = (char*) cstring_1;
+    char* p2 = (char*) cstring_2;
+    
+    Memory_Index i = 0;
+    for (; i < cutoff && *p1 == *p2; ++i, ++p1, ++p2);
+    
+	return (i == cutoff && *p1 == *p2);
+}
+
 // NOTE(soimn): this returns -1 on error and the number of characters written on success
 inline int
 strcopy (const char* source_str, char* dest_str, int dest_capacity)

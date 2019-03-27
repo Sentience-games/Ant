@@ -33,7 +33,7 @@ struct Memory_Arena
 inline void*
 Align(void* ptr, U8 alignment)
 {
-	return (void*)((U8*) ptr + (U8)(((~((uintptr) ptr)) + 1) & (U8)(alignment - 1)));
+	return (void*)((U8*) ptr + (U8)(((~((Uintptr) ptr)) + 1) & (U8)(alignment - 1)));
 }
 
 inline U8

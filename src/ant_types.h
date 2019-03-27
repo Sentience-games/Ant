@@ -2,8 +2,8 @@
 
 #include <stdint.h>
 
-typedef intptr_t intptr;
-typedef uintptr_t uintptr;
+typedef intptr_t Intptr;
+typedef uintptr_t Uintptr;
 
 typedef int8_t  I8;
 typedef int16_t I16;
@@ -30,7 +30,15 @@ typedef U32 B32;
 #define Enum32(type) U32
 #define Enum64(type) U64
 
-typedef U64 Memory_Index;
+#ifdef ANT_32BIT
+typedef U32 UMM;
+typedef I32 IMM;
+#else
+typedef U64 UMM;
+typedef I64 IMM;
+#endif
+
+typedef UMM Memory_Index;
 
 struct Buffer
 {
