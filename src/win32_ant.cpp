@@ -223,12 +223,7 @@ Win32GetFileLastWriteTime(const wchar_t* file_path, FILETIME* filetime)
         *filetime = data.ftLastWriteTime;
 	}
     
-    else
-    {
-        WIN32LOG_ERROR("Failed to acquire last write time of file");
-    }
-    
-	return succeeded;
+    return succeeded;
 }
 
 PLATFORM_GET_ALL_FILES_OF_TYPE_BEGIN_FUNCTION(Win32GetAllFilesOfTypeBegin)
@@ -445,7 +440,7 @@ Win32LoadGameCode(const wchar_t* dll_path, const wchar_t* loaded_dll_path)
     
 	if (game_code.module != NULL)
 	{
-		game_code.game_update_and_render_func  = (game_update_and_render_function*)  GetProcAddress(game_code.module, "GameUpdateAndRender");
+		game_code.game_update_and_render_func  = (game_update_and_render_function*) GetProcAddress(game_code.module, "GameUpdateAndRender");
         
 		if (game_code.game_update_and_render_func)
 		{
@@ -479,6 +474,45 @@ Win32UnloadGameCode(Win32_Game_Code* game_code)
     
 	game_code->is_valid = false;
 	game_code->game_update_and_render_func = &GameUpdateAndRenderStub;
+}
+
+internal void
+Win32ReloadGameIfNecessary(Win32_Game_Code* game_code, Win32_Game_Info* game_info)
+{
+#ifdef ANT_ENABLE_HOT_RELOADING
+    FILETIME new_time;
+    while(!Win32GetFileLastWriteTime(game_info->dll_path, &new_time));
+    
+    if (CompareFileTime(&new_time, &game_code->timestamp) == 1)
+    {
+        Win32UnloadGameCode(game_code);
+        *game_code = {};
+        
+        U32 tries = 0;
+        
+        do
+        {
+            Win32_Game_Code temp_game_code = {};
+            temp_game_code = Win32LoadGameCode(game_info->dll_path, game_info->loaded_dll_path);
+            
+            if (temp_game_code.is_valid)
+            {
+                *game_code = temp_game_code;
+                
+                WIN32LOG_INFO("Loaded new version of the game");
+                break;
+            }
+            
+            WIN32LOG_INFO("Failed to load the new version of the game");
+        }
+        while(!game_code->is_valid && tries < 10, ++tries);
+        
+        if (tries == 10)
+        {
+            WIN32LOG_FATAL("Failed to load the new version of the game, tried 10 times.");
+        }
+    }
+#endif
 }
 
 LRESULT CALLBACK
@@ -644,10 +678,7 @@ int CALLBACK WinMain(HINSTANCE instance,
             ++win32_persistent_memory.block_count;
             
             Game_Memory* memory = PushStruct(&win32_persistent_memory, Game_Memory);
-            ZeroStruct(memory);
-            
             memory->state       = PushStruct(&win32_persistent_memory, Game_State);
-            ZeroStruct(memory->state);
             
 			// Platform API function pointers
 			memory->platform_api = {};
@@ -673,7 +704,7 @@ int CALLBACK WinMain(HINSTANCE instance,
             
 			game_info.cwd = Win32GetCWD(&memory->state->persistent_memory, (U32*) &game_info.cwd_length);
             
-			{ //// Build dll path
+			{ // Build dll path
 				const wchar_t* appendage = CONCAT(L, APPLICATION_NAME) L".dll";
 				U32 buffer_length        = game_info.cwd_length + (U32) wstrlength(appendage) + 1;
                 
@@ -681,7 +712,7 @@ int CALLBACK WinMain(HINSTANCE instance,
 				Win32BuildFullyQualifiedPath(&game_info, appendage, (wchar_t*) game_info.dll_path, buffer_length);
 			}
             
-			{ //// Build loaded dll path
+			{ // Build loaded dll path
 				const wchar_t* appendage = CONCAT(L, APPLICATION_NAME) L"_loaded.dll";
 				U32 buffer_length        = game_info.cwd_length + (U32) wstrlength(appendage) + 1;
                 
@@ -690,7 +721,7 @@ int CALLBACK WinMain(HINSTANCE instance,
 			}
             
 			
-			{ //// Set working directory
+			{ // Set working directory
 				BOOL successfully_set_wd = SetCurrentDirectoryW(game_info.cwd);
                 
 				if (successfully_set_wd == FALSE)
@@ -701,14 +732,14 @@ int CALLBACK WinMain(HINSTANCE instance,
 				game_info_valid = (successfully_set_wd != 0);
 			}
             
-			//// Input
+			// Input
 			bool input_ready = Win32RegisterRawInputDevices(window_handle);
             
             Platform_Game_Input input[2];
             Platform_Game_Input* old_input = &input[0];
             Platform_Game_Input* new_input = &input[1];
             
-			//// Game code
+			// Game code
             Win32_Game_Code game_code = {};
             
 			if (game_info_valid)
@@ -739,34 +770,7 @@ int CALLBACK WinMain(HINSTANCE instance,
                     
                     Win32ProcessPendingMessages(window_handle, old_input, new_input);
                     
-#ifdef ANT_ENABLE_HOT_RELOADING
-                    {
-                        FILETIME new_time;
-                        while(!Win32GetFileLastWriteTime(game_info.dll_path, &new_time));
-                        
-                        if (CompareFileTime(&new_time, &game_code.timestamp) == 1)
-                        {
-                            Win32UnloadGameCode(&game_code);
-                            
-                            do
-                            {
-                                Win32_Game_Code temp_game_code = {};
-                                temp_game_code = Win32LoadGameCode(game_info.dll_path, game_info.loaded_dll_path);
-                                
-                                if (temp_game_code.is_valid)
-                                {
-                                    game_code = temp_game_code;
-                                    
-                                    WIN32LOG_DEBUG("Loaded new version of the game");
-                                    break;
-                                }
-                                
-                                WIN32LOG_DEBUG("Failed to load the new version of the game");
-                            }
-                            while(!game_code.is_valid);
-                        }
-                    }
-#endif
+                    Win32ReloadGameIfNecessary(&game_code, &game_info);
                     
                     game_code.game_update_and_render_func(memory, old_input, new_input);
                     

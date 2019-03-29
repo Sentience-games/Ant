@@ -11,20 +11,25 @@ typedef HMODULE Module;
 #endif
 
 #include "renderer/opengl_loader.h"
+#include "renderer/opengl.h"
 
 inline bool
 InitRenderer (Process_Handle process_handle, Window_Handle window_handle)
 {
     bool succeeded = false;
     
-    // ...
-    OpenGL_Binding gl_binding = {};
-    GLLoad(&gl_binding, process_handle, window_handle);
+    OpenGL_Binding gl_binding;
+    if (GLLoad(&gl_binding, process_handle, window_handle))
+    {
+    }
+    
+    else
+    {
+        // OpenGL load failed
+    }
     
     return succeeded;
 }
-
-#include "renderer/opengl.h"
 
 #undef Error
 #undef Info

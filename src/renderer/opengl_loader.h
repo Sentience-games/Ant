@@ -111,8 +111,10 @@ typedef HGLRC GL_Context;
 
 //GL_FUNC(RETURN TYPE, NAME, PARAMETERS)
 #define ListAllCoreGLFunctions()\
-GL_FUNC(void, glGetIntegerv, GLenum name, GLint* params)\
-GL_FUNC(GLubyte*, glGetStringi, GLenum name, GLuint index)\
+GL_FUNC(void, 	glGetIntegerv,  GLenum name, GLint* params)\
+GL_FUNC(GLubyte*, glGetStringi,   GLenum name, GLuint index)\
+GL_FUNC(void, 	glClearColor,   GLfloat red, GLfloat green, GLfloat blue, GLfloat alpha)\
+GL_FUNC(void, 	glClear, 	   GLbitfield mask)\
 
 #define GL_FUNC(ret, name, ...)\
 typedef ret (GLAPI *PFN_##name) (__VA_ARGS__);
@@ -199,7 +201,7 @@ GLCreateContext (OpenGL_Binding* binding)
             break;
         }
         
-        HWND dummy_window = CreateWindowExA(dummy_window_class.style, dummy_window_class.lpszClassName, "Dummy OpenGL extension loading window", WS_VISIBLE, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, NULL, NULL, binding->process_handle, NULL);
+        HWND dummy_window = CreateWindowExA(dummy_window_class.style, dummy_window_class.lpszClassName, "Dummy OpenGL extension loading window", 0, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, NULL, NULL, binding->process_handle, NULL);
         
         if (dummy_window == NULL)
         {
@@ -529,8 +531,6 @@ GLLoadFunctions (OpenGL_Binding* binding)
         for (I32 i = 0; i < extension_count; ++i)
         {
             const char* extension_name = (const char*) binding->glGetStringi(GL_EXTENSIONS, i);
-            
-            Info("%s", extension_name);
             
 #define GL_EXTENSION_NAME(flag, name)\
             if (strcompare(#name, extension_name))\

@@ -20,7 +20,6 @@ Sqrt(F32 num, U8 precision = 5)
 {
     F32 result = num / 2.0f;
     
-    // TODO(soimn): see if there is a better solution
     U32 num_iterations = (num < 10.0f ? precision : (num < 1000.0f ? 2 * precision : 4 * precision));
     
     for (U32 i = 0; i < num_iterations; ++i)
@@ -31,14 +30,15 @@ Sqrt(F32 num, U8 precision = 5)
     return result;
 }
 
-inline u64 Pow2(U8 exp);
+inline U64 Pow2(U8 exp);
 
-inline u64
-Pow(u64 num, U8 exp)
+// TODO(soimn): replace this with an intrinsic
+inline U64
+Pow(U64 num, U8 exp)
 {
     Assert(exp < 64);
     
-    u64 result = 1;
+    U64 result = 1;
     
     if (num == 2 && exp <= 6)
     {
@@ -56,12 +56,13 @@ Pow(u64 num, U8 exp)
     return result;
 }
 
-inline u64
+// TODO(soimn): replace this with an intrinsic
+inline U64
 Pow2(U8 exp)
 {
     Assert(exp < 64);
     
-    u64 result = 0;
+    U64 result = 0;
     
     switch(exp)
     {
