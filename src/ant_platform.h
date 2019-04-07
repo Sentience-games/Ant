@@ -156,5 +156,5 @@ struct Game_Memory
     Platform_API_Functions platform_api;
 };
 
-#define GAME_UPDATE_AND_RENDER_FUNCTION(name) void name (Game_Memory* memory, Platform_Game_Input* old_input, Platform_Game_Input* new_input)
+#define GAME_UPDATE_AND_RENDER_FUNCTION(name) void name (Game_Memory* memory, Platform_Game_Input* old_input, Platform_Game_Input* new_input, struct Renderer_Context* renderer)
 typedef GAME_UPDATE_AND_RENDER_FUNCTION(game_update_and_render_function);

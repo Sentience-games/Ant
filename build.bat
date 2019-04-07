@@ -1,6 +1,6 @@
 @echo off
 
-set "common_compiler_flags= /MT /Gm- /FC /W4 /wd4100 /wd4201 /Od /Oi /std:c++17 /nologo /GR- /MP /Zo /Zf /Z7 /Ia:\src\ /DEBUG"
+set "common_compiler_flags= /diagnostics:column /MT /Gm- /FC /W4 /wd4100 /wd4201 /Od /Oi /std:c++17 /nologo /GR- /MP /Zo /Zf /Z7 /Ia:\src\ /DEBUG"
 set "common_linker_flags= /INCREMENTAL:NO user32.lib kernel32.lib Gdi32.lib /opt:ref"
 set "engine_compiler_flags= /DANT_DEBUG /DANT_VERSION=1 /DANT_PLATFORM_WINDOWS"
 set "vulkan_compiler_flags= /I%VULKAN_SDK%\include\"

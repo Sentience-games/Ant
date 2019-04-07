@@ -4,12 +4,6 @@
 
 #include "math/exponentiation.h"
 
-// TODO(soimn):
-/*
- * - Validate existing functions
- * - Implement length, normalize, ...
- */
-
 struct V2
 {
 	union
@@ -504,13 +498,13 @@ operator * (const Quat& q_1, const Quat& q_2)
 }
 
 inline Quat
-Inverse(const Quat& q)
+Conjugate(const Quat& q)
 {
     return {-q.x, -q.y, -q.z, q.w};
 }
 
 inline V3
-Conjugate(V3 v, Quat q)
+Rotate(V3 v, Quat q)
 {
-    return ((q * Vec4(v.x, v.y, v.z, 0.0f)) * Inverse(q)).xyz;
+    return ((q * Vec4(v.x, v.y, v.z, 0.0f)) * Conjugate(q)).xyz;
 }

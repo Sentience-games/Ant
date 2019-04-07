@@ -661,7 +661,7 @@ int CALLBACK WinMain(HINSTANCE instance,
 			CreateWindowExW(window_class.style,
 							window_class.lpszClassName,
 							CONCAT(L, APPLICATION_NAME),
-							WS_OVERLAPPED | WS_SYSMENU,
+							WS_OVERLAPPEDWINDOW | WS_SYSMENU,
 							CW_USEDEFAULT, CW_USEDEFAULT,
 							CW_USEDEFAULT, CW_USEDEFAULT,
 							NULL, NULL,
@@ -747,12 +747,12 @@ int CALLBACK WinMain(HINSTANCE instance,
 				game_code = Win32LoadGameCode(game_info.dll_path, game_info.loaded_dll_path);
 			}
             
-            // TEMP
-            InitRenderer(instance, window_handle);
+            // Renderer
+            bool renderer_ready = InitRenderer(instance, window_handle);
             
 			ClearMemoryArena(&memory->state->frame_local_memory);
             
-			if (input_ready && game_info_valid && game_code.is_valid)
+			if (input_ready && game_info_valid && game_code.is_valid && renderer_ready)
 			{
 				Running = true;
                 
@@ -772,11 +772,15 @@ int CALLBACK WinMain(HINSTANCE instance,
                     
                     Win32ReloadGameIfNecessary(&game_code, &game_info);
                     
-                    game_code.game_update_and_render_func(memory, old_input, new_input);
+                    RendererContext.PrepareFrame();
+                    
+                    game_code.game_update_and_render_func(memory, old_input, new_input, &RendererContext);
+                    
+                    RendererContext.PresentFrame();
                     
                     // Swap new and old input
                     Platform_Game_Input* temp_input = new_input;
-                    new_input = old_input;
+                    *(new_input = old_input) = {};
                     old_input = temp_input;
                     
                     ResetMemoryArena(&memory->state->frame_local_memory);

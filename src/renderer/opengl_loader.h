@@ -1,16 +1,15 @@
 #pragma once
 
-// Extracted from https://github.com/KhronosGroup/OpenGL-Registry/blob/master/api/GLES/gl.h
-
 typedef I8 GLbyte;
 typedef F32 GLclampf;
 typedef I16 GLshort;
-typedef I16 GLushort;
+typedef U16 GLushort;
 typedef void GLvoid;
 typedef U32 GLenum;
 typedef F32 GLfloat;
 typedef I32 GLfixed;
 typedef U32 GLuint;
+typedef U64 GLuint64;
 typedef IMM GLsizeiptr;
 typedef Intptr GLintptr;
 typedef U32 GLbitfield;
@@ -23,8 +22,9 @@ typedef I32 GLclampx;
 #define GL_DEPTH_BUFFER_BIT               0x00000100
 #define GL_STENCIL_BUFFER_BIT             0x00000400
 #define GL_COLOR_BUFFER_BIT               0x00004000
-#define GL_FALSE                          0
-#define GL_TRUE                           1
+
+#define GL_FALSE                          0x0000
+#define GL_TRUE                           0x0001
 #define GL_POINTS                         0x0000
 #define GL_LINES                          0x0001
 #define GL_LINE_LOOP                      0x0002
@@ -46,7 +46,7 @@ typedef I32 GLclampx;
 #define GL_DEPTH_TEST                     0x0B71
 #define GL_NORMALIZE                      0x0BA1
 #define GL_MULTISAMPLE                    0x809D
-#define GL_NO_ERROR                       0
+#define GL_NO_ERROR                       0x0000
 #define GL_INVALID_ENUM                   0x0500
 #define GL_INVALID_VALUE                  0x0501
 #define GL_INVALID_OPERATION              0x0502
@@ -73,6 +73,16 @@ typedef I32 GLclampx;
 #define GL_EXTENSIONS                     0x1F03
 #define GL_NUM_EXTENSIONS                 0x821D
 
+#define GL_TEXTURE_2D                     0x0DE1
+#define GL_TEXTURE_2D_ARRAY               0x8C1A
+#define GL_TEXTURE_MAG_FILTER             0x2800
+#define GL_TEXTURE_MIN_FILTER             0x2801
+#define GL_TEXTURE_WRAP_S                 0x2802
+#define GL_TEXTURE_WRAP_T                 0x2803
+
+#define GL_RGBA16F                        0x881A
+#define GL_RGB16F                         0x881B
+
 #ifdef ANT_PLATFORM_WINDOWS
 #define WGL_SUPPORT_OPENGL_ARB            0x2010
 #define WGL_DRAW_TO_WINDOW_ARB            0x2001
@@ -90,12 +100,13 @@ typedef I32 GLclampx;
 #define WGL_CONTEXT_MAJOR_VERSION_ARB     0x2091
 #define WGL_CONTEXT_MINOR_VERSION_ARB     0x2092
 #define WGL_CONTEXT_PROFILE_MASK_ARB      0x9126
-#define WGL_CONTEXT_CORE_PROFILE_BIT_ARB  0x00000001
 #define WGL_CONTEXT_FLAGS_ARB             0x2094
 #define WGL_CONTEXT_DEBUG_BIT_ARB         0x0001
 
 #define ERROR_INVALID_VERSION_ARB         0x2095
 #define ERROR_INVALID_PROFILE_ARB         0x2096
+
+#define WGL_CONTEXT_CORE_PROFILE_BIT_ARB  0x00000001
 
 #define GLAPI WINAPI
 
@@ -111,10 +122,16 @@ typedef HGLRC GL_Context;
 
 //GL_FUNC(RETURN TYPE, NAME, PARAMETERS)
 #define ListAllCoreGLFunctions()\
-GL_FUNC(void, 	glGetIntegerv,  GLenum name, GLint* params)\
-GL_FUNC(GLubyte*, glGetStringi,   GLenum name, GLuint index)\
-GL_FUNC(void, 	glClearColor,   GLfloat red, GLfloat green, GLfloat blue, GLfloat alpha)\
-GL_FUNC(void, 	glClear, 	   GLbitfield mask)\
+GL_FUNC(void, 	glGetIntegerv,    GLenum name, GLint* params)\
+GL_FUNC(GLubyte*, glGetStringi,     GLenum name, GLuint index)\
+GL_FUNC(void, 	glClearColor,     GLfloat red, GLfloat green, GLfloat blue, GLfloat alpha)\
+GL_FUNC(void, 	glClear, 	     GLbitfield mask)\
+GL_FUNC(void,     glClearStencil,   GLint s)\
+GL_FUNC(void,     glClearDepthf,    GLfloat depth)\
+GL_FUNC(void,     glGenTextures,    GLsizei n, GLuint * textures)\
+GL_FUNC(void,     glBindTexture,    GLenum target, GLuint texture)\
+GL_FUNC(void,     glTexParameteri,  GLenum target, GLenum pname, GLint param)\
+GL_FUNC(void,     glTexStorage3D,   GLenum target, GLsizei levels, GLenum internalformat, GLsizei width, GLsizei height, GLsizei depth)\
 
 #define GL_FUNC(ret, name, ...)\
 typedef ret (GLAPI *PFN_##name) (__VA_ARGS__);
@@ -155,15 +172,21 @@ struct OpenGL_Extension_Info
 #undef GL_EXTENSION_END
 };
 
+struct OpenGL_Capabilities
+{
+    U32 max_texture_array_layers;
+};
+
 struct OpenGL_Binding
 {
-	Module module;
+    Module module;
     Process_Handle process_handle;
     Window_Handle window_handle;
     Device_Context device_context;
     GL_Context context;
     
     OpenGL_Extension_Info extension_info;
+    OpenGL_Capabilities capabilities;
     
 #define GL_FUNC(ret, name, ...) PFN_##name name;
     ListAllCoreGLFunctions()
@@ -179,6 +202,8 @@ struct OpenGL_Binding
 #undef GL_EXTENSION_FUNC
 #undef GL_EXTENSION_END
 };
+
+global OpenGL_Binding GLBinding;
 
 #ifdef ANT_PLATFORM_WINDOWS
 inline bool
@@ -318,11 +343,11 @@ GLCreateContext (OpenGL_Binding* binding)
                     }
                     
                     /*
-else if (strcompare(scan, "WGL_ARB_create_context_no_error", cutoff))
+                    else if (strcompare(scan, "WGL_ARB_create_context_no_error", cutoff))
                     {
-                        supports_create_context_no_error_arb = true;
+                    supports_create_context_no_error_arb = true;
                     }
-*/
+                    */
                     
                     else if (strcompare(scan, "WGL_ARB_pixel_format", cutoff))
                     {
@@ -415,7 +440,7 @@ else if (strcompare(scan, "WGL_ARB_create_context_no_error", cutoff))
             }
             
             U32 minimum_major_version = 4;
-            U32 minimum_minor_version = 3;
+            U32 minimum_minor_version = 5;
             
             I32 context_attributes[] =
             {
@@ -634,6 +659,11 @@ GLLoad (OpenGL_Binding* binding, Process_Handle process_handle, Window_Handle wi
     {
         BREAK_ON_FALSE(GLCreateContext(binding));
         BREAK_ON_FALSE(GLLoadFunctions(binding));
+        
+        // Get capabilities
+        ///////////////////
+        
+        binding->glGetIntegerv(0x88FF, (GLint*) &binding->capabilities.max_texture_array_layers);
         
         succeeded = true;
     } while(0);
