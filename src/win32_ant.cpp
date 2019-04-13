@@ -123,7 +123,7 @@ Win32GetCWD(Memory_Arena* persistent_memory, U32* result_length)
 {
 	wchar_t* result = NULL;
     
-	// FIXME(soimn): this will most certainly span multiple pages, which may be a problem
+	// FIXME(soimn): this could span multiple memory blocks, which will fail.
 	struct temporary_memory { Memory_Arena arena; };
 	temporary_memory* temp_memory = BootstrapPushSize(temporary_memory, arena, KILOBYTES(32));
     
@@ -137,8 +137,8 @@ Win32GetCWD(Memory_Arena* persistent_memory, U32* result_length)
 	{
 		path_length = GetModuleFileNameW(NULL, file_path, file_path_memory_size);
 		
-		// NOTE(soimn): this asserts that this function succeeds
-		Assert(path_length);
+        // TODO(soimn): this might not be a good idea, as this function is also run in release mode
+        Assert(path_length);
         
 		if (path_length != file_path_memory_size)
 		{
@@ -190,7 +190,6 @@ Win32GetCWD(Memory_Arena* persistent_memory, U32* result_length)
 }
 
 
-// FIXME(soimn): produces ant_loaded.dl instead of ant_loaded.dll
 internal void
 Win32BuildFullyQualifiedPath(Win32_Game_Info* game_info, const wchar_t* appendage,
 							 wchar_t* buffer, U32 buffer_length)
@@ -327,11 +326,11 @@ PLATFORM_GET_ALL_FILES_OF_TYPE_END_FUNCTION(Win32GetAllFilesOfTypeEnd)
 
 PLATFORM_OPEN_FILE_FUNCTION(Win32OpenFile)
 {
-    Platform_File_Handle result = {};
+    Platform_File_Handle result  = {};
 	StaticAssert(sizeof(HANDLE) <= sizeof(result.platform_data));
     
 	DWORD access_permissions = 0;
-	DWORD creation_mode		= 0;
+	DWORD creation_mode      = 0;
     
 	if (open_flags & OpenFile_Read)
 	{
@@ -342,7 +341,7 @@ PLATFORM_OPEN_FILE_FUNCTION(Win32OpenFile)
 	if (open_flags & OpenFile_Write)
 	{
 		access_permissions |= GENERIC_WRITE;
-		creation_mode	    = OPEN_ALWAYS;
+		creation_mode	   = OPEN_ALWAYS;
 	}
     
 	wchar_t* file_name  = (wchar_t*) file_info->platform_data;
@@ -748,7 +747,8 @@ int CALLBACK WinMain(HINSTANCE instance,
 			}
             
             // Renderer
-            bool renderer_ready = InitRenderer(instance, window_handle);
+            Renderer_Context renderer_context = {};
+            bool renderer_ready = InitRenderer(&renderer_context, instance, window_handle);
             
 			ClearMemoryArena(&memory->state->frame_local_memory);
             
@@ -772,11 +772,11 @@ int CALLBACK WinMain(HINSTANCE instance,
                     
                     Win32ReloadGameIfNecessary(&game_code, &game_info);
                     
-                    RendererContext.PrepareFrame();
+                    renderer_context.PrepareFrame();
                     
-                    game_code.game_update_and_render_func(memory, old_input, new_input, &RendererContext);
+                    game_code.game_update_and_render_func(memory, old_input, new_input, &renderer_context);
                     
-                    RendererContext.PresentFrame();
+                    renderer_context.PresentFrame();
                     
                     // Swap new and old input
                     Platform_Game_Input* temp_input = new_input;

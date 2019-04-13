@@ -7,10 +7,14 @@
 
 #include "ant_memory.h"
 
+#include "assets/assets.h"
+
 struct Game_State
 {
     bool initialized;
     
     Memory_Arena persistent_memory;
     Memory_Arena frame_local_memory;
+    
+    Game_Assets assets;
 };

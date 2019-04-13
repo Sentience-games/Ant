@@ -129,9 +129,10 @@ GL_FUNC(void, 	glClear, 	     GLbitfield mask)\
 GL_FUNC(void,     glClearStencil,   GLint s)\
 GL_FUNC(void,     glClearDepthf,    GLfloat depth)\
 GL_FUNC(void,     glGenTextures,    GLsizei n, GLuint * textures)\
+GL_FUNC(void,     glDeleteTextures, GLsizei n, const GLuint* textures)\
 GL_FUNC(void,     glBindTexture,    GLenum target, GLuint texture)\
 GL_FUNC(void,     glTexParameteri,  GLenum target, GLenum pname, GLint param)\
-GL_FUNC(void,     glTexStorage3D,   GLenum target, GLsizei levels, GLenum internalformat, GLsizei width, GLsizei height, GLsizei depth)\
+GL_FUNC(void,     glTexStorage2D,   GLenum target, GLsizei levels, GLenum internalformat, GLsizei width,GLsizei height)\
 
 #define GL_FUNC(ret, name, ...)\
 typedef ret (GLAPI *PFN_##name) (__VA_ARGS__);
@@ -202,8 +203,6 @@ struct OpenGL_Binding
 #undef GL_EXTENSION_FUNC
 #undef GL_EXTENSION_END
 };
-
-global OpenGL_Binding GLBinding;
 
 #ifdef ANT_PLATFORM_WINDOWS
 inline bool

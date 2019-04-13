@@ -58,9 +58,9 @@ struct Platform_File_Info
 
 struct Platform_File_Group
 {
-	U32 file_count;
 	Platform_File_Info* first_file_info;
 	void* platform_data;
+    U32 file_count;
 };
 
 enum PLATFORM_FILE_TYPE
