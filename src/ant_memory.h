@@ -49,6 +49,8 @@ RoundToAligned(Memory_Index size, U8 alignment)
 }
 
 #define CopyArray(source, count, dest) Copy((void*)(source), (count) * sizeof(*(source)), (dest))
+#define CopyStruct(source, dest) Copy((void*)(source), sizeof((source)[0]), (dest))
+
 inline void*
 Copy(void* source, Memory_Index source_length, void* dest)
 {

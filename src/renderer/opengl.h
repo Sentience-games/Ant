@@ -20,7 +20,7 @@ RENDERER_PRESENT_FRAME_FUNCTION(GLPresentFrame)
 
 RENDERER_CREATE_TEXTURE_FUNCTION(GLCreateTexture)
 {
-    Texture_Handle handle = {};
+    Texture handle = {};
     handle.type           = type;
     handle.format         = format;
     handle.u_wrapping     = u_wrapping;

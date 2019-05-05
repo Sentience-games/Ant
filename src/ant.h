@@ -8,6 +8,7 @@
 #include "ant_memory.h"
 
 #include "assets/assets.h"
+#include "assets/assets.cpp"
 
 struct Game_State
 {

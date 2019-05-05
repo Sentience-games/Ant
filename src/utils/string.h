@@ -4,6 +4,7 @@
 #include "ant_shared.h"
 
 #include "utils/cstring.h"
+#include <stdarg.h>
 
 #define CONST_STRING(STR) { sizeof(STR) - 1, (u8*)(STR) }
 

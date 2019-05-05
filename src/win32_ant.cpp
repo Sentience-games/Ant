@@ -324,7 +324,7 @@ PLATFORM_GET_ALL_FILES_OF_TYPE_END_FUNCTION(Win32GetAllFilesOfTypeEnd)
 	}
 }
 
-PLATFORM_OPEN_FILE_FUNCTION(Win32OpenFile)
+PLATFORM_OPEN_FILE_DIRECT_FUNCTION(Win32OpenFileDirect)
 {
     Platform_File_Handle result  = {};
 	StaticAssert(sizeof(HANDLE) <= sizeof(result.platform_data));
@@ -344,8 +344,21 @@ PLATFORM_OPEN_FILE_FUNCTION(Win32OpenFile)
 		creation_mode	   = OPEN_ALWAYS;
 	}
     
-	wchar_t* file_name  = (wchar_t*) file_info->platform_data;
-	HANDLE win32_handle = CreateFileW(file_name, access_permissions,
+    wchar_t* resolved_path = NULL;
+    
+    if (server_address != 0)
+    {
+        // prefix path with ("\\\\%u.%u.%u.%u\\", (server_address & 0xFF000000) >> 24, (server_address & 0x00FF0000) >> 16, (server_address & 0x0000FF00) >> 8, (server_address & 0x000000FF) >> 0)
+        NOT_IMPLEMENTED;
+    }
+    
+    else
+    {
+        // prefix path with data\\ 
+        NOT_IMPLEMENTED;
+    }
+    
+	HANDLE win32_handle = CreateFileW(resolved_path, access_permissions,
 									  FILE_SHARE_READ, 0,
 									  creation_mode, 0, 0);
     
@@ -353,6 +366,11 @@ PLATFORM_OPEN_FILE_FUNCTION(Win32OpenFile)
 	*((HANDLE*) &result.platform_data) = win32_handle;
     
 	return result;
+}
+
+PLATFORM_OPEN_FILE_FUNCTION(Win32OpenFile)
+{
+    return Win32OpenFileDirect(0, (const char*) file_info->platform_data, open_flags);
 }
 
 PLATFORM_CLOSE_FILE_FUNCTION(Win32CloseFile)
@@ -690,6 +708,7 @@ int CALLBACK WinMain(HINSTANCE instance,
 			memory->platform_api.GetAllFilesOfTypeBegin = &Win32GetAllFilesOfTypeBegin;
 			memory->platform_api.GetAllFilesOfTypeEnd   = &Win32GetAllFilesOfTypeEnd;
 			memory->platform_api.OpenFile			   = &Win32OpenFile;
+            memory->platform_api.OpenFileDirect	     = &Win32OpenFileDirect;
 			memory->platform_api.CloseFile			  = &Win32CloseFile;
 			memory->platform_api.ReadFromFile		   = &Win32ReadFromFile;
 			memory->platform_api.WriteToFile			= &Win32WriteToFile;
@@ -747,8 +766,7 @@ int CALLBACK WinMain(HINSTANCE instance,
 			}
             
             // Renderer
-            Renderer_Context renderer_context = {};
-            bool renderer_ready = InitRenderer(&renderer_context, instance, window_handle);
+            bool renderer_ready = InitRenderer(&memory->platform_api, instance, window_handle);
             
 			ClearMemoryArena(&memory->state->frame_local_memory);
             
@@ -772,11 +790,11 @@ int CALLBACK WinMain(HINSTANCE instance,
                     
                     Win32ReloadGameIfNecessary(&game_code, &game_info);
                     
-                    renderer_context.PrepareFrame();
+                    memory->platform_api.PrepareFrame();
                     
-                    game_code.game_update_and_render_func(memory, old_input, new_input, &renderer_context);
+                    game_code.game_update_and_render_func(memory, old_input, new_input);
                     
-                    renderer_context.PresentFrame();
+                    memory->platform_api.PresentFrame();
                     
                     // Swap new and old input
                     Platform_Game_Input* temp_input = new_input;
@@ -813,7 +831,6 @@ int CALLBACK WinMain(HINSTANCE instance,
  *	- Setup audio
  *	- Set viewport dimensions and implement restricted resizing of the window
  *	- Implement memory usage shadowing
- *    - Verify the memory allocator is working as excpected
  */
 
 // FIXME(soimn):

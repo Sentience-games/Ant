@@ -5,6 +5,7 @@
 #endif
 
 #include "ant_shared.h"
+#include "renderer/renderer.h"
 
 /// PLATFORM API
 
@@ -87,6 +88,10 @@ typedef PLATFORM_GET_ALL_FILES_OF_TYPE_END_FUNCTION(platform_get_all_files_of_ty
 Platform_File_Handle name (Platform_File_Info* file_info, Flag8(PLATFORM_OPEN_FILE_FLAGS) open_flags)
 typedef PLATFORM_OPEN_FILE_FUNCTION(platform_open_file_function);
 
+#define PLATFORM_OPEN_FILE_DIRECT_FUNCTION(name)\
+Platform_File_Handle name (U32 server_address, const char* path, Flag8(PLATFORM_OPEN_FILE_FLAGS) open_flags)
+typedef PLATFORM_OPEN_FILE_DIRECT_FUNCTION(platform_open_file_direct_function);
+
 #define PLATFORM_CLOSE_FILE_FUNCTION(name) void name (Platform_File_Handle* file_handle)
 typedef PLATFORM_CLOSE_FILE_FUNCTION(platform_close_file_function);
 
@@ -107,7 +112,7 @@ struct Platform_Key_Code
     // NOTE(soimn): This is the key code for the keypress.
     //			  Alphanumeric key codes are encoded with the ascii character value.
     //			  Special ascii values often requires a modifier key to access, such as ':',
-    //			  are encoded with the ascii character values, and the modifier keys are not registered.
+    //			  and are encoded with the ascii character values, and the modifier keys are not registered.
     //
     //				<Enter>	 0x0D
     //				<Esc>	   0x1B
@@ -142,9 +147,20 @@ struct Platform_API_Functions
 	platform_get_all_files_of_type_begin_function* GetAllFilesOfTypeBegin;
 	platform_get_all_files_of_type_end_function* GetAllFilesOfTypeEnd;
 	platform_open_file_function* OpenFile;
+    platform_open_file_direct_function* OpenFileDirect;
 	platform_close_file_function* CloseFile;
 	platform_read_from_file_function* ReadFromFile;
 	platform_write_to_file_function* WriteToFile;
+    
+    renderer_prepare_frame_function* PrepareFrame;
+    renderer_push_mesh_function* PushMesh;
+    renderer_render_batch_function* RenderBatch;
+    renderer_present_frame_function* PresentFrame;
+    
+    renderer_clean_batch_function* CleanBatch;
+    
+    renderer_create_texture_function* CreateTexture;
+    renderer_delete_texture_function* DeleteTexture;
 };
 
 extern Platform_API_Functions* Platform;
@@ -156,5 +172,5 @@ struct Game_Memory
     Platform_API_Functions platform_api;
 };
 
-#define GAME_UPDATE_AND_RENDER_FUNCTION(name) void name (Game_Memory* memory, Platform_Game_Input* old_input, Platform_Game_Input* new_input, struct Renderer_Context* renderer)
+#define GAME_UPDATE_AND_RENDER_FUNCTION(name) void name (Game_Memory* memory, Platform_Game_Input* old_input, Platform_Game_Input* new_input)
 typedef GAME_UPDATE_AND_RENDER_FUNCTION(game_update_and_render_function);

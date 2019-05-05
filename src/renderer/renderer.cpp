@@ -30,38 +30,28 @@ RENDERER_RENDER_BATCH_FUNCTION(RendererRenderBatch)
     
 }
 
-RENDERER_REQUEST_BATCH_FUNCTION(RendererRequestBatch)
-{
-    Assert(context->render_batch_count < RENDERER_MAX_RENDER_BATCH_COUNT);
-    return context->render_batch_count++;
-}
-
 RENDERER_CLEAN_BATCH_FUNCTION(RendererCleanBatch)
 {
-    Assert(render_batch_id < context->render_batch_count);
-    Render_Batch* batch = &context->render_batches[render_batch_id];
-    
-    ResetMemoryArena(&batch->arena);
+    ResetMemoryArena(batch->arena);
     batch->entry_count = 0;
 }
 
 inline bool
-InitRenderer (Renderer_Context* context, Process_Handle process_handle, Window_Handle window_handle)
+InitRenderer (Platform_API_Functions* platform_api, Process_Handle process_handle, Window_Handle window_handle)
 {
     bool succeeded = false;
     
     if (GLLoad(&GLBinding, process_handle, window_handle))
     {
-        context->PrepareFrame  = &GLPrepareFrame;
-        context->PushMesh      = &RendererPushMesh;
-        context->RenderBatch   = &RendererRenderBatch;
-        context->PresentFrame  = &GLPresentFrame;
+        platform_api->PrepareFrame  = &GLPrepareFrame;
+        platform_api->PushMesh      = &RendererPushMesh;
+        platform_api->RenderBatch   = &RendererRenderBatch;
+        platform_api->PresentFrame  = &GLPresentFrame;
         
-        context->RequestBatch  = &RendererRequestBatch;
-        context->CleanBatch    = &RendererCleanBatch;
+        platform_api->CleanBatch    = &RendererCleanBatch;
         
-        context->CreateTexture = &GLCreateTexture;
-        context->DeleteTexture = &GLDeleteTexture;
+        platform_api->CreateTexture = &GLCreateTexture;
+        platform_api->DeleteTexture = &GLDeleteTexture;
         
         succeeded = true;
     }

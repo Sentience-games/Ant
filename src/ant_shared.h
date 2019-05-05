@@ -20,6 +20,10 @@
 #define LARGE_INT_LOW(number) (((U64)(number)  >> 0)  & UINT32_MAX)
 #define LARGE_INT_HIGH(number) (((U64)(number) >> 32) & UINT32_MAX)
 #define ASSEMBLE_LARGE_INT(high, low) (U64)(((U64)(high) << 32) | ((U64)(low) << 0))
+#define U32_FROM_BYTES(a, b, c, d) (((U32)(a) << 24) | ((U32)(b) << 16) | ((U32)(c) << 8) | ((U32)(d) << 0))
+
+#define SERVER_ADDRESS(a, b, c, d) U32_FROM_BYTES(a, b, c, d)
+#define LOCAL_HOST SERVER_ADDRESS(127, 0, 0, 1)
 
 #define CONCAT_(x, y) x##y
 #define CONCAT(x, y) CONCAT_(x, y)
@@ -33,6 +37,7 @@
 
 #define INVALID_CODE_PATH Assert(!"Invalid code path")
 #define INVALID_DEFAULT_CASE default: INVALID_CODE_PATH; break
+#define NOT_IMPLEMENTED Assert(!"Not implemented");
 
 #define BREAK_ON_FALSE(boolean) if ((boolean)); else break
 
