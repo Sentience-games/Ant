@@ -147,7 +147,7 @@ struct Asset_Reg_File_Asset_Entry
             U16 height;
             U8 mip_levels;
         } texture_metadata;
-    }
+    };
 };
 #pragma pack(pop)
 

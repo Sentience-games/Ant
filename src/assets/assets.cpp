@@ -158,13 +158,13 @@ SearchAssetsByTag(Asset* first_asset, U32 count, U16 match_tag, U8 index, bool f
     if (count)
     {
         Asset* low  = first_asset;
-        Asset* high = first_asset + count;
+        Asset* high = first_asset + count - 1;
         
         while (high != low)
         {
             Asset* peek = (find_last ? (Memory_Index)(high - low + 1) / 2 + low : (Memory_Index)(high - low) / 2 + low);
             
-            U16 peek_tag = peek->tags[0].value;
+            U16 peek_tag = peek->tags[index].value;
             
             if (peek_tag > match_tag)
             {
@@ -183,7 +183,7 @@ SearchAssetsByTag(Asset* first_asset, U32 count, U16 match_tag, U8 index, bool f
             }
         }
         
-        result = (low->tags[0].value == match_tag ? low : 0);
+        result = (low->tags[index].value == match_tag ? low : 0);
     }
     
     return result;
@@ -228,11 +228,12 @@ GetBestMatchingAssets(Game_Assets* assets, Enum8(ASSET_TYPE) type, const Asset_T
             INVALID_DEFAULT_CASE;
         }
         
-        Asset* first_matching_asset = SearchAssetsByTag(first_asset, count, copied_tags[0].value, 0, false);
+        Asset* first_matching_asset = 0;
+        if (copied_tags[0].value) first_matching_asset = SearchAssetsByTag(first_asset, count, copied_tags[0].value, 0, false);
         
         if (first_matching_asset)
         {
-            count = (U32)(first_matching_asset - first_asset);
+            count -= (U32)(first_matching_asset - first_asset);
             
             Asset* last_matching_asset = SearchAssetsByTag(first_matching_asset, count, copied_tags[0].value, 0, true);
             
@@ -244,21 +245,22 @@ GetBestMatchingAssets(Game_Assets* assets, Enum8(ASSET_TYPE) type, const Asset_T
             
             else
             {
-                count = (U32)(last_matching_asset - first_matching_asset);
+                count = (U32)(last_matching_asset - first_matching_asset) + 1;
                 first_asset = first_matching_asset;
                 
                 for (U8 i = 1; i < ASSET_MAX_PER_ASSET_TAG_COUNT; ++i)
                 {
-                    first_matching_asset = SearchAssetsByTag(first_asset, count, copied_tags[i].value, i, false);
+                    first_matching_asset = 0;
+                    if (copied_tags[i].value) first_matching_asset = SearchAssetsByTag(first_asset, count, copied_tags[i].value, i, false);
                     
                     if (first_matching_asset)
                     {
-                        count = (U32)(first_matching_asset - first_asset);
+                        count -= (U32)(first_matching_asset - first_asset);
                         first_asset = first_matching_asset;
                         
                         last_matching_asset = SearchAssetsByTag(first_matching_asset, count, copied_tags[i].value, i, true);
                         
-                        count = (U32)(last_matching_asset - first_matching_asset);
+                        count = (U32)(last_matching_asset - first_matching_asset) + 1;
                     }
                     
                     else
