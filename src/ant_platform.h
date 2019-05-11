@@ -88,10 +88,6 @@ typedef PLATFORM_GET_ALL_FILES_OF_TYPE_END_FUNCTION(platform_get_all_files_of_ty
 Platform_File_Handle name (Platform_File_Info* file_info, Flag8(PLATFORM_OPEN_FILE_FLAGS) open_flags)
 typedef PLATFORM_OPEN_FILE_FUNCTION(platform_open_file_function);
 
-#define PLATFORM_OPEN_FILE_DIRECT_FUNCTION(name)\
-Platform_File_Handle name (U32 server_address, const char* path, Flag8(PLATFORM_OPEN_FILE_FLAGS) open_flags)
-typedef PLATFORM_OPEN_FILE_DIRECT_FUNCTION(platform_open_file_direct_function);
-
 #define PLATFORM_CLOSE_FILE_FUNCTION(name) void name (Platform_File_Handle* file_handle)
 typedef PLATFORM_CLOSE_FILE_FUNCTION(platform_close_file_function);
 
@@ -147,16 +143,17 @@ struct Platform_API_Functions
 	platform_get_all_files_of_type_begin_function* GetAllFilesOfTypeBegin;
 	platform_get_all_files_of_type_end_function* GetAllFilesOfTypeEnd;
 	platform_open_file_function* OpenFile;
-    platform_open_file_direct_function* OpenFileDirect;
 	platform_close_file_function* CloseFile;
 	platform_read_from_file_function* ReadFromFile;
 	platform_write_to_file_function* WriteToFile;
     
     renderer_prepare_frame_function* PrepareFrame;
     renderer_push_mesh_function* PushMesh;
-    renderer_render_batch_function* RenderBatch;
     renderer_present_frame_function* PresentFrame;
     
+    renderer_create_prepping_batch_function* CreatePreppingBatch;
+    renderer_prep_render_batch_function* PrepBatch;
+    renderer_render_batch_function* RenderBatch;
     renderer_clean_batch_function* CleanBatch;
     
     renderer_create_texture_function* CreateTexture;

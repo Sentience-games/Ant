@@ -1,0 +1,10 @@
+TODO
+
+Rewrite the file handling system
+Win32MainWindowProc catches WM_INPUT messages
+The application crashes without an error log when the data directory is not found
+Set viewport dimensions and implement restricted resizing of the window
+Refactor input handling to allow hot plugging of devices
+memory usage shadowing
+render prep batch sorting
+API agnostic rendering of prepped rendering batches

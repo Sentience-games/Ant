@@ -81,7 +81,7 @@ ZeroSize(void* ptr, Memory_Index size)
 inline void
 ClearMemoryArena(Memory_Arena* arena)
 {
-	Memory_Block* block	  = arena->current_block;
+	Memory_Block* block = arena->current_block;
     
 	while (block)
 	{

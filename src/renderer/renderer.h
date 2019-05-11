@@ -139,10 +139,20 @@ struct Triangle_Mesh
 struct Render_Batch
 {
     struct Memory_Arena* arena;
-    void* first_block;
-    U32 block_count;
+    struct Render_Batch_Entry* first_block;
+    struct Render_Batch_Entry* current_block;
+    U16 block_count;
+    U16 current_block_index;
     U32 block_size;
     U32 entry_count;
+    U32 current_entry_count;
+};
+
+struct Prepped_Render_Batch
+{
+    struct Render_Batch_Cull_Entry* first;
+    U32 count;
+    U32 capacity;
 };
 
 enum FRAMEBUFFER_FLAGS
@@ -164,11 +174,11 @@ typedef U32 Framebuffer_ID;
 struct Camera
 {
     V3 position;
-    V3 heading; // Normalized vector pointing along the view direction
-    F32 near_plane;
-    F32 far_plane;
+    Quat heading;
+    F32 far;
+    F32 near;
     F32 fov;
-    F32 cos_fov_squared; // Used for frustum culling
+    F32 aspect_ratio;
 };
 
 // MANAGED DRAWING
@@ -180,9 +190,6 @@ typedef RENDERER_PREPARE_FRAME_FUNCTION(renderer_prepare_frame_function);
 #define RENDERER_PUSH_MESH_FUNCTION(name) void name (Render_Batch* batch, Transform transform, Bounding_Sphere bounding_sphere, Triangle_Mesh* mesh)
 typedef RENDERER_PUSH_MESH_FUNCTION(renderer_push_mesh_function);
 
-#define RENDERER_RENDER_BATCH_FUNCTION(name) void name (Render_Batch* batch, Camera camera, Framebuffer_ID framebuffer_id)
-typedef RENDERER_RENDER_BATCH_FUNCTION(renderer_render_batch_function);
-
 // TODO(soimn): Post process stage
 
 #define RENDERER_PRESENT_FRAME_FUNCTION(name) void name (void)
@@ -191,7 +198,16 @@ typedef RENDERER_PRESENT_FRAME_FUNCTION(renderer_present_frame_function);
 // RENDER BATCH
 ////////////////////////////////
 
-#define RENDERER_CLEAN_BATCH_FUNCTION(name) void name (Render_Batch* batch)
+#define RENDERER_CREATE_PREPPING_BATCH_FUNCTION(name) Prepped_Render_Batch name (Render_Batch* batch, struct Memory_Arena* arena)
+typedef RENDERER_CREATE_PREPPING_BATCH_FUNCTION(renderer_create_prepping_batch_function);
+
+#define RENDERER_PREP_RENDER_BATCH_FUNCTION(name) void name (Render_Batch* batch, Camera camera, Prepped_Render_Batch* resulting_batch)
+typedef RENDERER_PREP_RENDER_BATCH_FUNCTION(renderer_prep_render_batch_function);
+
+#define RENDERER_RENDER_BATCH_FUNCTION(name) void name (Prepped_Render_Batch* batch, Framebuffer_ID framebuffer_id)
+typedef RENDERER_RENDER_BATCH_FUNCTION(renderer_render_batch_function);
+
+#define RENDERER_CLEAN_BATCH_FUNCTION(name) void name (Render_Batch* batch, bool should_deallocate)
 typedef RENDERER_CLEAN_BATCH_FUNCTION(renderer_clean_batch_function);
 
 

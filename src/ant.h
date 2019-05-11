@@ -10,10 +10,10 @@
 #include "assets/assets.h"
 #include "assets/assets.cpp"
 
+#include "entity/entity.h"
+
 struct Game_State
 {
-    bool initialized;
-    
     Memory_Arena persistent_memory;
     Memory_Arena frame_local_memory;
     

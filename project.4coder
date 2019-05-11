@@ -6,9 +6,9 @@ patterns = {
 	"*.cpp",
 	"*.h",
 	"*.inl",
-	"*.bat",
-	"*.sh",
-	"*.4coder",
+	"build.bat",
+	"build.sh",
+	"todo.txt",
 };
 
 blacklist_patterns = {
@@ -16,7 +16,7 @@ blacklist_patterns = {
 };
 
 load_paths = {
-	{{ {"./../src/", .relative = true, .recursive = true } },
+	{{ {"./../", .relative = true, .recursive = true } },
 	  .os = "win" },
 };
 

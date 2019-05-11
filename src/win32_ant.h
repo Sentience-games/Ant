@@ -6,6 +6,9 @@
 #undef WIN32_LEAN_AND_MEAN
 #undef NOMINMAX
 
+#undef near
+#undef far
+
 #ifdef ANT_DEBUG
 
 #ifndef ASSERTION_ENABLED

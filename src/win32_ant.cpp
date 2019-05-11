@@ -324,7 +324,7 @@ PLATFORM_GET_ALL_FILES_OF_TYPE_END_FUNCTION(Win32GetAllFilesOfTypeEnd)
 	}
 }
 
-PLATFORM_OPEN_FILE_DIRECT_FUNCTION(Win32OpenFileDirect)
+PLATFORM_OPEN_FILE_FUNCTION(Win32OpenFile)
 {
     Platform_File_Handle result  = {};
 	StaticAssert(sizeof(HANDLE) <= sizeof(result.platform_data));
@@ -344,21 +344,8 @@ PLATFORM_OPEN_FILE_DIRECT_FUNCTION(Win32OpenFileDirect)
 		creation_mode	   = OPEN_ALWAYS;
 	}
     
-    wchar_t* resolved_path = NULL;
-    
-    if (server_address != 0)
-    {
-        // prefix path with ("\\\\%u.%u.%u.%u\\", (server_address & 0xFF000000) >> 24, (server_address & 0x00FF0000) >> 16, (server_address & 0x0000FF00) >> 8, (server_address & 0x000000FF) >> 0)
-        NOT_IMPLEMENTED;
-    }
-    
-    else
-    {
-        // prefix path with data\\ 
-        NOT_IMPLEMENTED;
-    }
-    
-	HANDLE win32_handle = CreateFileW(resolved_path, access_permissions,
+    wchar_t* file_name  = (wchar_t*) file_info->platform_data;
+	HANDLE win32_handle = CreateFileW(file_name, access_permissions,
 									  FILE_SHARE_READ, 0,
 									  creation_mode, 0, 0);
     
@@ -366,11 +353,6 @@ PLATFORM_OPEN_FILE_DIRECT_FUNCTION(Win32OpenFileDirect)
 	*((HANDLE*) &result.platform_data) = win32_handle;
     
 	return result;
-}
-
-PLATFORM_OPEN_FILE_FUNCTION(Win32OpenFile)
-{
-    return Win32OpenFileDirect(0, (const char*) file_info->platform_data, open_flags);
 }
 
 PLATFORM_CLOSE_FILE_FUNCTION(Win32CloseFile)
@@ -549,7 +531,8 @@ Win32MainWindowProc(HWND window_handle, UINT msg_code,
         Running = false;
 		break;
         
-        // 		case WM_INPUT: INVALID_CODE_PATH; break;
+        // NOTE(soimn): this is triggered when the window is moved
+        // case WM_INPUT: INVALID_CODE_PATH; break;
         
 		default:
         result = DefWindowProcW(window_handle, msg_code, w_param, l_param);
@@ -562,7 +545,7 @@ Win32MainWindowProc(HWND window_handle, UINT msg_code,
 internal void
 Win32ProcessPendingMessages(HWND window_handle, Platform_Game_Input* old_input, Platform_Game_Input* new_input)
 {
-	MSG message  {};
+	MSG message = {};
     
 	while (PeekMessageA(&message, window_handle, 0, 0, PM_REMOVE))
 	{
@@ -697,6 +680,11 @@ int CALLBACK WinMain(HINSTANCE instance,
             Game_Memory* memory = PushStruct(&win32_persistent_memory, Game_Memory);
             memory->state       = PushStruct(&win32_persistent_memory, Game_State);
             
+            memory->state->persistent_memory.current_block  = Win32AllocateMemoryBlock(MEGABYTES(64));
+            ++memory->state->persistent_memory.block_count;
+            memory->state->frame_local_memory.current_block = Win32AllocateMemoryBlock(KILOBYTES(1));
+            ++memory->state->frame_local_memory.block_count;
+            
 			// Platform API function pointers
 			memory->platform_api = {};
             memory->platform_api.AllocateMemoryBlock    = &Win32AllocateMemoryBlock;
@@ -708,7 +696,6 @@ int CALLBACK WinMain(HINSTANCE instance,
 			memory->platform_api.GetAllFilesOfTypeBegin = &Win32GetAllFilesOfTypeBegin;
 			memory->platform_api.GetAllFilesOfTypeEnd   = &Win32GetAllFilesOfTypeEnd;
 			memory->platform_api.OpenFile			   = &Win32OpenFile;
-            memory->platform_api.OpenFileDirect	     = &Win32OpenFileDirect;
 			memory->platform_api.CloseFile			  = &Win32CloseFile;
 			memory->platform_api.ReadFromFile		   = &Win32ReadFromFile;
 			memory->platform_api.WriteToFile			= &Win32WriteToFile;
@@ -782,8 +769,6 @@ int CALLBACK WinMain(HINSTANCE instance,
                 //// Main Loop
                 while (Running)
                 {
-                    // TODO(soimn): check if the window was resized, and recreate swapchain if resized or the recreate flag is set
-                    
                     new_input->frame_dt = game_update_dt;
                     
                     Win32ProcessPendingMessages(window_handle, old_input, new_input);
@@ -824,16 +809,3 @@ int CALLBACK WinMain(HINSTANCE instance,
 		WIN32LOG_FATAL("Failed to register main window");
 	}
 }
-
-/* TODO(soimn):
- *
- *	- Refactor input handling to allow hot plugging of devices
- *	- Setup audio
- *	- Set viewport dimensions and implement restricted resizing of the window
- *	- Implement memory usage shadowing
- */
-
-// FIXME(soimn):
-/*
- *	- The application crashes without an error log when the data directory is not found.
- */

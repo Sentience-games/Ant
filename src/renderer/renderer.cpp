@@ -20,9 +20,133 @@ global OpenGL_Binding GLBinding = {};
 
 #include "renderer/opengl.h"
 
+#include "math/trigonometry.h"
+
+struct Render_Batch_Entry
+{
+    Transform transform;
+    Bounding_Sphere bounding_sphere;
+    Triangle_Mesh* mesh;
+};
+
+struct Render_Batch_Cull_Entry
+{
+    Triangle_Mesh* mesh;
+    Transform transform;
+};
+
+inline void
+RendererPushNewRenderBatchBlock(Render_Batch* batch)
+{
+    void* new_block = PushSize(batch->arena, sizeof(Render_Batch_Entry) * batch->block_size + sizeof(void*), alignof(Render_Batch_Entry));
+    
+    new_block = (U8*) new_block + sizeof(void*);
+    
+    *(void**)((U8*) batch->current_block - sizeof(void*)) = new_block;
+    batch->current_block = (Render_Batch_Entry*) new_block;
+    
+    batch->block_count++;
+}
+
 RENDERER_PUSH_MESH_FUNCTION(RendererPushMesh)
 {
+    if (batch->current_entry_count >= batch->block_count)
+    {
+        if (batch->current_block_index == batch->block_count - 1)
+        {
+            RendererPushNewRenderBatchBlock(batch);
+        }
+        
+        else
+        {
+            batch->current_block = (Render_Batch_Entry*) *((void**)((U8*) batch->current_block - sizeof(void*)));
+        }
+        
+        batch->current_entry_count = 0;
+        ++batch->current_block_index;
+    }
     
+    Render_Batch_Entry* new_entry = (batch->current_block + batch->current_entry_count);
+    
+    new_entry->transform       = transform;
+    new_entry->bounding_sphere = bounding_sphere;
+    new_entry->mesh            = mesh;
+    
+    ++batch->entry_count, ++batch->current_entry_count;
+}
+
+RENDERER_CREATE_PREPPING_BATCH_FUNCTION(RendererCreatePreppingBatch)
+{
+    Prepped_Render_Batch result = {};
+    
+    result.first    = PushArray(arena, Render_Batch_Cull_Entry, batch->entry_count);
+    result.capacity = batch->entry_count;
+    
+    return result;
+}
+
+RENDERER_PREP_RENDER_BATCH_FUNCTION(RendererPrepBatch)
+{
+    Assert(resulting_batch->first && resulting_batch->capacity >= batch->entry_count);
+    
+    if (batch->entry_count)
+    {
+        F32 near_width  = Cos(camera.fov / 2) * camera.near;
+        F32 far_width   = Cos(camera.fov / 2) * camera.far;
+        F32 near_height = near_width / camera.aspect_ratio;
+        F32 far_height  = near_height / camera.aspect_ratio;
+        
+        V3 frustum_vectors[3] = {};
+        
+        frustum_vectors[0] = Rotate(Normalize(Vec3(far_width, far_height, camera.far) - Vec3(near_width, near_height, camera.near)), camera.heading);
+        
+        frustum_vectors[1] = Rotate(Normalize(Vec3(near_width, -near_height, camera.far) - Vec3(near_width, near_height, camera.near)), camera.heading);
+        
+        frustum_vectors[2] = Rotate(Normalize(Vec3(-near_width, near_height, camera.far) - Vec3(near_width, -near_height, camera.far)), camera.heading);
+        
+        V3 frustum_planes[4] = {};
+        
+        frustum_planes[0] = Cross(frustum_vectors[1],  frustum_vectors[0]);
+        frustum_planes[1] = Cross(frustum_vectors[0],  frustum_vectors[2]);
+        frustum_planes[2] = Cross(frustum_vectors[0],  frustum_vectors[1]);
+        frustum_planes[3] = Cross(frustum_vectors[0], -frustum_vectors[1]);
+        
+        {
+            Render_Batch_Entry* scan = batch->first_block;
+            V3 view_vector = Rotate(Vec3(0, 0, 1), camera.heading);
+            
+            do
+            {
+                U32 entry_count = (scan == batch->current_block ? batch->current_entry_count : batch->block_size);
+                
+                for (U32 i = 0; i < entry_count; ++i)
+                {
+                    Render_Batch_Entry* current_entry = scan + i;
+                    V3 p = current_entry->bounding_sphere.position - camera.position;
+                    
+                    if (Inner(frustum_planes[0], p) - current_entry->bounding_sphere.radius > 0) continue;
+                    else if (Inner(frustum_planes[1], p) - current_entry->bounding_sphere.radius > 0) continue;
+                    else if (Inner(frustum_planes[2], p) - current_entry->bounding_sphere.radius > 0) continue;
+                    else if (Inner(frustum_planes[3], p) - current_entry->bounding_sphere.radius > 0) continue;
+                    else
+                    {
+                        F32 dist_from_camera = Inner(view_vector, p);
+                        
+                        if (dist_from_camera > camera.far || dist_from_camera < camera.near) continue;
+                        else
+                        {
+                            Render_Batch_Cull_Entry new_entry = {current_entry->mesh, current_entry->transform};
+                            CopyStruct(&new_entry, resulting_batch->first + resulting_batch->count++);
+                        }
+                    }
+                }
+                
+                scan = (Render_Batch_Entry*) *(void**)((U8*) scan - sizeof(void*));
+            } while (scan != batch->current_block);
+            
+            // TODO(soimn): sort
+        }
+    }
 }
 
 RENDERER_RENDER_BATCH_FUNCTION(RendererRenderBatch)
@@ -32,8 +156,17 @@ RENDERER_RENDER_BATCH_FUNCTION(RendererRenderBatch)
 
 RENDERER_CLEAN_BATCH_FUNCTION(RendererCleanBatch)
 {
-    ResetMemoryArena(batch->arena);
-    batch->entry_count = 0;
+    if (should_deallocate)
+    {
+        ClearMemoryArena(batch->arena);
+        batch->first_block = 0;
+        batch->block_count = 0;
+    }
+    
+    batch->current_block       = 0;
+    batch->current_block_index = 0;
+    batch->entry_count         = 0;
+    batch->current_entry_count = 0;
 }
 
 inline bool
@@ -45,10 +178,12 @@ InitRenderer (Platform_API_Functions* platform_api, Process_Handle process_handl
     {
         platform_api->PrepareFrame  = &GLPrepareFrame;
         platform_api->PushMesh      = &RendererPushMesh;
-        platform_api->RenderBatch   = &RendererRenderBatch;
         platform_api->PresentFrame  = &GLPresentFrame;
         
-        platform_api->CleanBatch    = &RendererCleanBatch;
+        platform_api->CreatePreppingBatch = &RendererCreatePreppingBatch;
+        platform_api->PrepBatch           = &RendererPrepBatch;
+        platform_api->RenderBatch         = &RendererRenderBatch;
+        platform_api->CleanBatch          = &RendererCleanBatch;
         
         platform_api->CreateTexture = &GLCreateTexture;
         platform_api->DeleteTexture = &GLDeleteTexture;
