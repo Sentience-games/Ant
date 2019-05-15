@@ -195,7 +195,7 @@ GetBestMatchingAssets(Game_Assets* assets, Enum8(ASSET_TYPE) type, const Asset_T
     Asset_List result = {};
     
     Asset_Tag copied_tags[ASSET_MAX_PER_ASSET_TAG_COUNT] = {};
-    CopyArray(tags, ASSET_MAX_PER_ASSET_TAG_COUNT, copied_tags);
+    CopyArray(tags, copied_tags, ASSET_MAX_PER_ASSET_TAG_COUNT);
     bool successfully_sorted_tags = (SortTags(assets, copied_tags) == UINT32_MAX);
     
     if (successfully_sorted_tags)

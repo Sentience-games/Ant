@@ -148,9 +148,20 @@ struct Render_Batch
     U32 current_entry_count;
 };
 
+struct Camera
+{
+    V3 position;
+    Quat heading;
+    F32 far;
+    F32 near;
+    F32 fov;
+    F32 aspect_ratio;
+};
+
 struct Prepped_Render_Batch
 {
     struct Render_Batch_Cull_Entry* first;
+    Camera camera;
     U32 count;
     U32 capacity;
 };
@@ -171,16 +182,6 @@ struct Framebuffer
 
 typedef U32 Framebuffer_ID;
 
-struct Camera
-{
-    V3 position;
-    Quat heading;
-    F32 far;
-    F32 near;
-    F32 fov;
-    F32 aspect_ratio;
-};
-
 // MANAGED DRAWING
 ////////////////////////////////
 
@@ -198,10 +199,10 @@ typedef RENDERER_PRESENT_FRAME_FUNCTION(renderer_present_frame_function);
 // RENDER BATCH
 ////////////////////////////////
 
-#define RENDERER_CREATE_PREPPING_BATCH_FUNCTION(name) Prepped_Render_Batch name (Render_Batch* batch, struct Memory_Arena* arena)
+#define RENDERER_CREATE_PREPPING_BATCH_FUNCTION(name) Prepped_Render_Batch name (Render_Batch* batch, struct Memory_Arena* arena, Camera camera)
 typedef RENDERER_CREATE_PREPPING_BATCH_FUNCTION(renderer_create_prepping_batch_function);
 
-#define RENDERER_PREP_RENDER_BATCH_FUNCTION(name) void name (Render_Batch* batch, Camera camera, Prepped_Render_Batch* resulting_batch)
+#define RENDERER_PREP_RENDER_BATCH_FUNCTION(name) void name (Render_Batch* batch, Prepped_Render_Batch* resulting_batch)
 typedef RENDERER_PREP_RENDER_BATCH_FUNCTION(renderer_prep_render_batch_function);
 
 #define RENDERER_RENDER_BATCH_FUNCTION(name) void name (Prepped_Render_Batch* batch, Framebuffer_ID framebuffer_id)

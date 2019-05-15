@@ -9,29 +9,26 @@ global bool Running = false;
 
 PLATFORM_ALLOCATE_MEMORY_BLOCK_FUNCTION(Win32AllocateMemoryBlock)
 {
-	Assert(size || !"Zero passed as size to Win32AllocateMemoryBlock");
+	Assert(size);
     
-	Memory_Index total_size = sizeof(Memory_Block) + (alignof(Memory_Block) - 1) + size;
+	Memory_Index total_size = (alignof(Memory_Block) - 1) + sizeof(Memory_Block) + size;
     
 	void* memory = VirtualAlloc(NULL, total_size, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
-	Assert(memory || !"Failed to allocate memory block");
+	Assert(memory);
     
-	Memory_Block* block = (Memory_Block*) Align(memory, alignof(Memory_Block));
-	*block = {};
-    
-	void* memory_start = (void*)(block + 1);
-    
-	block->memory		  = memory;
-	block->push_ptr		= (U8*) memory_start;
-	block->remaining_space = size;
+    Memory_Block* block = (Memory_Block*) Align(memory, alignof(Memory_Block));
+    block->prev = 0;
+    block->next = 0;
+	block->push_ptr = (U8*) Align((void*) (block + 1), 8);
+	block->space    = total_size - (block->push_ptr - (U8*) block);
     
 	return block;
 }
 
 PLATFORM_FREE_MEMORY_BLOCK_FUNCTION(Win32FreeMemoryBlock)
 {
-	Assert(block || !"Invalid block pointer passed to Win32FreeMemoryBlock. Block pointer was NULL");
-	VirtualFree(block->memory, block->remaining_space + (block->push_ptr - (U8*) block->memory), MEM_RELEASE);
+	Assert(block);
+	VirtualFree((void*) block, block->space + (block->push_ptr - (U8*) block), MEM_RELEASE | MEM_DECOMMIT);
 }
 
 
@@ -147,7 +144,7 @@ Win32GetCWD(Memory_Arena* persistent_memory, U32* result_length)
         
 		else
 		{
-			if (file_path_growth_amount >= temp_memory->arena.current_block->remaining_space)
+			if (file_path_growth_amount >= temp_memory->arena.current_block->space)
 			{
 				WIN32LOG_FATAL("Failed to get the current working directory of the game, out of memory");
 				return NULL;
@@ -181,7 +178,7 @@ Win32GetCWD(Memory_Arena* persistent_memory, U32* result_length)
 	++length;
     
 	result = (wchar_t*) PushSize(persistent_memory, sizeof(wchar_t) * (length + 1));
-	CopyArray(file_path, length, result);
+	CopyArray(file_path, result, length);
 	result[length] = (wchar_t)(NULL);
     
 	*result_length = length;
@@ -205,8 +202,8 @@ Win32BuildFullyQualifiedPath(Win32_Game_Info* game_info, const wchar_t* appendag
 	Assert(length_of_appendage != -1);
 	Assert(length_of_cwd && buffer_length > (length_of_cwd + length_of_appendage));
     
-	CopyArray(game_info->cwd, length_of_cwd, buffer);
-	CopyArray(appendage, length_of_appendage, buffer + length_of_cwd);
+	CopyArray(game_info->cwd, buffer, length_of_cwd);
+	CopyArray(appendage, buffer + length_of_cwd, length_of_appendage);
 };
 
 B32
@@ -229,7 +226,7 @@ PLATFORM_GET_ALL_FILES_OF_TYPE_BEGIN_FUNCTION(Win32GetAllFilesOfTypeBegin)
 {
     Platform_File_Group result = {};
     
-	Win32_File_Group* win32_file_group = BootstrapPushSize(Win32_File_Group, memory, KILOBYTES(1), alignof(Win32_File_Group));
+	Win32_File_Group* win32_file_group = BootstrapPushSize(Win32_File_Group, memory, KILOBYTES(1));
 	result.platform_data = win32_file_group;
     
 	wchar_t* directory = L"";
@@ -298,8 +295,8 @@ PLATFORM_GET_ALL_FILES_OF_TYPE_BEGIN_FUNCTION(Win32GetAllFilesOfTypeBegin)
         
 		U32 file_name_size = (U32)(scan - find_data.cFileName) + 1;
 		info->platform_data = PushArray(&win32_file_group->memory, wchar_t, directory_length + file_name_size);
-		CopyArray(directory, directory_length, info->platform_data);
-		CopyArray(find_data.cFileName, file_name_size, (wchar_t*)info->platform_data + directory_length);
+		CopyArray(directory, info->platform_data, directory_length);
+		CopyArray(find_data.cFileName, (wchar_t*)info->platform_data + directory_length, file_name_size);
         
 		result.first_file_info = info;
 		
@@ -320,7 +317,7 @@ PLATFORM_GET_ALL_FILES_OF_TYPE_END_FUNCTION(Win32GetAllFilesOfTypeEnd)
     
 	if (win32_file_group)
 	{
-		ClearMemoryArena(&win32_file_group->memory);
+		ClearArena(&win32_file_group->memory);
 	}
 }
 
@@ -673,8 +670,8 @@ int CALLBACK WinMain(HINSTANCE instance,
 			// Memory
             
             Memory_Arena win32_persistent_memory   = {};
-            win32_persistent_memory.new_block_size = KILOBYTES(1);
-            win32_persistent_memory.current_block  = Win32AllocateMemoryBlock(win32_persistent_memory.new_block_size);
+            win32_persistent_memory.block_size = KILOBYTES(1);
+            win32_persistent_memory.current_block  = Win32AllocateMemoryBlock(win32_persistent_memory.block_size);
             ++win32_persistent_memory.block_count;
             
             Game_Memory* memory = PushStruct(&win32_persistent_memory, Game_Memory);
@@ -755,7 +752,7 @@ int CALLBACK WinMain(HINSTANCE instance,
             // Renderer
             bool renderer_ready = InitRenderer(&memory->platform_api, instance, window_handle);
             
-			ClearMemoryArena(&memory->state->frame_local_memory);
+			ClearArena(&memory->state->frame_local_memory);
             
 			if (input_ready && game_info_valid && game_code.is_valid && renderer_ready)
 			{
@@ -786,7 +783,7 @@ int CALLBACK WinMain(HINSTANCE instance,
                     *(new_input = old_input) = {};
                     old_input = temp_input;
                     
-                    ResetMemoryArena(&memory->state->frame_local_memory);
+                    ResetArena(&memory->state->frame_local_memory);
                 }
                 //// Main Loop End
             }

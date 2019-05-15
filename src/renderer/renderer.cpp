@@ -82,6 +82,14 @@ RENDERER_CREATE_PREPPING_BATCH_FUNCTION(RendererCreatePreppingBatch)
     result.first    = PushArray(arena, Render_Batch_Cull_Entry, batch->entry_count);
     result.capacity = batch->entry_count;
     
+    result.camera = camera;
+    
+    M4 view_matrix = M4Identity();
+    
+    ///
+    ///
+    ///
+    
     return result;
 }
 
@@ -89,20 +97,22 @@ RENDERER_PREP_RENDER_BATCH_FUNCTION(RendererPrepBatch)
 {
     Assert(resulting_batch->first && resulting_batch->capacity >= batch->entry_count);
     
+    Camera* camera = &resulting_batch->camera;
+    
     if (batch->entry_count)
     {
-        F32 near_width  = Cos(camera.fov / 2) * camera.near;
-        F32 far_width   = Cos(camera.fov / 2) * camera.far;
-        F32 near_height = near_width / camera.aspect_ratio;
-        F32 far_height  = near_height / camera.aspect_ratio;
+        F32 near_width  = Cos(camera->fov / 2) * camera->near;
+        F32 far_width   = Cos(camera->fov / 2) * camera->far;
+        F32 near_height = near_width / camera->aspect_ratio;
+        F32 far_height  = near_height / camera->aspect_ratio;
         
         V3 frustum_vectors[3] = {};
         
-        frustum_vectors[0] = Rotate(Normalize(Vec3(far_width, far_height, camera.far) - Vec3(near_width, near_height, camera.near)), camera.heading);
+        frustum_vectors[0] = Rotate(Normalize(Vec3(far_width, far_height, camera->far) - Vec3(near_width, near_height, camera->near)), camera->heading);
         
-        frustum_vectors[1] = Rotate(Normalize(Vec3(near_width, -near_height, camera.far) - Vec3(near_width, near_height, camera.near)), camera.heading);
+        frustum_vectors[1] = Rotate(Normalize(Vec3(near_width, -near_height, camera->far) - Vec3(near_width, near_height, camera->near)), camera->heading);
         
-        frustum_vectors[2] = Rotate(Normalize(Vec3(-near_width, near_height, camera.far) - Vec3(near_width, -near_height, camera.far)), camera.heading);
+        frustum_vectors[2] = Rotate(Normalize(Vec3(-near_width, near_height, camera->far) - Vec3(near_width, -near_height, camera->far)), camera->heading);
         
         V3 frustum_planes[4] = {};
         
@@ -113,7 +123,7 @@ RENDERER_PREP_RENDER_BATCH_FUNCTION(RendererPrepBatch)
         
         {
             Render_Batch_Entry* scan = batch->first_block;
-            V3 view_vector = Rotate(Vec3(0, 0, 1), camera.heading);
+            V3 view_vector = Rotate(Vec3(0, 0, 1), camera->heading);
             
             do
             {
@@ -122,7 +132,7 @@ RENDERER_PREP_RENDER_BATCH_FUNCTION(RendererPrepBatch)
                 for (U32 i = 0; i < entry_count; ++i)
                 {
                     Render_Batch_Entry* current_entry = scan + i;
-                    V3 p = current_entry->bounding_sphere.position - camera.position;
+                    V3 p = current_entry->bounding_sphere.position - camera->position;
                     
                     if (Inner(frustum_planes[0], p) - current_entry->bounding_sphere.radius > 0) continue;
                     else if (Inner(frustum_planes[1], p) - current_entry->bounding_sphere.radius > 0) continue;
@@ -132,7 +142,7 @@ RENDERER_PREP_RENDER_BATCH_FUNCTION(RendererPrepBatch)
                     {
                         F32 dist_from_camera = Inner(view_vector, p);
                         
-                        if (dist_from_camera > camera.far || dist_from_camera < camera.near) continue;
+                        if (dist_from_camera > camera->far || dist_from_camera < camera->near) continue;
                         else
                         {
                             Render_Batch_Cull_Entry new_entry = {current_entry->mesh, current_entry->transform};
@@ -151,14 +161,16 @@ RENDERER_PREP_RENDER_BATCH_FUNCTION(RendererPrepBatch)
 
 RENDERER_RENDER_BATCH_FUNCTION(RendererRenderBatch)
 {
+    Camera* camera = &batch->camera;
     
+    (void) camera;
 }
 
 RENDERER_CLEAN_BATCH_FUNCTION(RendererCleanBatch)
 {
     if (should_deallocate)
     {
-        ClearMemoryArena(batch->arena);
+        ClearArena(batch->arena);
         batch->first_block = 0;
         batch->block_count = 0;
     }
