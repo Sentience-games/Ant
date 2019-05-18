@@ -161,7 +161,10 @@ struct Camera
 struct Prepped_Render_Batch
 {
     struct Render_Batch_Cull_Entry* first;
+    
+    M4 view_projection;
     Camera camera;
+    
     U32 count;
     U32 capacity;
 };

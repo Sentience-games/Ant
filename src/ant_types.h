@@ -38,11 +38,9 @@ typedef U64 UMM;
 typedef I64 IMM;
 #endif
 
-typedef UMM Memory_Index;
-
 struct Buffer
 {
-	Memory_Index size;
+    UMM size;
 	U8* data;
 };
 

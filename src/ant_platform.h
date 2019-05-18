@@ -11,7 +11,7 @@
 
 /// Memory
 
-#define PLATFORM_ALLOCATE_MEMORY_BLOCK_FUNCTION(name) struct Memory_Block* name (Memory_Index size)
+#define PLATFORM_ALLOCATE_MEMORY_BLOCK_FUNCTION(name) struct Memory_Block* name (UMM size)
 typedef PLATFORM_ALLOCATE_MEMORY_BLOCK_FUNCTION(platform_allocate_Memory_Block_function);
 
 #define PLATFORM_FREE_MEMORY_BLOCK_FUNCTION(name) void name (struct Memory_Block* block)

@@ -239,7 +239,7 @@ Length(const V2& v)
 }
 
 inline V2
-Normalize(const V2& v)
+Normalized(const V2& v)
 {
     return v / Length(v);
 }
@@ -362,7 +362,7 @@ Length(const V3& v)
 }
 
 inline V3
-Normalize(const V3& v)
+Normalized(const V3& v)
 {
     return v / Length(v);
 }
@@ -479,7 +479,7 @@ Length(const V4& v)
 }
 
 inline V4
-Normalize(const V4& v)
+Normalized(const V4& v)
 {
     return v / Length(v);
 }

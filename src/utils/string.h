@@ -41,7 +41,7 @@ IsNumeric (char c)
 }
 
 inline void
-Advance (char** dest, Memory_Index* dest_capacity)
+Advance (char** dest, UMM* dest_capacity)
 {
     Assert(dest && dest_capacity);
     
@@ -53,7 +53,7 @@ Advance (char** dest, Memory_Index* dest_capacity)
 }
 
 inline void
-Append (char** dest, Memory_Index* dest_capacity, char data)
+Append (char** dest, UMM* dest_capacity, char data)
 {
     Assert(dest && dest_capacity);
     
@@ -65,7 +65,7 @@ Append (char** dest, Memory_Index* dest_capacity, char data)
 }
 
 inline void
-AppendCString (char** dest, Memory_Index* dest_capacity, const char* cstring)
+AppendCString (char** dest, UMM* dest_capacity, const char* cstring)
 {
     Assert(dest && dest_capacity && cstring);
     
@@ -79,12 +79,12 @@ AppendCString (char** dest, Memory_Index* dest_capacity, const char* cstring)
 
 // TODO(soimn): UTF-8 unicode support
 // TODO(soimn): ensure this works properly on 32-Bit systems, int literal size
-inline Memory_Index
-FormatString (char* dest, Memory_Index dest_capacity, const char* format, va_list arg_list)
+inline UMM
+FormatString (char* dest, UMM dest_capacity, const char* format, va_list arg_list)
 {
     Assert(dest && format);
     
-    Memory_Index chars_written = dest_capacity;
+    UMM chars_written = dest_capacity;
     
     for (char* scan = (char*) format; *scan && dest_capacity; ++scan)
     {
@@ -205,12 +205,12 @@ FormatString (char* dest, Memory_Index dest_capacity, const char* format, va_lis
     return chars_written;
 }
 
-inline Memory_Index
-FormatString (char* dest, Memory_Index dest_capacity, const char* format, ...)
+inline UMM
+FormatString (char* dest, UMM dest_capacity, const char* format, ...)
 {
     va_list arg_list;
     va_start(arg_list, format);
-    Memory_Index chars_written = FormatString(dest, dest_capacity, format, arg_list);
+    UMM chars_written = FormatString(dest, dest_capacity, format, arg_list);
     va_end(arg_list);
     
     return chars_written;

@@ -32,7 +32,7 @@ struct Render_Batch_Entry
 struct Render_Batch_Cull_Entry
 {
     Triangle_Mesh* mesh;
-    Transform transform;
+    M4 mvp_matrix;
 };
 
 inline void
@@ -84,11 +84,10 @@ RENDERER_CREATE_PREPPING_BATCH_FUNCTION(RendererCreatePreppingBatch)
     
     result.camera = camera;
     
-    M4 view_matrix = M4Identity();
+    M4 view_matrix = Translation(camera.position) * Rotation(-camera.heading);
+    M4 perspective_matrix = (Perspective(camera.aspect_ratio, camera.fov, camera.near, camera.far)).m;
     
-    ///
-    ///
-    ///
+    result.view_projection = perspective_matrix * view_matrix;
     
     return result;
 }
@@ -108,11 +107,11 @@ RENDERER_PREP_RENDER_BATCH_FUNCTION(RendererPrepBatch)
         
         V3 frustum_vectors[3] = {};
         
-        frustum_vectors[0] = Rotate(Normalize(Vec3(far_width, far_height, camera->far) - Vec3(near_width, near_height, camera->near)), camera->heading);
+        frustum_vectors[0] = Rotate(Normalized(Vec3(far_width, far_height, camera->far) - Vec3(near_width, near_height, camera->near)), camera->heading);
         
-        frustum_vectors[1] = Rotate(Normalize(Vec3(near_width, -near_height, camera->far) - Vec3(near_width, near_height, camera->near)), camera->heading);
+        frustum_vectors[1] = Rotate(Normalized(Vec3(near_width, -near_height, camera->far) - Vec3(near_width, near_height, camera->near)), camera->heading);
         
-        frustum_vectors[2] = Rotate(Normalize(Vec3(-near_width, near_height, camera->far) - Vec3(near_width, -near_height, camera->far)), camera->heading);
+        frustum_vectors[2] = Rotate(Normalized(Vec3(-near_width, near_height, camera->far) - Vec3(near_width, -near_height, camera->far)), camera->heading);
         
         V3 frustum_planes[4] = {};
         
@@ -145,7 +144,9 @@ RENDERER_PREP_RENDER_BATCH_FUNCTION(RendererPrepBatch)
                         if (dist_from_camera > camera->far || dist_from_camera < camera->near) continue;
                         else
                         {
-                            Render_Batch_Cull_Entry new_entry = {current_entry->mesh, current_entry->transform};
+                            M4 model_matrix = Translation(current_entry->transform.position) * Rotation(current_entry->transform.rotation);
+                            
+                            Render_Batch_Cull_Entry new_entry = {current_entry->mesh, resulting_batch->view_projection * model_matrix};
                             CopyStruct(&new_entry, resulting_batch->first + resulting_batch->count++);
                         }
                     }

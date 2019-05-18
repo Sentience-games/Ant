@@ -162,13 +162,13 @@ SearchAssetsByTag(Asset* first_asset, U32 count, U16 match_tag, U8 index, bool f
         
         while (high != low)
         {
-            Asset* peek = (find_last ? (Memory_Index)(high - low + 1) / 2 + low : (Memory_Index)(high - low) / 2 + low);
+            Asset* peek = (find_last ? (UMM)(high - low + 1) / 2 + low : (UMM)(high - low) / 2 + low);
             
             U16 peek_tag = peek->tags[index].value;
             
             if (peek_tag > match_tag)
             {
-                high = peek - (Memory_Index) find_last;
+                high = peek - (UMM) find_last;
             }
             
             else if (peek_tag == match_tag)
@@ -179,7 +179,7 @@ SearchAssetsByTag(Asset* first_asset, U32 count, U16 match_tag, U8 index, bool f
             
             else
             {
-                low = peek + (Memory_Index) !find_last;
+                low = peek + (UMM) !find_last;
             }
         }
         

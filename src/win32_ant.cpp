@@ -11,7 +11,7 @@ PLATFORM_ALLOCATE_MEMORY_BLOCK_FUNCTION(Win32AllocateMemoryBlock)
 {
 	Assert(size);
     
-	Memory_Index total_size = (alignof(Memory_Block) - 1) + sizeof(Memory_Block) + size;
+	UMM total_size = (alignof(Memory_Block) - 1) + sizeof(Memory_Block) + size;
     
 	void* memory = VirtualAlloc(NULL, total_size, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
 	Assert(memory);
@@ -40,7 +40,7 @@ PLATFORM_LOG_INFO_FUNCTION(Win32LogInfo)
 {
     char formatted_message[1024] = {};
     
-    Memory_Index chars_written = FormatString((char*) &formatted_message, ARRAY_COUNT(formatted_message), "[%s] [%s] %s @ %U: ", module, (is_debug ? "DEBUG" : "INFO"), function_name, line_nr);
+    UMM chars_written = FormatString((char*) &formatted_message, ARRAY_COUNT(formatted_message), "[%s] [%s] %s @ %U: ", module, (is_debug ? "DEBUG" : "INFO"), function_name, line_nr);
     
     va_list arg_list;
     va_start(arg_list, format);
@@ -57,7 +57,7 @@ PLATFORM_LOG_ERROR_FUNCTION(Win32LogError)
 {
 	char formatted_message[1024] = {};
     
-	Memory_Index chars_written = FormatString((char*) &formatted_message, ARRAY_COUNT(formatted_message), "An error has occurred in the %s module.\nFunction: %s, line: %U\n\n", module, function_name, line_nr);
+	UMM chars_written = FormatString((char*) &formatted_message, ARRAY_COUNT(formatted_message), "An error has occurred in the %s module.\nFunction: %s, line: %U\n\n", module, function_name, line_nr);
     
     va_list arg_list;
     va_start(arg_list, format);
@@ -454,7 +454,7 @@ Win32LoadGameCode(const wchar_t* dll_path, const wchar_t* loaded_dll_path)
 	{
 		game_code.game_update_and_render_func = &GameUpdateAndRenderStub;
         
-		WIN32LOG_FATAL("Could not load game code. Reason: could not find update, cleanup and init functions");
+		WIN32LOG_FATAL("Could not load game code. Reason: could not find the GameUpdateAndRender function");
 	}
     
 	return game_code;

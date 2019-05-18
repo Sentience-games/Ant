@@ -329,7 +329,7 @@ GLCreateContext (OpenGL_Binding* binding)
                     char* forward_scan = scan;
                     while (*forward_scan && !IsWhitespace(*forward_scan)) ++forward_scan;
                     
-                    Memory_Index cutoff = MAX(0, forward_scan - (scan + 1));
+                    UMM cutoff = MAX(0, forward_scan - (scan + 1));
                     
                     if (strcompare(scan, "WGL_EXT_framebuffer_sRGB", cutoff) ||strcompare(scan, "WGL_ARB_framebuffer_sRGB", cutoff))
                     {
