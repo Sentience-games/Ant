@@ -13,7 +13,7 @@ WrapCString (const char* cstring)
 {
 	String result = {};
     
-	result.size = strlength(cstring);
+	result.size = StrLength(cstring);
 	result.data = (U8*) cstring;
     
 	return result;

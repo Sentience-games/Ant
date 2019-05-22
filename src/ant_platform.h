@@ -84,6 +84,10 @@ typedef PLATFORM_GET_ALL_FILES_OF_TYPE_BEGIN_FUNCTION(platform_get_all_files_of_
 #define PLATFORM_GET_ALL_FILES_OF_TYPE_END_FUNCTION(name) void name (Platform_File_Group* file_group)
 typedef PLATFORM_GET_ALL_FILES_OF_TYPE_END_FUNCTION(platform_get_all_files_of_type_end_function);
 
+#define PLATFORM_OPEN_FILE_UTF8_FUNCTION(name)\
+Platform_File_Handle name (Memory_Arena* temporary_memory, String file_path, Flag8(PLATFORM_OPEN_FILE_FLAGS) open_flags)
+typedef PLATFORM_OPEN_FILE_UTF8_FUNCTION(platform_open_file_utf8_function);
+
 #define PLATFORM_OPEN_FILE_FUNCTION(name)\
 Platform_File_Handle name (Platform_File_Info* file_info, Flag8(PLATFORM_OPEN_FILE_FLAGS) open_flags)
 typedef PLATFORM_OPEN_FILE_FUNCTION(platform_open_file_function);
@@ -142,6 +146,7 @@ struct Platform_API_Functions
     
 	platform_get_all_files_of_type_begin_function* GetAllFilesOfTypeBegin;
 	platform_get_all_files_of_type_end_function* GetAllFilesOfTypeEnd;
+    platform_open_file_utf8_function* OpenFileUTF8;
 	platform_open_file_function* OpenFile;
 	platform_close_file_function* CloseFile;
 	platform_read_from_file_function* ReadFromFile;

@@ -197,7 +197,7 @@ Win32BuildFullyQualifiedPath(Win32_Game_Info* game_info, const wchar_t* appendag
 		++length_of_cwd;
 	}
     
-	I32 length_of_appendage = wstrlength(appendage, buffer_length);
+	I32 length_of_appendage = WStrLength(appendage, buffer_length);
     
 	Assert(length_of_appendage != -1);
 	Assert(length_of_cwd && buffer_length > (length_of_cwd + length_of_appendage));
@@ -321,13 +321,15 @@ PLATFORM_GET_ALL_FILES_OF_TYPE_END_FUNCTION(Win32GetAllFilesOfTypeEnd)
 	}
 }
 
-PLATFORM_OPEN_FILE_FUNCTION(Win32OpenFile)
+PLATFORM_OPEN_FILE_UTF8_FUNCTION(Win32OpenFileDirect)
 {
-    Platform_File_Handle result  = {};
-	StaticAssert(sizeof(HANDLE) <= sizeof(result.platform_data));
+    Assert(file_path.data);
     
-	DWORD access_permissions = 0;
-	DWORD creation_mode      = 0;
+    Platform_File_Handle result = {};
+    StaticAssert(sizeof(HANDLE) <= sizeof(result.platform_data));
+    
+    U32 access_permissions = 0;
+	U32 creation_mode      = 0;
     
 	if (open_flags & OpenFile_Read)
 	{
@@ -341,8 +343,46 @@ PLATFORM_OPEN_FILE_FUNCTION(Win32OpenFile)
 		creation_mode	   = OPEN_ALWAYS;
 	}
     
-    wchar_t* file_name  = (wchar_t*) file_info->platform_data;
-	HANDLE win32_handle = CreateFileW(file_name, access_permissions,
+    wchar_t* wide_file_path = 0;
+    UMM required_size = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, (const char*) file_path.data, (int) file_path.size, wide_file_path, 0);
+    
+    wide_file_path = (wchar_t*) PushSize(temporary_memory, sizeof(wchar_t) * required_size);
+    MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, (const char*) file_path.data, (int) file_path.size, wide_file_path, (int) file_path.size);
+    
+    HANDLE win32_handle = CreateFileW(wide_file_path, access_permissions,
+									  FILE_SHARE_READ, 0,
+									  creation_mode, 0, 0);
+    
+	result.is_valid = (win32_handle != INVALID_HANDLE_VALUE);
+	*((HANDLE*) &result.platform_data) = win32_handle;
+    
+    return result;
+}
+
+PLATFORM_OPEN_FILE_FUNCTION(Win32OpenFile)
+{
+    Platform_File_Handle result  = {};
+	StaticAssert(sizeof(HANDLE) <= sizeof(result.platform_data));
+    
+    StaticAssert(sizeof(HANDLE) <= sizeof(result.platform_data));
+    
+    U32 access_permissions = 0;
+	U32 creation_mode      = 0;
+    
+	if (open_flags & OpenFile_Read)
+	{
+		access_permissions |= GENERIC_READ;
+		creation_mode	   = OPEN_EXISTING;
+	}
+    
+	if (open_flags & OpenFile_Write)
+	{
+		access_permissions |= GENERIC_WRITE;
+		creation_mode	   = OPEN_ALWAYS;
+	}
+    
+    wchar_t* file_path = (wchar_t*) file_info->platform_data;
+    HANDLE win32_handle = CreateFileW(file_path, access_permissions,
 									  FILE_SHARE_READ, 0,
 									  creation_mode, 0, 0);
     
@@ -375,8 +415,8 @@ PLATFORM_READ_FROM_FILE_FUNCTION(Win32ReadFromFile)
 		Assert(size <= UINT32_MAX);
 		U32 file_size_truncated = (U32) CLAMP(0, size, UINT32_MAX);
         
-		DWORD bytes_read;
-		if (ReadFile(win32_handle, dest, file_size_truncated, &bytes_read, &overlapped)
+		U32 bytes_read;
+		if (ReadFile(win32_handle, dest, file_size_truncated, (LPDWORD) &bytes_read, &overlapped)
 			&& (file_size_truncated == bytes_read))
 		{
 			// NOTE(soimn): success
@@ -403,8 +443,8 @@ PLATFORM_WRITE_TO_FILE_FUNCTION(Win32WriteToFile)
 		U32 file_size_truncated = (U32) CLAMP(0, size, UINT32_MAX);
 		Assert(size != file_size_truncated);
         
-		DWORD bytes_written;
-		if (WriteFile(win32_handle, source, file_size_truncated, &bytes_written, &overlapped)
+		U32 bytes_written;
+		if (WriteFile(win32_handle, source, file_size_truncated, (LPDWORD) &bytes_written, &overlapped)
 			&& (file_size_truncated == bytes_written))
 		{
 			// NOTE(soimn): success
@@ -708,7 +748,7 @@ int CALLBACK WinMain(HINSTANCE instance,
             
 			{ // Build dll path
 				const wchar_t* appendage = CONCAT(L, APPLICATION_NAME) L".dll";
-				U32 buffer_length        = game_info.cwd_length + (U32) wstrlength(appendage) + 1;
+				U32 buffer_length        = game_info.cwd_length + (U32) WStrLength(appendage) + 1;
                 
 				game_info.dll_path = PushArray(&win32_persistent_memory, wchar_t, buffer_length);
 				Win32BuildFullyQualifiedPath(&game_info, appendage, (wchar_t*) game_info.dll_path, buffer_length);
@@ -716,7 +756,7 @@ int CALLBACK WinMain(HINSTANCE instance,
             
 			{ // Build loaded dll path
 				const wchar_t* appendage = CONCAT(L, APPLICATION_NAME) L"_loaded.dll";
-				U32 buffer_length        = game_info.cwd_length + (U32) wstrlength(appendage) + 1;
+				U32 buffer_length        = game_info.cwd_length + (U32) WStrLength(appendage) + 1;
                 
 				game_info.loaded_dll_path = PushArray(&win32_persistent_memory, wchar_t, buffer_length);
 				Win32BuildFullyQualifiedPath(&game_info, appendage, (wchar_t*) game_info.loaded_dll_path, buffer_length);

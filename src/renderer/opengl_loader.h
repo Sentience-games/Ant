@@ -331,24 +331,24 @@ GLCreateContext (OpenGL_Binding* binding)
                     
                     UMM cutoff = MAX(0, forward_scan - (scan + 1));
                     
-                    if (strcompare(scan, "WGL_EXT_framebuffer_sRGB", cutoff) ||strcompare(scan, "WGL_ARB_framebuffer_sRGB", cutoff))
+                    if (StrCompare(scan, "WGL_EXT_framebuffer_sRGB", cutoff) ||StrCompare(scan, "WGL_ARB_framebuffer_sRGB", cutoff))
                     {
                         supports_srgb_framebuffer = true;
                     }
                     
-                    else if (strcompare(scan, "WGL_ARB_create_context", cutoff))
+                    else if (StrCompare(scan, "WGL_ARB_create_context", cutoff))
                     {
                         supports_create_context_arb = true;
                     }
                     
                     /*
-                    else if (strcompare(scan, "WGL_ARB_create_context_no_error", cutoff))
+                    else if (StrCompare(scan, "WGL_ARB_create_context_no_error", cutoff))
                     {
                     supports_create_context_no_error_arb = true;
                     }
                     */
                     
-                    else if (strcompare(scan, "WGL_ARB_pixel_format", cutoff))
+                    else if (StrCompare(scan, "WGL_ARB_pixel_format", cutoff))
                     {
                         supports_pixel_format_arb = true;
                     }
@@ -557,7 +557,7 @@ GLLoadFunctions (OpenGL_Binding* binding)
             const char* extension_name = (const char*) binding->glGetStringi(GL_EXTENSIONS, i);
             
 #define GL_EXTENSION_NAME(flag, name)\
-            if (strcompare(#name, extension_name))\
+            if (StrCompare(#name, extension_name))\
             {\
                 binding->extension_info.##name = true;\
                 continue;\
@@ -570,7 +570,7 @@ GLLoadFunctions (OpenGL_Binding* binding)
 #undef GL_EXTENSION_NAME
             
 #define GL_EXTENSION_BEGIN(flag, name)\
-            if (strcompare(#name, extension_name))\
+            if (StrCompare(#name, extension_name))\
             {\
                 binding->extension_info.##name = true;\
                 continue;\
