@@ -234,7 +234,7 @@ PLATFORM_GET_ALL_FILES_OF_TYPE_BEGIN_FUNCTION(Win32GetAllFilesOfTypeBegin)
     
 	switch(file_type)
 	{
-		case PlatformFileType_AssetFile:
+		case Platform_AssetFile:
         directory = L"data\\";
         wildcard  = L"data\\*.aaf";
 		break;
@@ -331,13 +331,13 @@ PLATFORM_OPEN_FILE_UTF8_FUNCTION(Win32OpenFileDirect)
     U32 access_permissions = 0;
 	U32 creation_mode      = 0;
     
-	if (open_flags & OpenFile_Read)
+	if (open_flags & Platform_OpenRead)
 	{
 		access_permissions |= GENERIC_READ;
 		creation_mode	   = OPEN_EXISTING;
 	}
     
-	if (open_flags & OpenFile_Write)
+	if (open_flags & Platform_OpenWrite)
 	{
 		access_permissions |= GENERIC_WRITE;
 		creation_mode	   = OPEN_ALWAYS;
@@ -369,13 +369,13 @@ PLATFORM_OPEN_FILE_FUNCTION(Win32OpenFile)
     U32 access_permissions = 0;
 	U32 creation_mode      = 0;
     
-	if (open_flags & OpenFile_Read)
+	if (open_flags & Platform_OpenRead)
 	{
 		access_permissions |= GENERIC_READ;
 		creation_mode	   = OPEN_EXISTING;
 	}
     
-	if (open_flags & OpenFile_Write)
+	if (open_flags & Platform_OpenWrite)
 	{
 		access_permissions |= GENERIC_WRITE;
 		creation_mode	   = OPEN_ALWAYS;

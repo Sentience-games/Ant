@@ -70,10 +70,16 @@ struct Asset_List
 struct Asset_File
 {
     Platform_File_Handle file_handle;
+    UMM file_size;
     
     // NOTE(soimn): this will be used for "by file" searching in the editor, but is currently not implemented.
     Asset** assets;
+    
+    U32 data_file_count;
+    U32 tag_count;
     U32 asset_count;
+    
+    B32 wrong_endian;
 };
 
 struct Game_Assets
@@ -84,11 +90,17 @@ struct Game_Assets
     U32 asset_file_count;
     Asset_File* asset_files;
     
+    Platform_File_Handle* data_files;
+    U32 data_file_count;
+    
     // NOTE(soimn): it may be smart to split the assets into several blocks in debug / internal mode to allow the 
     //              appending of assets at runtime without much hassle, currently there is a cap to how many 
     //              assets the user is allowed to add without reloading all assets.
-    Asset* assets;
+    // NOTE(soimn): on a second note, it may be smarter to keep the flat array, and instead realoding when the 
+    //              asset limit is reached
+    
     U32 asset_count;
+    Asset* assets;
     
     U32 mesh_count;
     U32 texture_count;
@@ -107,6 +119,9 @@ struct Game_Assets
 
 #define ASSET_REG_FILE_MAGIC_VALUE U32_FROM_BYTES('a', 'a', 'f', 'r')
 #define ASSET_DATA_FILE_MAGIC_VALUE U32_FROM_BYTES('a', 'a', 'f', 'd')
+
+#define ASSET_REG_FILE_MAGIC_VALUE_WRONG_ENDIAN U32_FROM_BYTES('r', 'f', 'a', 'a')
+#define ASSET_DATA_FILE_MAGIC_VALUE_WRONG_ENDIAN U32_FROM_BYTES('d', 'f', 'a', 'a')
 
 
 #pragma pack(push, 1)
@@ -160,7 +175,7 @@ ASSET_COUNT
 
 #FILE_TABLE
 BASE_PATH
--- FILE_ID - RELATIVE_PATH
+-- RELATIVE_PATH
 
 #TAG_TABLE
     -- TAG_NAME - ASSET_COUNT

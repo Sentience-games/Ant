@@ -1,5 +1,7 @@
 #include "assets/assets.h"
 
+#include "utils/string.h"
+
 inline U32
 SortTags(Game_Assets* assets, Asset_Tag* tags)
 {
@@ -301,4 +303,113 @@ GetBestMatchingAssets(Game_Assets* assets, Enum8(ASSET_TYPE) type, const Asset_T
     }
     
     return result;
+}
+
+// TODO(soimn): LoadAllAssetFiles and ParseAssetFiles are separated in order to minimize clutter, however they are 
+//              doing much of the same and should therefore be combined when the major problems and bugs have been 
+//              sorted out
+
+// TODO(soimn): use error codes instead and expose error type, such that proper error messages can be produced
+inline B32
+LoadAllAssetFiles(Game_Assets* assets, Memory_Arena* asset_arena)
+{
+    B32 encountered_errors = false;
+    
+    *assets = {};
+    
+    Platform_File_Group file_group = Platform->GetAllFilesOfTypeBegin(Platform_AssetFile);
+    
+    if (file_group.file_count)
+    {
+        assets->asset_files = PushArray(asset_arena, Asset_File, file_group.file_count);
+        
+        Platform_File_Info* scan = file_group.first_file_info;
+        while (scan)
+        {
+            Asset_File file = {};
+            
+            file.file_size = scan->file_size;
+            file.file_handle = Platform->OpenFile(scan, Platform_OpenRead);
+            
+            if (file.file_handle.is_valid)
+            {
+                Asset_Reg_File_Header file_header = {};
+                Platform->ReadFromFile(&file.file_handle, 0, sizeof(Asset_Reg_File_Header), (void*) &file_header);
+                
+                if (file.file_handle.is_valid)
+                {
+                    if (file_header.magic_value == ASSET_REG_FILE_MAGIC_VALUE)
+                    {
+                        file.data_file_count = file_header.data_file_count;
+                        file.tag_count       = file_header.tag_count;
+                        file.asset_count     = file_header.asset_count;
+                        
+                        assets->asset_files[assets->asset_file_count] = file;
+                        scan = scan->next;
+                        continue;
+                    }
+                    
+                    else if (file_header.magic_value == ASSET_REG_FILE_MAGIC_VALUE_WRONG_ENDIAN)
+                    {
+                        file.wrong_endian = true;
+                        
+                        file.data_file_count = ENDIAN_SWAP32(file_header.data_file_count);
+                        file.tag_count       = ENDIAN_SWAP32(file_header.tag_count);
+                        file.asset_count     = ENDIAN_SWAP32(file_header.asset_count);
+                        
+                        assets->asset_files[assets->asset_file_count] = file;
+                        scan = scan->next;
+                        continue;
+                    }
+                    
+                    else
+                    {
+                        encountered_errors = true;
+                        break;
+                    }
+                }
+                
+                else
+                {
+                    encountered_errors = true;
+                    break;
+                }
+            }
+        }
+    }
+    
+    else
+    {
+        // NOTE(soimn): did not find any asset files. Is this an error?
+        encountered_errors = true;
+    }
+    
+    Platform->GetAllFilesOfTypeEnd(&file_group);
+    
+    if (encountered_errors) *assets = {};
+    
+    return !encountered_errors;
+}
+
+inline bool
+ParseAssetFiles(Game_Assets* assets, Memory_Arena* asset_arena, Memory_Arena* temp_memory)
+{
+    bool encountered_errors = false;
+    
+    UMM max_tag_count       = 0;
+    UMM max_data_file_count = 0;
+    
+    assets->tag_table = 0;
+    assets->assets    = 0;
+    
+    for (U32 i = 0; i < assets->asset_file_count; ++i)
+    {
+        max_tag_count = MAX(max_tag_count, assets->asset_files[i].tag_count);
+        max_data_file_count = MAX(max_data_file_count, assets->asset_files[i].data_file_count);
+    }
+    
+    Asset_Tag* tag_buffer = PushArray(temp_memory, Asset_Tag, max_tag_count);
+    //Platform_File_Reusable_Handle* data_file_buffer = PushArray(temp_memory, Platform_File_Reusable_Handle, max_data_file_count);
+    
+    return !encountered_errors;
 }

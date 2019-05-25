@@ -21,6 +21,7 @@
 #define LARGE_INT_HIGH(number) (((U64)(number) >> 32) & UINT32_MAX)
 #define ASSEMBLE_LARGE_INT(high, low) (U64)(((U64)(high) << 32) | ((U64)(low) << 0))
 #define U32_FROM_BYTES(a, b, c, d) (((U32)(a) << 24) | ((U32)(b) << 16) | ((U32)(c) << 8) | ((U32)(d) << 0))
+#define ENDIAN_SWAP32(n) ((((U32) (n) & 0xFF000000) >> 24) | (((U32) (n) & 0x00FF0000) >> 8) | (((U32) (n) & 0x0000FF00) << 8) | (((U32) (n) & 0x000000FF) << 24))
 
 #define SERVER_ADDRESS(a, b, c, d) U32_FROM_BYTES(a, b, c, d)
 #define LOCAL_HOST SERVER_ADDRESS(127, 0, 0, 1)

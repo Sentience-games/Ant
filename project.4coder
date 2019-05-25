@@ -37,7 +37,7 @@ command_list = {
 	},
 
 	{ .name = "open_debugger",
-      .cmd  = {{"devenv ..\\run_tree\\win32_ant.exe", .os = "win"},},
+      .cmd  = {{"..\\misc\\remedybg.exe", .os = "win"},},
 	}
 };
 

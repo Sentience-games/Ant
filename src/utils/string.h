@@ -53,6 +53,21 @@ Advance (char** dest, UMM* dest_capacity)
 }
 
 inline void
+Advance(String* string, UMM amount = 1)
+{
+    if (string->size > amount)
+    {
+        string->data += amount;
+        string->size -= amount;
+    }
+    
+    else
+    {
+        *string = {};
+    }
+}
+
+inline void
 Append (char** dest, UMM* dest_capacity, char data)
 {
     Assert(dest && dest_capacity);
@@ -214,4 +229,43 @@ FormatString (char* dest, UMM dest_capacity, const char* format, ...)
     va_end(arg_list);
     
     return chars_written;
+}
+
+inline String
+ExtractString(String input)
+{
+    String result = {};
+    
+    if (input.data[0] == '"')
+    {
+        Advance(&input);
+        result = input;
+        
+        while(input.data && input.data[0] != '"')
+            Advance(&input);
+        
+        if (input.data && input.data[0] == '"')
+        {
+            result.size = (input.data - result.data) + 1;
+        }
+        
+        else
+        {
+            result = {};
+        }
+    }
+    
+    return result;
+}
+
+inline bool
+StringCompare(String string_0, String string_1)
+{
+    while ((string_0.size && string_1.size) && (string_0.data[0] == string_1.data[0]))
+    {
+        Advance(&string_0);
+        Advance(&string_1);
+    }
+    
+    return !string_0.size && string_0.size == string_1.size;
 }

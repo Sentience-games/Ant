@@ -66,15 +66,15 @@ struct Platform_File_Group
 
 enum PLATFORM_FILE_TYPE
 {
-	PlatformFileType_AssetFile,
+	Platform_AssetFile,
     
 	PLATFORM_FILE_TYPE_COUNT
 };
 
 enum PLATFORM_OPEN_FILE_FLAGS
 {
-	OpenFile_Read  = 0x1,
-	OpenFile_Write = 0x2
+	Platform_OpenRead  = 0x1,
+	Platform_OpenWrite = 0x2
 };
 
 #define PLATFORM_GET_ALL_FILES_OF_TYPE_BEGIN_FUNCTION(name)\
@@ -169,6 +169,8 @@ extern Platform_API_Functions* Platform;
 
 struct Game_Memory
 {
+    bool is_initialized;
+    
     struct Game_State* state;
     
     Platform_API_Functions platform_api;
