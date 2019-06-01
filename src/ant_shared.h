@@ -21,7 +21,6 @@
 #define LARGE_INT_HIGH(number) (((U64)(number) >> 32) & UINT32_MAX)
 #define ASSEMBLE_LARGE_INT(high, low) (U64)(((U64)(high) << 32) | ((U64)(low) << 0))
 #define U32_FROM_BYTES(a, b, c, d) (((U32)(a) << 24) | ((U32)(b) << 16) | ((U32)(c) << 8) | ((U32)(d) << 0))
-#define ENDIAN_SWAP32(n) ((((U32) (n) & 0xFF000000) >> 24) | (((U32) (n) & 0x00FF0000) >> 8) | (((U32) (n) & 0x0000FF00) << 8) | (((U32) (n) & 0x000000FF) << 24))
 
 #define SERVER_ADDRESS(a, b, c, d) U32_FROM_BYTES(a, b, c, d)
 #define LOCAL_HOST SERVER_ADDRESS(127, 0, 0, 1)
@@ -47,3 +46,27 @@
 
 #include "ant_types.h"
 #include "utils/assert.h"
+
+inline U16
+SwapEndianess(U16 num)
+{
+    return ((num & 0xFF00) >> 8) | ((num & 0x00FF) << 8);
+}
+
+inline U32
+SwapEndianess(U32 num)
+{
+    U32 lower  = (U32) SwapEndianess((U16)((num & 0xFFFF0000) >> 16));
+    U32 higher = (U32) (SwapEndianess((U16)(num & 0x0000FFFF))) << 16;
+    
+    return higher | lower;
+}
+
+inline U64
+SwapEndianess(U64 num)
+{
+    U64 lower  = (U64) SwapEndianess((U32)((num & 0xFFFFFFFF00000000) >> 32));
+    U64 higher = (U64) (SwapEndianess((U32)(num & 0x00000000FFFFFFFF))) << 32;
+    
+    return higher | lower;
+}

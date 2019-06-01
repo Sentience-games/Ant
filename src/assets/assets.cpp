@@ -305,111 +305,129 @@ GetBestMatchingAssets(Game_Assets* assets, Enum8(ASSET_TYPE) type, const Asset_T
     return result;
 }
 
-// TODO(soimn): LoadAllAssetFiles and ParseAssetFiles are separated in order to minimize clutter, however they are 
-//              doing much of the same and should therefore be combined when the major problems and bugs have been 
-//              sorted out
-
-// TODO(soimn): use error codes instead and expose error type, such that proper error messages can be produced
-inline B32
-LoadAllAssetFiles(Game_Assets* assets, Memory_Arena* asset_arena)
+inline bool
+TryLoadAllAssetFiles(Game_Assets* assets, Memory_Arena* asset_arena)
 {
-    B32 encountered_errors = false;
+    bool succeeded = false;
     
-    *assets = {};
+    Memory_Arena temp_memory = {};
+    temp_memory.block_size   = KILOBYTES(1);
+    
+    ClearArena(&temp_memory);
     
     Platform_File_Group file_group = Platform->GetAllFilesOfTypeBegin(Platform_AssetFile);
     
     if (file_group.file_count)
     {
-        assets->asset_files = PushArray(asset_arena, Asset_File, file_group.file_count);
-        
+        Asset_File* temp_files = PushArray(&temp_memory, Asset_File, file_group.file_count);
         Platform_File_Info* scan = file_group.first_file_info;
-        while (scan)
+        
+        bool encountered_errors = false;
+        U32 asset_file_index    = 0;
+        for (U32 i = 0; i < file_group.file_count; ++i)
         {
-            Asset_File file = {};
+            Platform_File_Handle file_handle = Platform->OpenFile(scan, Platform_OpenRead);
             
-            file.file_size = scan->file_size;
-            file.file_handle = Platform->OpenFile(scan, Platform_OpenRead);
-            
-            if (file.file_handle.is_valid)
+            if (file_handle.is_valid)
             {
                 Asset_Reg_File_Header file_header = {};
-                Platform->ReadFromFile(&file.file_handle, 0, sizeof(Asset_Reg_File_Header), (void*) &file_header);
                 
-                if (file.file_handle.is_valid)
+                File_Error_Code read_error = Platform->ReadFromFile(file_handle, 0, sizeof(Asset_Reg_File_Header), &file_header);
+                
+                if (read_error >= 0)
                 {
-                    if (file_header.magic_value == ASSET_REG_FILE_MAGIC_VALUE)
-                    {
-                        file.data_file_count = file_header.data_file_count;
-                        file.tag_count       = file_header.tag_count;
-                        file.asset_count     = file_header.asset_count;
-                        
-                        assets->asset_files[assets->asset_file_count] = file;
-                        scan = scan->next;
-                        continue;
-                    }
+                    U32 read_size = (U32) read_error;
                     
-                    else if (file_header.magic_value == ASSET_REG_FILE_MAGIC_VALUE_WRONG_ENDIAN)
+                    if (read_size == sizeof(Asset_Reg_File_Header))
                     {
-                        file.wrong_endian = true;
+                        if (file_header.magic_value == ASSET_REG_FILE_MAGIC_VALUE || file_header.magic_value == SwapEndianess(ASSET_REG_FILE_MAGIC_VALUE))
+                        {
+                            if (file_header.asset_count > 0)
+                            {
+                                if (file_header.magic_value == SwapEndianess(ASSET_REG_FILE_MAGIC_VALUE))
+                                {
+                                    temp_files[asset_file_index].data_file_count = SwapEndianess(file_header.data_file_count);
+                                    temp_files[asset_file_index].tag_count   = SwapEndianess(file_header.tag_count);
+                                    temp_files[asset_file_index].asset_count = SwapEndianess(file_header.asset_count);
+                                    
+                                    temp_files[asset_file_index].wrong_endian = true;
+                                }
+                                
+                                else
+                                {
+                                    temp_files[asset_file_index].data_file_count = file_header.data_file_count;
+                                    temp_files[asset_file_index].tag_count       = file_header.tag_count;
+                                    temp_files[asset_file_index].asset_count     = file_header.asset_count;
+                                }
+                                
+                                { // Copy file info to temp memory
+                                    temp_files[asset_file_index].file_info = PushStruct(&temp_memory, Platform_File_Info);
+                                    CopyStruct(scan, temp_files[asset_file_index].file_info);
+                                    
+                                    UMM base_name_length = StrLength(scan->base_name);
+                                    char* base_name      = PushArray(&temp_memory, char, base_name_length);
+                                    CopyArray(scan->base_name, base_name, base_name_length);
+                                    
+                                    UMM platform_data_length = WStrLength((wchar_t*) scan->platform_data);
+                                    wchar_t* platform_data   = PushArray(&temp_memory, wchar_t, platform_data_length);
+                                    CopyArray((wchar_t*) scan->platform_data, platform_data, platform_data_length);
+                                    
+                                    temp_files[asset_file_index].file_info->base_name     = base_name;
+                                    temp_files[asset_file_index].file_info->platform_data = (void*) platform_data;
+                                }
+                                
+                                ++asset_file_index;
+                            }
+                        }
                         
-                        file.data_file_count = ENDIAN_SWAP32(file_header.data_file_count);
-                        file.tag_count       = ENDIAN_SWAP32(file_header.tag_count);
-                        file.asset_count     = ENDIAN_SWAP32(file_header.asset_count);
-                        
-                        assets->asset_files[assets->asset_file_count] = file;
-                        scan = scan->next;
-                        continue;
+                        else
+                        {
+                            // The magic value is not valid
+                            encountered_errors = true;
+                        }
                     }
                     
                     else
                     {
+                        // The file is shorter than the header size
                         encountered_errors = true;
-                        break;
                     }
                 }
                 
                 else
                 {
+                    // The read operation failed
                     encountered_errors = true;
-                    break;
                 }
+                
+                Platform->CloseFile(&file_handle);
+                
+                if (encountered_errors) break;
             }
+            
+            else
+            {
+                // The open operation failed
+                encountered_errors = true;
+                break;
+            }
+            
+            scan = scan->next;
+        }
+        
+        if (!encountered_errors)
+        {
+            ClearArena(asset_arena);
+            *asset_arena = temp_memory;
         }
     }
     
     else
     {
-        // NOTE(soimn): did not find any asset files. Is this an error?
-        encountered_errors = true;
+        // TODO(soimn): Consider returning a special value when no asset reg files are found
     }
     
     Platform->GetAllFilesOfTypeEnd(&file_group);
     
-    if (encountered_errors) *assets = {};
-    
-    return !encountered_errors;
-}
-
-inline bool
-ParseAssetFiles(Game_Assets* assets, Memory_Arena* asset_arena, Memory_Arena* temp_memory)
-{
-    bool encountered_errors = false;
-    
-    UMM max_tag_count       = 0;
-    UMM max_data_file_count = 0;
-    
-    assets->tag_table = 0;
-    assets->assets    = 0;
-    
-    for (U32 i = 0; i < assets->asset_file_count; ++i)
-    {
-        max_tag_count = MAX(max_tag_count, assets->asset_files[i].tag_count);
-        max_data_file_count = MAX(max_data_file_count, assets->asset_files[i].data_file_count);
-    }
-    
-    Asset_Tag* tag_buffer = PushArray(temp_memory, Asset_Tag, max_tag_count);
-    //Platform_File_Reusable_Handle* data_file_buffer = PushArray(temp_memory, Platform_File_Reusable_Handle, max_data_file_count);
-    
-    return !encountered_errors;
+    return succeeded;
 }

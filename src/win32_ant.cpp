@@ -404,58 +404,76 @@ PLATFORM_CLOSE_FILE_FUNCTION(Win32CloseFile)
 
 PLATFORM_READ_FROM_FILE_FUNCTION(Win32ReadFromFile)
 {
-	if (PLATFORM_FILE_IS_VALID(handle))
+    File_Error_Code result = 0;
+    
+	if (handle.is_valid)
 	{
-		HANDLE win32_handle = *((HANDLE*) &handle->platform_data);
+		HANDLE win32_handle = *((HANDLE*) &handle.platform_data);
         
 		OVERLAPPED overlapped = {};
-		overlapped.Offset	  = LARGE_INT_LOW(offset);
+		overlapped.Offset	 = LARGE_INT_LOW(offset);
 		overlapped.OffsetHigh = LARGE_INT_HIGH(offset);
 		
-		Assert(size <= UINT32_MAX);
-		U32 file_size_truncated = (U32) CLAMP(0, size, UINT32_MAX);
-        
-		U32 bytes_read;
-		if (ReadFile(win32_handle, dest, file_size_truncated, (LPDWORD) &bytes_read, &overlapped)
-			&& (file_size_truncated == bytes_read))
+		if (ReadFile(win32_handle, dest, size, (LPDWORD) &result, &overlapped))
 		{
-			// NOTE(soimn): success
-		}
-        
-		else
-		{
-			WIN32LOG_ERROR("Win32ReadFromFile failed to read the contents of the specified file");
-			handle->is_valid = false;
-		}
+            DWORD error = GetLastError();
+            
+            switch (error)
+            {
+                case ERROR_INVALID_PARAMETER:
+                WIN32LOG_ERROR("The file handle passed to WriteToFile was invalid");
+                handle.is_valid = false;
+                
+                result = Platform_InvalidFileHandle;
+                break;
+                
+                INVALID_DEFAULT_CASE;
+            }
+        }
 	}
+    
+    return result;
 }
 
 PLATFORM_WRITE_TO_FILE_FUNCTION(Win32WriteToFile)
 {
-	if (PLATFORM_FILE_IS_VALID(handle))
+    File_Error_Code result = -1;
+    
+	if (handle.is_valid)
 	{
-		HANDLE win32_handle = *((HANDLE*) &handle->platform_data);
+		HANDLE win32_handle = *((HANDLE*) &handle.platform_data);
         
 		OVERLAPPED overlapped = {};
-		overlapped.Offset	  = LARGE_INT_LOW(offset);
+		overlapped.Offset	 = LARGE_INT_LOW(offset);
 		overlapped.OffsetHigh = LARGE_INT_HIGH(offset);
 		
-		U32 file_size_truncated = (U32) CLAMP(0, size, UINT32_MAX);
-		Assert(size != file_size_truncated);
-        
-		U32 bytes_written;
-		if (WriteFile(win32_handle, source, file_size_truncated, (LPDWORD) &bytes_written, &overlapped)
-			&& (file_size_truncated == bytes_written))
-		{
+		U32 bytes_written = 0;
+		BOOL write_result = WriteFile(win32_handle, source, size, (LPDWORD) &bytes_written, &overlapped);
+		
+        if (write_result && bytes_written == size)
+        {
 			// NOTE(soimn): success
 		}
         
 		else
 		{
-			WIN32LOG_ERROR("Win32WriteToFile failed to write the specified data to the file");
-			handle->is_valid = false;
-		}
+            DWORD error = GetLastError();
+            
+            switch (error)
+            {
+                case ERROR_INVALID_PARAMETER:
+                WIN32LOG_ERROR("The file handle passed to WriteToFile was invalid");
+                handle.is_valid = false;
+                
+                result = Platform_InvalidFileHandle;
+                break;
+                
+                INVALID_DEFAULT_CASE;
+            }
+        }
 	}
+    
+    return result;
 }
 
 

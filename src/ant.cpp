@@ -34,9 +34,4 @@ GAME_UPDATE_AND_RENDER_FUNCTION(GameUpdateAndRender)
     Game_State* state = memory->state;
     
     (void) state;
-    
-    if (!memory->is_initialized)
-    {
-        LoadAllAssetFiles(&state->assets, &state->asset_arena);
-    }
 }

@@ -8,3 +8,4 @@ Refactor input handling to allow hot plugging of devices
 memory usage shadowing
 render prep batch sorting
 API agnostic rendering of prepped rendering batches
+Cleanup renderer

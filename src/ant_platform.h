@@ -77,6 +77,12 @@ enum PLATFORM_OPEN_FILE_FLAGS
 	Platform_OpenWrite = 0x2
 };
 
+typedef I64 File_Error_Code;
+enum FILE_ERROR_CODES
+{
+    Platform_InvalidFileHandle = -2,
+};
+
 #define PLATFORM_GET_ALL_FILES_OF_TYPE_BEGIN_FUNCTION(name)\
 Platform_File_Group  name (Enum32(PLATFORM_FILE_TYPE) file_type)
 typedef PLATFORM_GET_ALL_FILES_OF_TYPE_BEGIN_FUNCTION(platform_get_all_files_of_type_begin_function);
@@ -95,13 +101,11 @@ typedef PLATFORM_OPEN_FILE_FUNCTION(platform_open_file_function);
 #define PLATFORM_CLOSE_FILE_FUNCTION(name) void name (Platform_File_Handle* file_handle)
 typedef PLATFORM_CLOSE_FILE_FUNCTION(platform_close_file_function);
 
-#define PLATFORM_READ_FROM_FILE_FUNCTION(name) void name (Platform_File_Handle* handle, U64 offset, U64 size, void* dest)
+#define PLATFORM_READ_FROM_FILE_FUNCTION(name) File_Error_Code name (Platform_File_Handle handle, U32 offset, U32 size, void* dest)
 typedef PLATFORM_READ_FROM_FILE_FUNCTION(platform_read_from_file_function);
 
-#define PLATFORM_WRITE_TO_FILE_FUNCTION(name) void name (Platform_File_Handle* handle, U64 offset, U64 size, void* source)
+#define PLATFORM_WRITE_TO_FILE_FUNCTION(name) File_Error_Code name (Platform_File_Handle handle, U32 offset, U32 size, void* source)
 typedef PLATFORM_WRITE_TO_FILE_FUNCTION(platform_write_to_file_function);
-
-#define PLATFORM_FILE_IS_VALID(handle) ((handle)->is_valid)
 
 /// Input
 
