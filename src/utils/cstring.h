@@ -5,7 +5,7 @@
 global_variable U32 npos = ~(0UL);
 
 inline int
-StrLength (const char* cstring, I32 max_value = INT32_MAX - 1)
+StrLength (const char* cstring, I32 max_value = I32_MAX - 1)
 {
 	Assert(cstring);
 	Assert(0 <= max_value);
@@ -27,7 +27,7 @@ StrLength (const char* cstring, I32 max_value = INT32_MAX - 1)
 }
 
 inline int
-WStrLength (const wchar_t* wcstring, I32 max_value = INT32_MAX - 1)
+WStrLength (const wchar_t* wcstring, I32 max_value = I32_MAX - 1)
 {
 	Assert(wcstring);
 	Assert(0 <= max_value);
@@ -89,6 +89,36 @@ StrCompare (const char* cstring_1, const char* cstring_2, UMM cutoff)
     for (; i < cutoff && *p1 == *p2; ++i, ++p1, ++p2);
     
 	return (i == cutoff && *p1 == *p2);
+}
+
+inline bool
+WStrCompare(wchar_t* wstring_0, wchar_t* wstring_1)
+{
+    Assert(wstring_0 && wstring_1);
+	int result = -1;
+	wchar_t* p0 = (wchar_t*)wstring_0;
+	wchar_t* p1 = (wchar_t*)wstring_1;
+    
+	while(*p0 && *p0 == *p1
+		  && (size_t)(p0 - wstring_0) <= npos)
+	{
+		++p0;
+		++p1;
+	}
+    
+	if ((p0 - wstring_0) != npos)
+	{
+		if (*p0 == *p1)
+		{
+			result = 1;
+		}
+		else
+		{
+			result = 0;
+		}
+	}
+    
+	return result;
 }
 
 // NOTE(soimn): this returns -1 on error and the number of characters written on success

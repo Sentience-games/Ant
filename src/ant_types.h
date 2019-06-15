@@ -1,24 +1,49 @@
 #pragma once
 
-#include <stdint.h>
+#ifdef ANT_PLATFORM_WINDOWS
+typedef signed __int8  I8;
+typedef signed __int16 I16;
+typedef signed __int32 I32;
+typedef signed __int64 I64;
 
-typedef intptr_t Intptr;
-typedef uintptr_t Uintptr;
+typedef unsigned __int8  U8;
+typedef unsigned __int16 U16;
+typedef unsigned __int32 U32;
+typedef unsigned __int64 U64;
+#else
+typedef __INT8_TYPE__  I8;
+typedef __INT16_TYPE__ I16;
+typedef __INT32_TYPE__ I32;
+typedef __INT64_TYPE__ I64;
 
-typedef int8_t  I8;
-typedef int16_t I16;
-typedef int32_t I32;
-typedef int64_t I64;
+typedef __UINT8_TYPE__  U8;
+typedef __UINT16_TYPE__ U16;
+typedef __UINT32_TYPE__ U32;
+typedef __UINT64_TYPE__ U64;
+#endif
 
-typedef uint8_t  U8;
-typedef uint16_t U16;
-typedef uint32_t U32;
-typedef uint64_t U64;
+#define U8_MAX  (~((U8)0))
+#define U16_MAX (~((U16)0))
+#define U32_MAX (~((U32)0))
+#define U64_MAX (~((U64)0))
+
+#define I8_MAX  ((~((U8)0))  >> 1)
+#define I16_MAX ((~((U16)0)) >> 1)
+#define I32_MAX ((~((U32)0)) >> 1)
+#define I64_MAX ((~((U64)0)) >> 1)
+
+#define I8_MIN  (~I8_MAX)
+#define I16_MIN (~I16_MAX)
+#define I32_MIN (~I32_MAX)
+#define I64_MIN (~I64_MAX)
 
 typedef float  F32;
 typedef double F64;
 
+typedef U8  B8;
+typedef U16 B16;
 typedef U32 B32;
+typedef U64 B64;
 
 #define Flag8(type)  U8
 #define Flag16(type) U16

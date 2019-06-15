@@ -46,7 +46,8 @@ struct Asset
 {
     Asset_Tag tags[ASSET_MAX_PER_ASSET_TAG_COUNT];
     
-    U32 source_file;
+    U32 reg_file_id;
+    U32 source_file_id;
     U32 offset;
     U32 size;
     
@@ -56,7 +57,6 @@ struct Asset
     union
     {
         Triangle_Mesh mesh;
-        Material material;
         Texture texture;
     };
 };
@@ -71,14 +71,21 @@ struct Asset_File
 {
     Platform_File_Info* file_info;
     
+    U32* local_data_file_table;
+    U32* local_tag_table;
+    
     // NOTE(soimn): this will be used for "by file" searching in the editor, but is currently not implemented.
-    Asset** assets;
+    U32* assets;
     
     U32 data_file_count;
     U32 tag_count;
     U32 asset_count;
     
-    B32 wrong_endian;
+    U32 one_past_end_of_data_file_section;
+    U32 one_past_end_of_tag_table_section;
+    
+    B16 wrong_endian;
+    B16 is_valid;
 };
 
 struct Game_Assets
@@ -118,19 +125,26 @@ struct Asset_Reg_File_Header
 {
     U32 magic_value;
     
+    U32 version;
+    
     U32 data_file_count;
     U32 tag_count;
     U32 asset_count;
+    
+    U32 one_past_end_of_data_file_section;
+    U32 one_past_end_of_tag_table_section;
 };
 
+StaticAssert(ASSET_MAX_PER_ASSET_TAG_COUNT && ASSET_MAX_PER_ASSET_TAG_COUNT % 4 == 0);
 struct Asset_Reg_File_Asset_Entry
 {
+    // IMPORTANT(soimn): Remember to update the asset parser when something in this struct is altered
     U32 source_file_id;
     U32 offset;
     U32 size;
-    U16 tags[ASSET_MAX_PER_ASSET_TAG_COUNT];
     Enum8(ASSET_TYPE) type;
     U8 pad_[3];
+    U16 tags[ASSET_MAX_PER_ASSET_TAG_COUNT];
     
     union
     {
@@ -158,17 +172,20 @@ struct Asset_Reg_File_Asset_Entry
 // NOTE(soimn): The structure of an asset reg file
 /*
 MAGIC_VALUE
+VERSION
 DATA_FILE_COUNT
 TAG_COUNT
 ASSET_COUNT
+OFFSET_TO_ONE_PAST_THE_END_OF_DATA_FILE_SECTION
+OFFSET_TO_ONE_PAST_THE_END_OF_TAG_TABLE_SECTION
 
 #FILE_TABLE
 BASE_PATH
 -- RELATIVE_PATH
 
 #TAG_TABLE
-    -- TAG_NAME - ASSET_COUNT
+    -- TAG_NAME - PRECEDENCE - ASSET_COUNT
     
 #ASSET_TABLE
--- TAGS - FILE_ID - OFFSET - SIZE - TYPE - TYPE_SPECIFIC_METADATA
+-- FILE_ID - OFFSET - SIZE - TYPE - PAD - TAGS - TYPE_SPECIFIC_METADATA
 */

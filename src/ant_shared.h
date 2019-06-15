@@ -17,8 +17,8 @@
 #define MAX(x, y) ((x) < (y) ? (y) : (x))
 #define MIN(x, y) ((x) > (y) ? (y) : (x))
 #define CLAMP(min, x, max) ((x) < min ? min : (max < (x) ? max : (x)))
-#define LARGE_INT_LOW(number) (((U64)(number)  >> 0)  & UINT32_MAX)
-#define LARGE_INT_HIGH(number) (((U64)(number) >> 32) & UINT32_MAX)
+#define LARGE_INT_LOW(number) (((U64)(number)  >> 0)  & U32_MAX)
+#define LARGE_INT_HIGH(number) (((U64)(number) >> 32) & U32_MAX)
 #define ASSEMBLE_LARGE_INT(high, low) (U64)(((U64)(high) << 32) | ((U64)(low) << 0))
 #define U32_FROM_BYTES(a, b, c, d) (((U32)(a) << 24) | ((U32)(b) << 16) | ((U32)(c) << 8) | ((U32)(d) << 0))
 
@@ -33,7 +33,7 @@
 #define BITS(num) (1 << (num))
 #define ISBITSET(flag, bit) (((flag) & (bit)) != 0)
 
-#define OFFSETOF(obj, var) (Uintptr) &(((obj*)0)->var)
+#define OFFSETOF(obj, var) (UMM) &(((obj*)0)->var)
 
 #define INVALID_CODE_PATH Assert(!"Invalid code path")
 #define INVALID_DEFAULT_CASE default: INVALID_CODE_PATH; break

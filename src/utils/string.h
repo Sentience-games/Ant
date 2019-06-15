@@ -231,33 +231,6 @@ FormatString (char* dest, UMM dest_capacity, const char* format, ...)
     return chars_written;
 }
 
-inline String
-ExtractString(String input)
-{
-    String result = {};
-    
-    if (input.data[0] == '"')
-    {
-        Advance(&input);
-        result = input;
-        
-        while(input.data && input.data[0] != '"')
-            Advance(&input);
-        
-        if (input.data && input.data[0] == '"')
-        {
-            result.size = (input.data - result.data) + 1;
-        }
-        
-        else
-        {
-            result = {};
-        }
-    }
-    
-    return result;
-}
-
 inline bool
 StringCompare(String string_0, String string_1)
 {

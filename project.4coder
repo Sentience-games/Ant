@@ -22,7 +22,7 @@ load_paths = {
 
 command_list = {
 	{ .name = "build",
-	  .out  = "*compilation*", .footer_panel = true, .save_dirty_files = false, .cursor_at_end = true,
+	  .out  = "*compilation*", .footer_panel = true, .save_dirty_files = false, .cursor_at_end = false,
 	  .cmd  = {{"..\\misc\\shell.bat && ..\\build.bat", .os = "win"},},
 	},
 

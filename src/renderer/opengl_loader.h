@@ -11,7 +11,7 @@ typedef I32 GLfixed;
 typedef U32 GLuint;
 typedef U64 GLuint64;
 typedef IMM GLsizeiptr;
-typedef Intptr GLintptr;
+typedef IMM GLintptr;
 typedef U32 GLbitfield;
 typedef I32 GLint;
 typedef U8 GLubyte;

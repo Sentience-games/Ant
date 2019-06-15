@@ -20,13 +20,27 @@ struct Memory_Arena
 inline void*
 Align(void* ptr, U8 alignment)
 {
-	return (void*)((U8*) ptr + (U8)(((~((Uintptr) ptr)) + 1) & (U8)(alignment - 1)));
+	return (void*)((U8*) ptr + (U8)(((~((UMM) ptr)) + 1) & (U8)(alignment - 1)));
 }
 
 inline U8
 AlignOffset(void* ptr, U8 alignment)
 {
 	return (U8)((U8*) Align(ptr, alignment) - (U8*) ptr);
+}
+
+inline U8
+MaxAlignOfPointer(void* ptr)
+{
+    U8 result = 1;
+    
+    U8 masked_ptr = (U8)((UMM) ptr & ~(((UMM) ptr >> 7) << 7));
+    
+    if (!masked_ptr || masked_ptr == 8) result = 8;
+    else if (masked_ptr == 4 || masked_ptr == 12) result = 4;
+    else if (masked_ptr % 2 == 0) result = 2;
+    
+    return result;
 }
 
 inline void
@@ -108,7 +122,7 @@ PushSize(Memory_Arena* arena, UMM size, U8 alignment = 1)
 }
 
 #define PushStruct(arena, type) (type*) PushSize(arena, sizeof(type), alignof(type))
-#define PushArray(arena, type, count) (type*) PushSize(arena, (sizeof(type) + AlignOffset(((type*) 0) + 1, alignof(type))) * count, alignof(type))
+#define PushArray(arena, type, count) (type*) PushSize(arena, (sizeof(type) + AlignOffset(((type*) 0) + 1, alignof(type))) * (count), alignof(type))
 
 inline void
 Copy(void* source, void* dest, UMM size)
@@ -125,7 +139,7 @@ Copy(void* source, void* dest, UMM size)
 }
 
 #define CopyStruct(source, dest) Copy((void*) (source), (void*) (dest), sizeof(*(source)))
-#define CopyArray(source, dest, count) Copy((void*) (source), (void*) (dest), sizeof(*(source)) * count)
+#define CopyArray(source, dest, count) Copy((void*) (source), (void*) (dest), sizeof(*(source)) * (count))
 
 inline void
 ZeroSize(void* ptr, UMM size)
@@ -136,7 +150,38 @@ ZeroSize(void* ptr, UMM size)
 }
 
 #define ZeroStruct(type) ZeroSize(type, sizeof(type[0]))
-#define ZeroArray(type, count) ZeroSize(type, sizeof(type[0]) * count)
+#define ZeroArray(type, count) ZeroSize(type, sizeof(type[0]) * (count))
+
+inline bool
+IsZero(void* ptr, UMM size)
+{
+    U8* bptr = (U8*) ptr;
+    
+    while (bptr < (U8*) ptr + size && !(*bptr)) ++bptr;
+    
+    return (bptr == (U8*) ptr + size);
+}
+
+#define IsStructZero(structure) IsZero(structure, sizeof((structure)[0]))
+#define IsArrayZero(array, count) IsZero(array, sizeof((array)[0]) * (count))
+
+inline bool
+CompareSize(void* p0, void* p1, UMM size)
+{
+    U8* bp0 = (U8*) p0;
+    U8* bp1 = (U8*) p1;
+    
+    while (bp0 < (U8*) p0 + size && *bp0 == *bp1)
+    {
+        ++bp0;
+        ++bp1;
+    }
+    
+    return (bp0 == (U8*) p0 + size);
+}
+
+#define CompareStruct(s0, s1) CompareSize(s0, s1, sizeof((s0)[0]))
+#define CompareArray(s0, s1, count) CompareSize(s0, s1, sizeof((s0)[0]) * (count))
 
 inline void*
 BootstrapPushSize_(UMM container_size, U8 container_alignment, UMM offset_to_arena_member, UMM block_size)

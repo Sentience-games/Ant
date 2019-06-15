@@ -52,7 +52,7 @@ struct Platform_File_Info
 	U64 timestamp;
 	U64 file_size;
 	char* base_name;
-	void* platform_data;
+    Buffer platform_data;
     
 	Platform_File_Info* next;
 };
@@ -91,7 +91,7 @@ typedef PLATFORM_GET_ALL_FILES_OF_TYPE_BEGIN_FUNCTION(platform_get_all_files_of_
 typedef PLATFORM_GET_ALL_FILES_OF_TYPE_END_FUNCTION(platform_get_all_files_of_type_end_function);
 
 #define PLATFORM_OPEN_FILE_UTF8_FUNCTION(name)\
-Platform_File_Handle name (Memory_Arena* temporary_memory, String file_path, Flag8(PLATFORM_OPEN_FILE_FLAGS) open_flags)
+Platform_File_Handle name (String file_path, Flag8(PLATFORM_OPEN_FILE_FLAGS) open_flags, Memory_Arena* temporary_memory, bool is_relative)
 typedef PLATFORM_OPEN_FILE_UTF8_FUNCTION(platform_open_file_utf8_function);
 
 #define PLATFORM_OPEN_FILE_FUNCTION(name)\
@@ -100,6 +100,9 @@ typedef PLATFORM_OPEN_FILE_FUNCTION(platform_open_file_function);
 
 #define PLATFORM_CLOSE_FILE_FUNCTION(name) void name (Platform_File_Handle* file_handle)
 typedef PLATFORM_CLOSE_FILE_FUNCTION(platform_close_file_function);
+
+#define PLATFORM_GET_FILE_INFO_FUNCTION(name) Platform_File_Info name (Platform_File_Handle file_handle, Memory_Arena* memory)
+typedef PLATFORM_GET_FILE_INFO_FUNCTION(platform_get_file_info_function);
 
 #define PLATFORM_READ_FROM_FILE_FUNCTION(name) File_Error_Code name (Platform_File_Handle handle, U32 offset, U32 size, void* dest)
 typedef PLATFORM_READ_FROM_FILE_FUNCTION(platform_read_from_file_function);
@@ -150,9 +153,10 @@ struct Platform_API_Functions
     
 	platform_get_all_files_of_type_begin_function* GetAllFilesOfTypeBegin;
 	platform_get_all_files_of_type_end_function* GetAllFilesOfTypeEnd;
-    platform_open_file_utf8_function* OpenFileUTF8;
-	platform_open_file_function* OpenFile;
+    platform_open_file_function* OpenFile;
+	platform_open_file_utf8_function* OpenFileUTF8;
 	platform_close_file_function* CloseFile;
+    platform_get_file_info_function* GetFileInfo;
 	platform_read_from_file_function* ReadFromFile;
 	platform_write_to_file_function* WriteToFile;
     

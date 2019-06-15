@@ -1,11 +1,12 @@
 #include "win32_ant.h"
 
 // TODO(soimn): Implement soft quit with a hook for messages.
-global bool Running = false;
+global bool Running             = false;
+global Win32_Game_Info GameInfo = {APPLICATION_NAME, APPLICATION_VERSION};
 
-///
+/// 
 /// Memory Allocation
-///
+/// 
 
 PLATFORM_ALLOCATE_MEMORY_BLOCK_FUNCTION(Win32AllocateMemoryBlock)
 {
@@ -32,9 +33,9 @@ PLATFORM_FREE_MEMORY_BLOCK_FUNCTION(Win32FreeMemoryBlock)
 }
 
 
-///
+/// 
 /// Logging
-///
+/// 
 
 PLATFORM_LOG_INFO_FUNCTION(Win32LogInfo)
 {
@@ -73,9 +74,9 @@ PLATFORM_LOG_ERROR_FUNCTION(Win32LogError)
 }
 
 
-///
+/// 
 /// Raw Input
-///
+/// 
 
 internal inline bool
 Win32RegisterRawInputDevices(HWND window_handle)
@@ -110,9 +111,9 @@ Win32RegisterRawInputDevices(HWND window_handle)
 }
 
 
-///
+/// 
 /// File System Interaction
-///
+/// 
 
 // TODO(soimn): see if this breaks when the path is long enough
 internal wchar_t*
@@ -294,9 +295,12 @@ PLATFORM_GET_ALL_FILES_OF_TYPE_BEGIN_FUNCTION(Win32GetAllFilesOfTypeBegin)
 		info->base_name[required_base_name_storage] = 0;
         
 		U32 file_name_size = (U32)(scan - find_data.cFileName) + 1;
-		info->platform_data = PushArray(&win32_file_group->memory, wchar_t, directory_length + file_name_size);
-		CopyArray(directory, info->platform_data, directory_length);
-		CopyArray(find_data.cFileName, (wchar_t*)info->platform_data + directory_length, file_name_size);
+        
+		info->platform_data.data = (U8*) PushArray(&win32_file_group->memory, wchar_t, directory_length + file_name_size);
+        info->platform_data.size = sizeof(wchar_t) * (directory_length + file_name_size);
+        
+		CopyArray(directory, info->platform_data.data, directory_length);
+		CopyArray(find_data.cFileName, (wchar_t*)info->platform_data.data + directory_length, file_name_size);
         
 		result.first_file_info = info;
 		
@@ -321,7 +325,7 @@ PLATFORM_GET_ALL_FILES_OF_TYPE_END_FUNCTION(Win32GetAllFilesOfTypeEnd)
 	}
 }
 
-PLATFORM_OPEN_FILE_UTF8_FUNCTION(Win32OpenFileDirect)
+PLATFORM_OPEN_FILE_UTF8_FUNCTION(Win32OpenFileUTF8)
 {
     Assert(file_path.data);
     
@@ -344,10 +348,24 @@ PLATFORM_OPEN_FILE_UTF8_FUNCTION(Win32OpenFileDirect)
 	}
     
     wchar_t* wide_file_path = 0;
-    UMM required_size = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, (const char*) file_path.data, (int) file_path.size, wide_file_path, 0);
+    UMM required_length = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, (const char*) file_path.data, (int) file_path.size, wide_file_path, 0);
     
-    wide_file_path = (wchar_t*) PushSize(temporary_memory, sizeof(wchar_t) * required_size);
-    MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, (const char*) file_path.data, (int) file_path.size, wide_file_path, (int) file_path.size);
+    UMM offset = 0;
+    if (is_relative)
+    {
+        offset = GameInfo.cwd_length;
+        required_length += offset;
+    }
+    
+    wide_file_path = (wchar_t*) PushSize(temporary_memory, sizeof(wchar_t) * required_length);
+    ZeroSize(wide_file_path, required_length * sizeof(wchar_t));
+    
+    MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, (const char*) file_path.data, (int) file_path.size, wide_file_path + offset, (int) required_length);
+    
+    if (is_relative)
+    {
+        Copy((void*) GameInfo.cwd, wide_file_path, GameInfo.cwd_length);
+    }
     
     HANDLE win32_handle = CreateFileW(wide_file_path, access_permissions,
 									  FILE_SHARE_READ, 0,
@@ -381,7 +399,7 @@ PLATFORM_OPEN_FILE_FUNCTION(Win32OpenFile)
 		creation_mode	   = OPEN_ALWAYS;
 	}
     
-    wchar_t* file_path = (wchar_t*) file_info->platform_data;
+    wchar_t* file_path = (wchar_t*) file_info->platform_data.data;
     HANDLE win32_handle = CreateFileW(file_path, access_permissions,
 									  FILE_SHARE_READ, 0,
 									  creation_mode, 0, 0);
@@ -400,6 +418,71 @@ PLATFORM_CLOSE_FILE_FUNCTION(Win32CloseFile)
 	{
 		CloseHandle(win32_handle);
 	}
+}
+
+PLATFORM_GET_FILE_INFO_FUNCTION(Win32GetFileInfo)
+{
+    Platform_File_Info file_info = {};
+    
+    BY_HANDLE_FILE_INFORMATION win32_file_info = {};
+    
+    if (GetFileInformationByHandle((HANDLE) file_handle.platform_data, &win32_file_info))
+    {
+        FILETIME timestamp = win32_file_info.ftLastWriteTime;
+		file_info.timestamp = ASSEMBLE_LARGE_INT(timestamp.dwHighDateTime, timestamp.dwLowDateTime);
+		file_info.file_size = ASSEMBLE_LARGE_INT(win32_file_info.nFileSizeHigh, win32_file_info.nFileSizeLow);
+        
+        wchar_t* path = 0;
+        
+        DWORD required_bytes = GetFinalPathNameByHandleW((HANDLE) file_handle.platform_data, path, 0, 0);
+        
+        path = (wchar_t*) PushSize(memory, required_bytes, alignof(wchar_t));
+        ZeroSize(path, required_bytes);
+        
+        GetFinalPathNameByHandleW((HANDLE) file_handle.platform_data, path, required_bytes, 0);
+        
+        file_info.platform_data.data = (U8*) path;
+        file_info.platform_data.size = required_bytes;
+        
+        wchar_t* start_of_base_name = path;
+        
+        for (wchar_t* scan = path; *scan; ++scan)
+        {
+            if (*scan == '\\' || *scan == '/')
+            {
+                start_of_base_name = scan + 1;
+            }
+        }
+        
+        if (*start_of_base_name)
+        {
+            U32 base_name_length = (U32)(((U8*)path + required_bytes - 1) - (U8*) start_of_base_name);
+            U32 required_base_name_storage = WideCharToMultiByte(CP_UTF8, 0,
+                                                                 start_of_base_name, base_name_length,
+                                                                 file_info.base_name, 0,
+                                                                 0, 0);
+            
+            file_info.base_name = (char*) PushSize(memory, required_base_name_storage + 1);
+            ZeroSize(file_info.base_name, required_base_name_storage + 1);
+            
+            WideCharToMultiByte(CP_UTF8, 0, start_of_base_name, base_name_length,
+                                file_info.base_name, required_base_name_storage, 0, 0);
+        }
+        
+        else
+        {
+            // NOTE(soimn): If this is reached, the path contains a slash at the end of the path
+            INVALID_CODE_PATH;
+        }
+    }
+    
+    else
+    {
+        // TODO(soimn): Find out what to do what to do when this happens
+        INVALID_CODE_PATH;
+    }
+    
+    return file_info;
 }
 
 PLATFORM_READ_FROM_FILE_FUNCTION(Win32ReadFromFile)
@@ -751,7 +834,9 @@ int CALLBACK WinMain(HINSTANCE instance,
 			memory->platform_api.GetAllFilesOfTypeBegin = &Win32GetAllFilesOfTypeBegin;
 			memory->platform_api.GetAllFilesOfTypeEnd   = &Win32GetAllFilesOfTypeEnd;
 			memory->platform_api.OpenFile			   = &Win32OpenFile;
+            memory->platform_api.OpenFileUTF8		   = &Win32OpenFileUTF8;
 			memory->platform_api.CloseFile			  = &Win32CloseFile;
+            memory->platform_api.GetFileInfo            = &Win32GetFileInfo;
 			memory->platform_api.ReadFromFile		   = &Win32ReadFromFile;
 			memory->platform_api.WriteToFile			= &Win32WriteToFile;
             
@@ -760,29 +845,27 @@ int CALLBACK WinMain(HINSTANCE instance,
 			// Game Info
 			bool game_info_valid = false;
             
-            Win32_Game_Info game_info = {APPLICATION_NAME, APPLICATION_VERSION};
-            
-			game_info.cwd = Win32GetCWD(&memory->state->persistent_memory, (U32*) &game_info.cwd_length);
+			GameInfo.cwd = Win32GetCWD(&memory->state->persistent_memory, (U32*) &GameInfo.cwd_length);
             
 			{ // Build dll path
 				const wchar_t* appendage = CONCAT(L, APPLICATION_NAME) L".dll";
-				U32 buffer_length        = game_info.cwd_length + (U32) WStrLength(appendage) + 1;
+				U32 buffer_length        = GameInfo.cwd_length + (U32) WStrLength(appendage) + 1;
                 
-				game_info.dll_path = PushArray(&win32_persistent_memory, wchar_t, buffer_length);
-				Win32BuildFullyQualifiedPath(&game_info, appendage, (wchar_t*) game_info.dll_path, buffer_length);
+				GameInfo.dll_path = PushArray(&win32_persistent_memory, wchar_t, buffer_length);
+				Win32BuildFullyQualifiedPath(&GameInfo, appendage, (wchar_t*) GameInfo.dll_path, buffer_length);
 			}
             
 			{ // Build loaded dll path
 				const wchar_t* appendage = CONCAT(L, APPLICATION_NAME) L"_loaded.dll";
-				U32 buffer_length        = game_info.cwd_length + (U32) WStrLength(appendage) + 1;
+				U32 buffer_length        = GameInfo.cwd_length + (U32) WStrLength(appendage) + 1;
                 
-				game_info.loaded_dll_path = PushArray(&win32_persistent_memory, wchar_t, buffer_length);
-				Win32BuildFullyQualifiedPath(&game_info, appendage, (wchar_t*) game_info.loaded_dll_path, buffer_length);
+				GameInfo.loaded_dll_path = PushArray(&win32_persistent_memory, wchar_t, buffer_length);
+				Win32BuildFullyQualifiedPath(&GameInfo, appendage, (wchar_t*) GameInfo.loaded_dll_path, buffer_length);
 			}
             
 			
 			{ // Set working directory
-				BOOL successfully_set_wd = SetCurrentDirectoryW(game_info.cwd);
+				BOOL successfully_set_wd = SetCurrentDirectoryW(GameInfo.cwd);
                 
 				if (successfully_set_wd == FALSE)
 				{
@@ -804,7 +887,7 @@ int CALLBACK WinMain(HINSTANCE instance,
             
 			if (game_info_valid)
 			{
-				game_code = Win32LoadGameCode(game_info.dll_path, game_info.loaded_dll_path);
+				game_code = Win32LoadGameCode(GameInfo.dll_path, GameInfo.loaded_dll_path);
 			}
             
             // Renderer
@@ -828,7 +911,7 @@ int CALLBACK WinMain(HINSTANCE instance,
                     
                     Win32ProcessPendingMessages(window_handle, old_input, new_input);
                     
-                    Win32ReloadGameIfNecessary(&game_code, &game_info);
+                    Win32ReloadGameIfNecessary(&game_code, &GameInfo);
                     
                     memory->platform_api.PrepareFrame();
                     

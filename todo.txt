@@ -6,6 +6,13 @@ The application crashes without an error log when the data directory is not foun
 Set viewport dimensions and implement restricted resizing of the window
 Refactor input handling to allow hot plugging of devices
 memory usage shadowing
-render prep batch sorting
-API agnostic rendering of prepped rendering batches
-Cleanup renderer
+/// render prep batch sorting
+//// API agnostic rendering of prepped rendering batches
+//// Cleanup renderer
+/// Figure out what to do with static objects and how they should interact with entities
+
+// Rewamp the asset system to support replacement tags and smart ordering, such that modifying the base content is smoother
+
+Rewrite asset files that are tagged as "wrong_endian" at startup and reload those files
+
+//// REMOVE STDARG FROM STRING.H
