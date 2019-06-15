@@ -13,9 +13,7 @@ enum ASSET_TYPE
     Asset_NoType = 0,
     
     Asset_Mesh,
-    Asset_Material,
     Asset_Texture,
-    Asset_Shader,
 };
 
 enum ASSET_STATE
@@ -104,17 +102,11 @@ struct Game_Assets
     
     U32 mesh_count;
     U32 texture_count;
-    U32 material_count;
-    U32 shader_count;
     Asset* meshes;
     Asset* textures;
-    Asset* materials;
-    Asset* shaders;
     
     Asset* default_mesh;
     Asset* default_texture;
-    Asset* default_material;
-    Asset* default_shader;
 };
 
 #define ASSET_REG_FILE_MAGIC_VALUE U32_FROM_BYTES('a', 'a', 'f', 'r')

@@ -105,51 +105,8 @@ SortAssets(Game_Assets* assets)
         }
     }
     
-    bool encountered_errors = false;
-    for (U32 i = 0; i < assets->asset_count; ++i)
-    {
-        Asset* first = &assets->assets[i];
-        while (assets->assets[i].type == first->type) ++i;
-        
-        U32 count = (U32)(&assets->assets[i] - first);
-        
-        switch(first->type)
-        {
-            case Asset_Mesh:
-            assets->meshes     = first;
-            assets->mesh_count = count;
-            break;
-            
-            case Asset_Texture:
-            assets->textures      = first;
-            assets->texture_count = count;
-            break;
-            
-            case Asset_Material:
-            assets->materials      = first;
-            assets->material_count = count;
-            break;
-            
-            case Asset_Shader:
-            assets->shaders      = first;
-            assets->shader_count = count;
-            break;
-            
-            INVALID_DEFAULT_CASE;
-        }
-        
-        encountered_errors = (SortTags(assets, assets->assets[i].tags) != U32_MAX);
-        
-        if (encountered_errors) break;
-    }
-    
-    if (!encountered_errors)
-    {
-        if (assets->meshes) SortAssetsByTags(assets, assets->meshes, assets->mesh_count);
-        if (assets->textures) SortAssetsByTags(assets, assets->textures, assets->texture_count);
-        if (assets->materials) SortAssetsByTags(assets, assets->materials, assets->material_count);
-        if (assets->shaders) SortAssetsByTags(assets, assets->shaders, assets->shader_count);
-    }
+    SortAssetsByTags(assets, assets->meshes, assets->mesh_count);
+    SortAssetsByTags(assets, assets->textures, assets->texture_count);
     
     return !encountered_errors;
 }
@@ -394,12 +351,17 @@ ReloadAssets(Game_Assets* assets, Memory_Arena* asset_arena)
                     UMM base_name_length = StrLength(assets->asset_files[i].file_info->base_name);
                     char* temp_base_name = assets->asset_files[i].file_info->base_name;
                     
-                    assets->asset_files[i].file_info->base_name = PushArray(asset_arena, char, base_name_length);
+                    assets->asset_files[i].file_info->base_name = PushArray(asset_arena, char, base_name_length + 1);
+                    
+                    ZeroSize(assets->asset_files[i].file_info->base_name, base_name_length + 1);
+                    
                     Copy(temp_base_name, assets->asset_files[i].file_info->base_name, base_name_length);
                     
                     Buffer temp_platform_data = assets->asset_files[i].file_info->platform_data;
                     
                     assets->asset_files[i].file_info->platform_data.data = (U8*) PushSize(asset_arena, temp_platform_data.size, MaxAlignOfPointer(temp_platform_data.data));
+                    
+                    ZeroSize(assets->asset_files[i].file_info->platform_data.data, temp_platform_data.size);
                     
                     Copy(temp_platform_data.data, assets->asset_files[i].file_info->platform_data.data, temp_platform_data.size);
                 }
@@ -427,13 +389,14 @@ ReloadAssets(Game_Assets* assets, Memory_Arena* asset_arena)
             }
         }
         
-        Platform_File_Info* temp_data_files    = PushArray(&temp_memory, Platform_File_Info, max_data_file_count);
-        Asset_Tag_Table_Entry* temp_tag_table  = PushArray(&temp_memory, Asset_Tag_Table_Entry, max_tag_count);
-        Asset* temp_assets                     = PushArray(&temp_memory, Asset, max_asset_count);
+        Platform_File_Info* temp_data_files    = PushArray(&temp_memory, Platform_File_Info, max_data_file_count + 1);
+        Asset_Tag_Table_Entry* temp_tag_table  = PushArray(&temp_memory, Asset_Tag_Table_Entry, max_tag_count + 1);
+        Asset* temp_assets                     = PushArray(&temp_memory, Asset, max_asset_count + 1);
         
-        U32 real_data_file_count = 0;
-        U32 real_tag_count       = 0;
-        U32 real_asset_count     = 0;
+        // NOTE(soimn): The 0th member is reserved
+        U32 real_data_file_count = 1;
+        U32 real_tag_count       = 1;
+        U32 real_asset_count     = 1;
         
         U32 mesh_count    = 0;
         U32 texture_count = 0;
@@ -786,6 +749,48 @@ ReloadAssets(Game_Assets* assets, Memory_Arena* asset_arena)
                 Platform->CloseFile(&file_handle);
             }
         }
+        
+        assets->data_files      = PushArray(asset_arena, Platform_File_Info, real_data_file_count);
+        assets->data_file_count = real_data_file_count;
+        
+        assets->tag_table = PushArray(asset_arena, Asset_Tag_Table_Entry, real_tag_count);
+        assets->tag_count = real_tag_count;
+        
+        assets->assets      = PushArray(asset_arena, Asset, real_asset_count);
+        assets->asset_count = real_asset_count;
+        
+        for (U32 i = 0; i < assets->data_file_count; ++i)
+        {
+            CopyStruct(&temp_data_files[i], &assets->data_files[i]);
+            
+            UMM base_name_length = StrLength(temp_data_files[i].base_name);
+            assets->data_files[i].base_name = PushArray(asset_arena, char, base_name_length + 1);
+            ZeroSize(assets->data_files[i].base_name, base_name_length + 1);
+            Copy(temp_data_files[i].base_name, assets->data_files[i].base_name, base_name_length);
+            
+            assets->data_files[i].platform_data.size = temp_data_files[i].platform_data.size;
+            assets->data_files[i].platform_data.data = (U8*) PushSize(asset_arena, temp_data_files[i].platform_data.size, MaxAlignOfPointer(temp_data_files[i].platform_data.data));
+            ZeroSize(assets->data_files[i].platform_data.data, assets->data_files[i].platform_data.size);
+            Copy(temp_data_files[i].platform_data.data, assets->data_files[i].platform_data.data, assets->data_files[i].platform_data.size);
+            
+        }
+        
+        for (U32 i = 0; i < assets->tag_count; ++i)
+        {
+            assets->tag_table[i].name.size = temp_tag_table[i].name.size;
+            assets->tag_table[i].name.data = PushArray(asset_arena, U8, assets->tag_table[i].name.size);
+            Copy(temp_tag_table[i].name.data, assets->tag_table[i].name.data, assets->tag_table[i].name.size);
+        }
+        
+        assets->mesh_count    = mesh_count;
+        assets->texture_count = texture_count;
+        
+        assets->meshes   = assets->assets;
+        assets->textures = assets->meshes + assets->mesh_count;
+        
+        SortAssets(assets);
+        
+        // TODO(soimn): Default assets
     }
     
     else
