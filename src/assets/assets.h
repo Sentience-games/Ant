@@ -4,6 +4,7 @@
 
 // NOTE(soimn): the alignment of the members in the reg file structs are dependent on this, and must therefore be 
 //              taken into acount if the max per asset tag count is to be altered.
+// IMPORTANT(soimn): The asset count MUST be divisible by 4
 #define ASSET_MAX_PER_ASSET_TAG_COUNT 8
 
 #define ASSET_INTERNAL_MAX_ALLOWED_ASSETS_ADDED_AT_RUNTIME 100
@@ -71,8 +72,6 @@ struct Asset_File
     
     U32* local_data_file_table;
     U32* local_tag_table;
-    
-    // NOTE(soimn): this will be used for "by file" searching in the editor, but is currently not implemented.
     U32* assets;
     
     U32 data_file_count;
@@ -176,7 +175,7 @@ BASE_PATH
 -- RELATIVE_PATH
 
 #TAG_TABLE
-    -- TAG_NAME - PRECEDENCE - ASSET_COUNT
+    -- TAG_NAME - PRECEDENCE
     
 #ASSET_TABLE
 -- FILE_ID - OFFSET - SIZE - TYPE - PAD - TAGS - TYPE_SPECIFIC_METADATA

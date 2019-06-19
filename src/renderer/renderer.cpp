@@ -38,7 +38,7 @@ struct Render_Batch_Cull_Entry
 inline void
 RendererPushNewRenderBatchBlock(Render_Batch* batch)
 {
-    void* new_block = PushSize(batch->arena, sizeof(Render_Batch_Entry) * batch->block_size + sizeof(void*), alignof(Render_Batch_Entry));
+    void* new_block = PushSize(batch->arena, sizeof(Render_Batch_Entry) * batch->block_size + sizeof(void*), alignof(void*));
     
     new_block = (U8*) new_block + sizeof(void*);
     

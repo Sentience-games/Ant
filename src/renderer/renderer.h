@@ -8,7 +8,7 @@
 #include "math/aabb.h"
 
 #define RENDERER_MAX_FRAMEBUFFER_COLOR_ATTACHMENTS 8
-#define RENDERER_MAX_ENTRY_COUNT_PER_RENDER_BATCH_BLOCK 1024
+#define RENDERER_RENDER_BATCH_BLOCK_SIZE 1024
 
 struct GPU_Buffer
 {
@@ -90,10 +90,10 @@ enum MATERIAL_FLAGS
 
 struct Material
 {
-    U32 normal_map;
-    
+    alignas(4) Flag16(MATERIAL_FLAGS) flags;
     U16 shader;
-    Flag16(MATERIAL_FLAGS) flags;
+    
+    U32 normal_map;
     
     union
     {
@@ -185,7 +185,7 @@ struct Framebuffer
 
 typedef U32 Framebuffer_ID;
 
-// MANAGED DRAWING
+// MANAGED RENDERING
 ////////////////////////////////
 
 #define RENDERER_PREPARE_FRAME_FUNCTION(name) void name (void)

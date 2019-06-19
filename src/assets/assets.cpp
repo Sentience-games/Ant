@@ -2,95 +2,91 @@
 
 #include "utils/string.h"
 
-inline U32
+inline void
 SortTags(Game_Assets* assets, Asset_Tag* tags)
 {
-    
-    U32 erroneous_index = U32_MAX;
-    for (U32 i = 0; i < ASSET_MAX_PER_ASSET_TAG_COUNT; ++i)
+    for (U32 i = 0; i < ASSET_MAX_PER_ASSET_TAG_COUNT - 1; ++i)
     {
-        if (tags[i].value >= assets->tag_count)
+        for (U32 j = i + 1; j < ASSET_MAX_PER_ASSET_TAG_COUNT; ++j)
         {
-            erroneous_index = i;
-            break;
-        }
-    }
-    
-    if (erroneous_index == U32_MAX)
-    {
-        for (U32 i = 0; i < ASSET_MAX_PER_ASSET_TAG_COUNT - 1; ++i)
-        {
-            for (U32 j = i + 1; j < ASSET_MAX_PER_ASSET_TAG_COUNT; ++j)
+            Assert(tags[i].value < assets->tag_count && tags[j].value < assets->tag_count);
+            
+            bool less = tags[i].value > tags[j].value;
+            bool precedence_less = assets->tag_table[tags[i].value].precedence > assets->tag_table[tags[j].value].precedence;
+            
+            if (less || (tags[i].value == tags[j].value && precedence_less) || !tags[i].value && tags[j].value)
             {
-                if (tags[i].value > tags[j].value || (tags[i].value == tags[j].value && assets->tag_table[tags[i].value].precedence > assets->tag_table[tags[j].value].precedence) || !tags[i].value && tags[j].value)
-                {
-                    Asset_Tag temp = tags[i];
-                    tags[i] = tags[j];
-                    tags[j] = temp;
-                    j = i + 1;
-                }
+                Asset_Tag temp = tags[i];
+                tags[i] = tags[j];
+                tags[j] = temp;
+                j = i + 1;
             }
         }
     }
-    
-    return erroneous_index;
 }
 
-inline bool
+inline void
 SortAssetsByTags(Game_Assets* assets, Asset* assets_to_sort, U32 count)
 {
-    bool encountered_errors = false;
-    
     for (U32 i = 0; i < count; ++i)
     {
-        encountered_errors = (SortTags(assets, assets_to_sort[i].tags) != U32_MAX);
+        SortTags(assets, assets_to_sort[i].tags);
     }
     
-    if (!encountered_errors)
+    for (U32 i = 0; i < count - 1; ++i)
     {
-        for (U32 i = 0; i < count - 1; ++i)
+        for (U32 j = i + 1; j < count; ++j)
         {
-            for (U32 j = i + 1; j < count; ++j)
+            bool should_swap = false;
+            
+            if (assets_to_sort[i].tags[0].value > assets_to_sort[j].tags[0].value)
             {
-                bool should_swap = false;
-                
-                if (assets_to_sort[i].tags[0].value > assets_to_sort[j].tags[0].value)
+                should_swap = true;
+            }
+            
+            else if (assets_to_sort[i].tags[0].value == assets_to_sort[j].tags[0].value)
+            {
+                for (U32 k = 1; k < ASSET_MAX_PER_ASSET_TAG_COUNT; ++k)
                 {
-                    should_swap = true;
-                }
-                
-                else if (assets_to_sort[i].tags[0].value == assets_to_sort[j].tags[0].value)
-                {
-                    for (U32 k = 1; k < ASSET_MAX_PER_ASSET_TAG_COUNT; ++k)
+                    if (assets_to_sort[i].tags[k].value > assets_to_sort[j].tags[k].value)
                     {
-                        if (assets_to_sort[i].tags[k].value > assets_to_sort[j].tags[k].value)
-                        {
-                            should_swap = true;
-                        }
+                        should_swap = true;
                     }
                 }
-                
-                if (should_swap)
-                {
-                    Asset temp = {};
-                    CopyStruct(&assets_to_sort[i], &temp);
-                    CopyStruct(&assets_to_sort[j], &assets_to_sort[i]);
-                    CopyStruct(&assets_to_sort[i], &temp);
-                    j = i + 1;
-                }
+            }
+            
+            if (should_swap)
+            {
+                Asset temp = {};
+                CopyStruct(&assets_to_sort[i], &temp);
+                CopyStruct(&assets_to_sort[j], &assets_to_sort[i]);
+                CopyStruct(&temp, &assets_to_sort[j]);
+                j = i + 1;
             }
         }
     }
-    
-    return !encountered_errors;
 }
 
-inline bool
+inline void
 SortAssets(Game_Assets* assets)
 {
-    // NOTE(soimn): This is very, very, very inefficient, however it is only executed once in a while so it should 
-    //              not matter much
-    for (U32 i = 0; i < assets->asset_count - 1; ++i)
+    for (U32 i = 1; i < assets->asset_count; ++i)
+    {
+        switch (assets->assets[i].type)
+        {
+            case Asset_Mesh:
+            ++assets->mesh_count;
+            break;
+            
+            case Asset_Texture:
+            ++assets->texture_count;
+            break;
+            
+            INVALID_DEFAULT_CASE;
+        }
+    }
+    
+    for (U32 i = 1; i < assets->asset_count - 1; ++i)
     {
         for (U32 j = i + 1; j < assets->asset_count; ++j)
         {
@@ -99,7 +95,7 @@ SortAssets(Game_Assets* assets)
                 Asset temp = {};
                 CopyStruct(&assets->assets[i], &temp);
                 CopyStruct(&assets->assets[j], &assets->assets[i]);
-                CopyStruct(&assets->assets[i], &temp);
+                CopyStruct(&temp, &assets->assets[j]);
                 j = i + 1;
             }
         }
@@ -107,8 +103,23 @@ SortAssets(Game_Assets* assets)
     
     SortAssetsByTags(assets, assets->meshes, assets->mesh_count);
     SortAssetsByTags(assets, assets->textures, assets->texture_count);
-    
-    return !encountered_errors;
+}
+
+inline void
+SortTagTable(Game_Assets* assets)
+{
+    for (U32 i = 1; i < assets->tag_count - 1; ++i)
+    {
+        for (U32 j = i + 1; j < assets->tag_count; ++j)
+        {
+            if (assets->tag_table[i].name.data[0] > assets->tag_table[j].name.data[0] && assets->tag_table[i].precedence > assets->tag_table[j].precedence)
+            {
+                Asset_Tag_Table_Entry temp = {};
+                CopyStruct(&assets->tag_table[i], &temp);
+                CopyStruct(&assets->tag_table[j], &assets->tag_table[i]);
+            }
+        }
+    }
 }
 
 inline Asset*
@@ -157,108 +168,87 @@ GetBestMatchingAssets(Game_Assets* assets, Enum8(ASSET_TYPE) type, const Asset_T
     
     Asset_Tag copied_tags[ASSET_MAX_PER_ASSET_TAG_COUNT] = {};
     CopyArray(tags, copied_tags, ASSET_MAX_PER_ASSET_TAG_COUNT);
-    bool successfully_sorted_tags = (SortTags(assets, copied_tags) == U32_MAX);
+    SortTags(assets, copied_tags);
     
-    if (successfully_sorted_tags)
+    Asset* first_asset = 0;
+    U32 count = 0;
+    
+    switch (type)
     {
-        Asset* first_asset = 0;
-        U32 count = 0;
+        case Asset_Mesh:
+        first_asset = assets->meshes;
+        count = assets->mesh_count;
+        break;
         
+        case Asset_Texture:
+        first_asset = assets->textures;
+        count = assets->texture_count;
+        break;
+        
+        INVALID_DEFAULT_CASE;
+    }
+    
+    Asset* first_matching_asset = 0;
+    if (copied_tags[0].value) first_matching_asset = SearchAssetsByTag(first_asset, count, copied_tags[0].value, 0, false);
+    
+    if (first_matching_asset)
+    {
+        count -= (U32)(first_matching_asset - first_asset);
+        
+        Asset* last_matching_asset = SearchAssetsByTag(first_matching_asset, count, copied_tags[0].value, 0, true);
+        
+        if (first_matching_asset == last_matching_asset)
+        {
+            result.first_asset = first_matching_asset;
+            result.count = 1;
+        }
+        
+        else
+        {
+            count = (U32)(last_matching_asset - first_matching_asset) + 1;
+            first_asset = first_matching_asset;
+            
+            for (U8 i = 1; i < ASSET_MAX_PER_ASSET_TAG_COUNT; ++i)
+            {
+                first_matching_asset = 0;
+                if (copied_tags[i].value) first_matching_asset = SearchAssetsByTag(first_asset, count, copied_tags[i].value, i, false);
+                
+                if (first_matching_asset)
+                {
+                    count -= (U32)(first_matching_asset - first_asset);
+                    first_asset = first_matching_asset;
+                    
+                    last_matching_asset = SearchAssetsByTag(first_matching_asset, count, copied_tags[i].value, i, true);
+                    
+                    count = (U32)(last_matching_asset - first_matching_asset) + 1;
+                }
+                
+                else
+                {
+                    result.first_asset = first_asset;
+                    result.count = count;
+                    break;
+                }
+            }
+        }
+    }
+    
+    else
+    {
         switch (type)
         {
             case Asset_Mesh:
-            first_asset = assets->meshes;
-            count = assets->mesh_count;
+            result.first_asset = assets->default_mesh;
             break;
             
             case Asset_Texture:
-            first_asset = assets->textures;
-            count = assets->texture_count;
-            break;
-            
-            case Asset_Material:
-            first_asset = assets->materials;
-            count = assets->material_count;
-            break;
-            
-            case Asset_Shader:
-            first_asset = assets->shaders;
-            count = assets->shader_count;
+            result.first_asset = assets->default_texture;
             break;
             
             INVALID_DEFAULT_CASE;
         }
         
-        Asset* first_matching_asset = 0;
-        if (copied_tags[0].value) first_matching_asset = SearchAssetsByTag(first_asset, count, copied_tags[0].value, 0, false);
-        
-        if (first_matching_asset)
-        {
-            count -= (U32)(first_matching_asset - first_asset);
-            
-            Asset* last_matching_asset = SearchAssetsByTag(first_matching_asset, count, copied_tags[0].value, 0, true);
-            
-            if (first_matching_asset == last_matching_asset)
-            {
-                result.first_asset = first_matching_asset;
-                result.count = 1;
-            }
-            
-            else
-            {
-                count = (U32)(last_matching_asset - first_matching_asset) + 1;
-                first_asset = first_matching_asset;
-                
-                for (U8 i = 1; i < ASSET_MAX_PER_ASSET_TAG_COUNT; ++i)
-                {
-                    first_matching_asset = 0;
-                    if (copied_tags[i].value) first_matching_asset = SearchAssetsByTag(first_asset, count, copied_tags[i].value, i, false);
-                    
-                    if (first_matching_asset)
-                    {
-                        count -= (U32)(first_matching_asset - first_asset);
-                        first_asset = first_matching_asset;
-                        
-                        last_matching_asset = SearchAssetsByTag(first_matching_asset, count, copied_tags[i].value, i, true);
-                        
-                        count = (U32)(last_matching_asset - first_matching_asset) + 1;
-                    }
-                    
-                    else
-                    {
-                        result.first_asset = first_asset;
-                        result.count = count;
-                        break;
-                    }
-                }
-            }
-        }
-        
-        else
-        {
-            switch (type)
-            {
-                case Asset_Mesh:
-                result.first_asset = assets->default_mesh;
-                break;
-                
-                case Asset_Texture:
-                result.first_asset = assets->default_texture;
-                break;
-                
-                case Asset_Material:
-                result.first_asset = assets->default_material;
-                break;
-                
-                case Asset_Shader:
-                result.first_asset = assets->default_shader;
-                break;
-                
-                INVALID_DEFAULT_CASE;
-            }
-            
-            result.count = 1;
-        }
+        result.count = 1;
     }
     
     return result;
@@ -272,7 +262,6 @@ ReloadAssets(Game_Assets* assets, Memory_Arena* asset_arena)
     Memory_Arena temp_memory;
     // block size
     
-    bool encountered_errors = false;
     { /// Open all asset reg files and validate the headers
         Platform_File_Group asset_reg_file_group = Platform->GetAllFilesOfTypeBegin(Platform_AssetFile);
         
@@ -319,13 +308,25 @@ ReloadAssets(Game_Assets* assets, Memory_Arena* asset_arena)
                             temp_asset_reg_files[i].wrong_endian = true;
                             temp_asset_reg_files[i].is_valid     = true;
                         }
+                        
+                        else
+                        {
+                            //// Error
+                            temp_asset_reg_files[i].is_valid = false;
+                        }
+                    }
+                    
+                    else
+                    {
+                        //// Error
+                        temp_asset_reg_files[i].is_valid = false;
                     }
                 }
                 
                 else
                 {
-                    encountered_errors = true;
-                    break;
+                    //// Error
+                    temp_asset_reg_files[i].is_valid = false;
                 }
                 
                 Platform->CloseFile(&file_handle);
@@ -333,45 +334,42 @@ ReloadAssets(Game_Assets* assets, Memory_Arena* asset_arena)
                 scan = scan->next;
             }
             
-            if (!encountered_errors)
+            ClearArena(asset_arena);
+            *assets = {};
+            
+            assets->asset_file_count =  asset_reg_file_group.file_count;
+            assets->asset_files      = PushArray(asset_arena, Asset_File, assets->asset_file_count);
+            
+            for (U32 i = 0; i < assets->asset_file_count; ++i)
             {
-                ClearArena(asset_arena);
-                *assets = {};
+                Platform_File_Info* temp_file_info = assets->asset_files[i].file_info;
+                assets->asset_files[i].file_info   = PushStruct(asset_arena, Platform_File_Info);
                 
-                assets->asset_file_count =  asset_reg_file_group.file_count;
-                assets->asset_files      = PushArray(asset_arena, Asset_File, assets->asset_file_count);
+                CopyStruct(temp_file_info, assets->asset_files[i].file_info);
                 
-                for (U32 i = 0; i < assets->asset_file_count; ++i)
-                {
-                    Platform_File_Info* temp_file_info = assets->asset_files[i].file_info;
-                    assets->asset_files[i].file_info   = PushStruct(asset_arena, Platform_File_Info);
-                    
-                    CopyStruct(temp_file_info, assets->asset_files[i].file_info);
-                    
-                    UMM base_name_length = StrLength(assets->asset_files[i].file_info->base_name);
-                    char* temp_base_name = assets->asset_files[i].file_info->base_name;
-                    
-                    assets->asset_files[i].file_info->base_name = PushArray(asset_arena, char, base_name_length + 1);
-                    
-                    ZeroSize(assets->asset_files[i].file_info->base_name, base_name_length + 1);
-                    
-                    Copy(temp_base_name, assets->asset_files[i].file_info->base_name, base_name_length);
-                    
-                    Buffer temp_platform_data = assets->asset_files[i].file_info->platform_data;
-                    
-                    assets->asset_files[i].file_info->platform_data.data = (U8*) PushSize(asset_arena, temp_platform_data.size, MaxAlignOfPointer(temp_platform_data.data));
-                    
-                    ZeroSize(assets->asset_files[i].file_info->platform_data.data, temp_platform_data.size);
-                    
-                    Copy(temp_platform_data.data, assets->asset_files[i].file_info->platform_data.data, temp_platform_data.size);
-                }
+                UMM base_name_length = StrLength(assets->asset_files[i].file_info->base_name);
+                char* temp_base_name = assets->asset_files[i].file_info->base_name;
+                
+                assets->asset_files[i].file_info->base_name = PushArray(asset_arena, char, base_name_length + 1);
+                
+                ZeroSize(assets->asset_files[i].file_info->base_name, base_name_length + 1);
+                
+                Copy(temp_base_name, assets->asset_files[i].file_info->base_name, base_name_length);
+                
+                Buffer temp_platform_data = assets->asset_files[i].file_info->platform_data;
+                
+                assets->asset_files[i].file_info->platform_data.data = (U8*) PushSize(asset_arena, temp_platform_data.size, MaxAlignOfPointer(temp_platform_data.data));
+                
+                ZeroSize(assets->asset_files[i].file_info->platform_data.data, temp_platform_data.size);
+                
+                Copy(temp_platform_data.data, assets->asset_files[i].file_info->platform_data.data, temp_platform_data.size);
             }
         }
         
         Platform->GetAllFilesOfTypeEnd(&asset_reg_file_group);
     }
     
-    if (!encountered_errors)
+    if (assets->asset_file_count)
     {
         ClearArena(&temp_memory);
         
@@ -396,10 +394,7 @@ ReloadAssets(Game_Assets* assets, Memory_Arena* asset_arena)
         // NOTE(soimn): The 0th member is reserved
         U32 real_data_file_count = 1;
         U32 real_tag_count       = 1;
-        U32 real_asset_count     = 1;
-        
-        U32 mesh_count    = 0;
-        U32 texture_count = 0;
+        U32 real_asset_count     = 1; // TODO(soimn): Find out how to assign default assets to erroneous ones
         
         void* file_buffer = PushSize(&temp_memory, MEGABYTES(128));
         
@@ -543,22 +538,15 @@ ReloadAssets(Game_Assets* assets, Memory_Arena* asset_arena)
                                             ++scan;
                                         }
                                         
-                                        if (scan != file_contents.data + one_past_end_of_section && (UMM)(scan - start) == sizeof(U8) + sizeof(U32))
+                                        if (scan != file_contents.data + one_past_end_of_section && (UMM)(scan - start) == sizeof(U8))
                                         {
                                             bytes_read += (U32) (scan - start) + 1;
                                             
                                             U8 precedence   = *start;
-                                            U32 asset_count = *(U32*)(start + 1);
-                                            
-                                            if (current_file->wrong_endian)
-                                            {
-                                                asset_count = SwapEndianess(asset_count);
-                                            }
                                             
                                             Asset_Tag_Table_Entry temp_entry = {};
                                             temp_entry.name        = extracted_name;
                                             temp_entry.precedence  = precedence;
-                                            temp_entry.asset_count = asset_count;
                                             
                                             I64 found_equal = -1;
                                             for (U32 j = 0; j < real_tag_count; ++j)
@@ -597,152 +585,165 @@ ReloadAssets(Game_Assets* assets, Memory_Arena* asset_arena)
                             }
                             
                             { /// Parse asset section
-                                Asset_Reg_File_Asset_Entry temp_entry = {};
-                                
                                 U32 index = 0;
                                 
                                 while (bytes_read < file_contents.size)
                                 {
-                                    U32 remaining_space = (U32)(file_contents.size - bytes_read);
-                                    
-                                    temp_entry = *((Asset_Reg_File_Asset_Entry*) file_contents.data + bytes_read);
-                                    
-                                    StaticAssert(sizeof(temp_entry) == sizeof(U64) * 2 + sizeof(U16) * ASSET_MAX_PER_ASSET_TAG_COUNT + MAX(sizeof(temp_entry.mesh_metadata), sizeof(temp_entry.texture_metadata)));
-                                    U32 base_size = sizeof(U64) * 2 + sizeof(U16) * ASSET_MAX_PER_ASSET_TAG_COUNT;
-                                    
-                                    U32 required_space = 0;
-                                    switch (temp_entry.type)
+                                    U8* start = file_contents.data + bytes_read;
+                                    U8* scan  = start;
+                                    while (scan < file_contents.data + file_contents.size && *scan != ';')
                                     {
-                                        case Asset_Mesh:
-                                        required_space = base_size + sizeof(temp_entry.mesh_metadata);
-                                        break;
-                                        
-                                        case Asset_Texture:
-                                        required_space = base_size + sizeof(temp_entry.texture_metadata);
-                                        break;
+                                        ++scan;
+                                        ++bytes_read;
                                     }
                                     
-                                    if (required_space != 0 && remaining_space >= required_space)
+                                    ++bytes_read;
+                                    
+                                    if (scan < file_contents.data + file_contents.size)
                                     {
-                                        bytes_read += required_space;
+                                        Asset_Reg_File_Asset_Entry temp_entry = *(Asset_Reg_File_Asset_Entry*) start;
+                                        U32 base_size = sizeof(U64) * 2 + sizeof(U16) * ASSET_MAX_PER_ASSET_TAG_COUNT;
                                         
-                                        if (current_file->wrong_endian)
+                                        StaticAssert(sizeof(temp_entry) == sizeof(U64) * 2 + sizeof(U16) * ASSET_MAX_PER_ASSET_TAG_COUNT + MAX(sizeof(temp_entry.mesh_metadata), sizeof(temp_entry.texture_metadata)));
+                                        
+                                        U32 required_space = 0;
+                                        switch (temp_entry.type)
                                         {
-                                            temp_entry.source_file_id = SwapEndianess(temp_entry.source_file_id);
-                                            temp_entry.offset = SwapEndianess(temp_entry.offset);
-                                            temp_entry.size = SwapEndianess(temp_entry.size);
+                                            case Asset_Mesh:
+                                            required_space = base_size + sizeof(temp_entry.mesh_metadata);
+                                            break;
                                             
-                                            for (U32 j = 0; j < ASSET_MAX_PER_ASSET_TAG_COUNT; ++j)
-                                            {
-                                                
-                                                temp_entry.tags[j] = SwapEndianess(temp_entry.tags[j]);
-                                            }
-                                            
-                                            switch (temp_entry.type)
-                                            {
-                                                case Asset_Mesh:
-                                                temp_entry.mesh_metadata.triangle_list_count = SwapEndianess(temp_entry.mesh_metadata.triangle_list_count);
-                                                break;
-                                                
-                                                case Asset_Texture:
-                                                temp_entry.texture_metadata.width = SwapEndianess(temp_entry.texture_metadata.width);
-                                                temp_entry.texture_metadata.height = SwapEndianess(temp_entry.texture_metadata.height);
-                                                break;
-                                                
-                                                INVALID_DEFAULT_CASE;
-                                            }
+                                            case Asset_Texture:
+                                            required_space = base_size + sizeof(temp_entry.texture_metadata);
+                                            break;
                                         }
                                         
-                                        if (temp_entry.source_file_id < current_file->data_file_count)
+                                        if ((U32)(scan - start) == required_space)
                                         {
-                                            U32 source_file_id = current_file->local_data_file_table[temp_entry.source_file_id];
+                                            // NOTE(soimn): At this point the size of the terminated region is the same as the 
+                                            //              required space for the type specified. This, and checking the existance 
+                                            //              of the data file of each asset, is all the validity checks I can think 
+                                            //              of at the moment (without changing the asset file format to a non-binary 
+                                            //              format, akin to JSON). It would be nice if more checks could be done, 
+                                            //              and weird errors averted, however the tell-tale signs of a parsing fault 
+                                            //              is the lack of certain assets or default data assigned to said assets. 
+                                            //              Therefore such a fault would hopefully not be very disruptive towards 
+                                            //              development, and could most likely be resolved by making a asset reg 
+                                            //              file visualizer.
                                             
-                                            if (!IsStructZero(&temp_data_files[source_file_id]))
+                                            if (current_file->wrong_endian)
                                             {
-                                                Asset asset = {};
+                                                temp_entry.source_file_id = SwapEndianess(temp_entry.source_file_id);
+                                                temp_entry.offset         = SwapEndianess(temp_entry.offset);
+                                                temp_entry.size           = SwapEndianess(temp_entry.size);
                                                 
-                                                asset.reg_file_id    = i;
-                                                asset.source_file_id = temp_entry.source_file_id;
-                                                asset.offset         = temp_entry.offset;
-                                                asset.size           = temp_entry.size;
-                                                asset.type           = temp_entry.type;
-                                                asset.state          = Asset_Unloaded;
+                                                for (U32 j = 0; j < ASSET_MAX_PER_ASSET_TAG_COUNT; ++j)
+                                                {
+                                                    temp_entry.tags[j] = SwapEndianess(temp_entry.tags[j]);
+                                                }
                                                 
-                                                switch (asset.type)
+                                                switch (temp_entry.type)
                                                 {
                                                     case Asset_Mesh:
-                                                    asset.mesh.triangle_list_count = temp_entry.mesh_metadata.triangle_list_count;
-                                                    
-                                                    ++mesh_count;
+                                                    temp_entry.mesh_metadata.triangle_list_count = SwapEndianess(temp_entry.mesh_metadata.triangle_list_count);
                                                     break;
                                                     
                                                     case Asset_Texture:
-                                                    asset.texture.type          = temp_entry.texture_metadata.type;
-                                                    asset.texture.format        = temp_entry.texture_metadata.format;
-                                                    asset.texture.u_wrapping    = temp_entry.texture_metadata.u_wrapping;
-                                                    asset.texture.v_wrapping    = temp_entry.texture_metadata.v_wrapping;
-                                                    asset.texture.min_filtering = temp_entry.texture_metadata.min_filtering;
-                                                    asset.texture.mag_filtering = temp_entry.texture_metadata.mag_filtering;
-                                                    asset.texture.width         = temp_entry.texture_metadata.width;
-                                                    asset.texture.height        = temp_entry.texture_metadata.height;
-                                                    asset.texture.mip_levels    = temp_entry.texture_metadata.mip_levels;
-                                                    
-                                                    ++texture_count;
+                                                    temp_entry.texture_metadata.width  = SwapEndianess(temp_entry.texture_metadata.width);
+                                                    temp_entry.texture_metadata.height = SwapEndianess(temp_entry.texture_metadata.height);
                                                     break;
                                                     
                                                     INVALID_DEFAULT_CASE;
                                                 }
+                                            }
+                                            
+                                            if (temp_entry.source_file_id < current_file->data_file_count)
+                                            {
+                                                U32 source_file_id = current_file->local_data_file_table[temp_entry.source_file_id];
                                                 
-                                                temp_assets[real_asset_count++] = asset;
+                                                if (!IsStructZero(&temp_data_files[source_file_id]))
+                                                {
+                                                    Asset asset = {};
+                                                    
+                                                    asset.reg_file_id    = i;
+                                                    asset.source_file_id = temp_entry.source_file_id;
+                                                    asset.offset         = temp_entry.offset;
+                                                    asset.size           = temp_entry.size;
+                                                    asset.type           = temp_entry.type;
+                                                    asset.state          = Asset_Unloaded;
+                                                    
+                                                    switch (asset.type)
+                                                    {
+                                                        case Asset_Mesh:
+                                                        asset.mesh.triangle_list_count = temp_entry.mesh_metadata.triangle_list_count;
+                                                        break;
+                                                        
+                                                        case Asset_Texture:
+                                                        asset.texture.type          = temp_entry.texture_metadata.type;
+                                                        asset.texture.format        = temp_entry.texture_metadata.format;
+                                                        asset.texture.u_wrapping    = temp_entry.texture_metadata.u_wrapping;
+                                                        asset.texture.v_wrapping    = temp_entry.texture_metadata.v_wrapping;
+                                                        asset.texture.min_filtering = temp_entry.texture_metadata.min_filtering;
+                                                        asset.texture.mag_filtering = temp_entry.texture_metadata.mag_filtering;
+                                                        asset.texture.width         = temp_entry.texture_metadata.width;
+                                                        asset.texture.height        = temp_entry.texture_metadata.height;
+                                                        asset.texture.mip_levels    = temp_entry.texture_metadata.mip_levels;
+                                                        break;
+                                                        
+                                                        INVALID_DEFAULT_CASE;
+                                                    }
+                                                    
+                                                    // NOTE(soimn): This translates the tags from the file local values, to the global 
+                                                    //              values.
+                                                    for (U32 j = 0; j < ASSET_MAX_PER_ASSET_TAG_COUNT; ++j)
+                                                    {
+                                                        asset.tags[j].value = (U16) current_file->local_tag_table[temp_entry.tags[j]];
+                                                    }
+                                                    
+                                                    temp_assets[real_asset_count++] = asset;
+                                                }
+                                                
+                                                else
+                                                {
+                                                    //// Error: The data file does not exist
+                                                }
                                             }
                                             
                                             else
                                             {
-                                                // TODO(soimn): The data file specified by the asset was not loaded properly. Assign 
-                                                //              default values to the asset depending on the type.
-                                                INVALID_CODE_PATH;
+                                                //// Error: The size of the terminated region does not equal the size required for the specified asset type
                                             }
-                                        }
-                                        
-                                        else
-                                        {
-                                            //// Error
                                         }
                                     }
                                     
                                     else
                                     {
-                                        //// Error
-                                        
-                                        // NOTE(soimn): The asset parsing does not use terminating characters, which in turn 
-                                        //              means that a fault in an assets entry's size will invalidate the 
-                                        //              remainder of the file, as the parser has no way to recover. This could 
-                                        //              be solved by introducing terminating characters.
-                                        break;
+                                        //// Error: The scan reached the end of the file without encountering a terminator
                                     }
                                     
                                     ++index;
                                 }
+                                
                             }
                         }
                         
                         else
                         {
-                            //// Error
+                            //// Error: No data was read from the asset reg file
                             assets->asset_files[i].is_valid = false;
                         }
                     }
                     
                     else
                     {
-                        //// Error
+                        //// Error: The asset reg file is too large
                         assets->asset_files[i].is_valid = false;
                     }
                 }
                 
                 else
                 {
-                    //// Error
+                    //// Error: Failed to open file
                     assets->asset_files[i].is_valid = false;
                 }
                 
@@ -778,24 +779,22 @@ ReloadAssets(Game_Assets* assets, Memory_Arena* asset_arena)
         for (U32 i = 0; i < assets->tag_count; ++i)
         {
             assets->tag_table[i].name.size = temp_tag_table[i].name.size;
-            assets->tag_table[i].name.data = PushArray(asset_arena, U8, assets->tag_table[i].name.size);
-            Copy(temp_tag_table[i].name.data, assets->tag_table[i].name.data, assets->tag_table[i].name.size);
+            assets->tag_table[i].name.data = PushArray(asset_arena, U8, temp_tag_table[i].name.size);
+            Copy(temp_tag_table[i].name.data, assets->tag_table[i].name.data, temp_tag_table[i].name.size);
         }
         
-        assets->mesh_count    = mesh_count;
-        assets->texture_count = texture_count;
+        for (U32 i = 0; i < assets->asset_count; ++i)
+        {
+            CopyStruct(&temp_assets[i], &assets->assets[i]);
+        }
         
-        assets->meshes   = assets->assets;
-        assets->textures = assets->meshes + assets->mesh_count;
-        
+        SortTagTable(assets);
         SortAssets(assets);
-        
-        // TODO(soimn): Default assets
     }
     
     else
     {
-        //// Error
+        //// Error: There were no asset reg files found
         result = -2;
     }
     

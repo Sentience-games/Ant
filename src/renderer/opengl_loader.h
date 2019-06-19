@@ -660,8 +660,6 @@ GLLoad (OpenGL_Binding* binding, Process_Handle process_handle, Window_Handle wi
         BREAK_ON_FALSE(GLLoadFunctions(binding));
         
         // Get capabilities
-        ///////////////////
-        
         binding->glGetIntegerv(0x88FF, (GLint*) &binding->capabilities.max_texture_array_layers);
         
         succeeded = true;
