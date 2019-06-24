@@ -51,7 +51,7 @@ struct Platform_File_Info
 {
 	U64 timestamp;
 	U64 file_size;
-	char* base_name;
+    String base_name;
     Buffer platform_data;
     
 	Platform_File_Info* next;

@@ -1,9 +1,10 @@
 TODO
 
+Consider moving everything that touches the game from terminated to lenght based strings
 Rewrite the file handling system
 Win32MainWindowProc catches WM_INPUT messages
 The application crashes without an error log when the data directory is not found
-Set viewport dimensions and implement restricted resizing of the window
+Set viewport dimensions and implement restricted resizing of the window. This seems to be problematic on windows
 Refactor input handling to allow hot plugging of devices
 memory usage shadowing
 /// render prep batch sorting
@@ -16,3 +17,5 @@ memory usage shadowing
 Rewrite asset files that are tagged as "wrong_endian" at startup and reload those files
 
 //// REMOVE STDARG FROM STRING.H
+
+//// Verify that the function 'WideCharToMultiByte' is used correctly in 'Win32GetAllFilesOfTypeBegin' 'Win32GetFileInfo'

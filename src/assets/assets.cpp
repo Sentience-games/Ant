@@ -70,7 +70,7 @@ SortAssetsByTags(Game_Assets* assets, Asset* assets_to_sort, U32 count)
 inline void
 SortAssets(Game_Assets* assets)
 {
-    for (U32 i = 1; i < assets->asset_count; ++i)
+    for (U32 i = 0; i < assets->asset_count; ++i)
     {
         switch (assets->assets[i].type)
         {
@@ -86,7 +86,7 @@ SortAssets(Game_Assets* assets)
         }
     }
     
-    for (U32 i = 1; i < assets->asset_count - 1; ++i)
+    for (U32 i = 0; i < assets->asset_count - 1; ++i)
     {
         for (U32 j = i + 1; j < assets->asset_count; ++j)
         {
@@ -101,6 +101,9 @@ SortAssets(Game_Assets* assets)
         }
     }
     
+    assets->meshes   = assets->assets;
+    assets->textures = assets->meshes + assets->mesh_count;
+    
     SortAssetsByTags(assets, assets->meshes, assets->mesh_count);
     SortAssetsByTags(assets, assets->textures, assets->texture_count);
 }
@@ -108,7 +111,7 @@ SortAssets(Game_Assets* assets)
 inline void
 SortTagTable(Game_Assets* assets)
 {
-    for (U32 i = 1; i < assets->tag_count - 1; ++i)
+    for (U32 i = 0; i < assets->tag_count - 1; ++i)
     {
         for (U32 j = i + 1; j < assets->tag_count; ++j)
         {
@@ -265,6 +268,8 @@ ReloadAssets(Game_Assets* assets, Memory_Arena* asset_arena)
     { /// Open all asset reg files and validate the headers
         Platform_File_Group asset_reg_file_group = Platform->GetAllFilesOfTypeBegin(Platform_AssetFile);
         
+        U32 valid_file_count = 0;
+        
         if (asset_reg_file_group.file_count)
         {
             Asset_File* temp_asset_reg_files = PushArray(&temp_memory, Asset_File, asset_reg_file_group.file_count);
@@ -276,7 +281,7 @@ ReloadAssets(Game_Assets* assets, Memory_Arena* asset_arena)
                 
                 if (file_handle.is_valid)
                 {
-                    temp_asset_reg_files[i].file_info = scan;
+                    CopyStruct(scan, &temp_asset_reg_files[i].file_info);
                     
                     Asset_Reg_File_Header file_header = {};
                     
@@ -294,6 +299,7 @@ ReloadAssets(Game_Assets* assets, Memory_Arena* asset_arena)
                             temp_asset_reg_files[i].one_past_end_of_tag_table_section = file_header.one_past_end_of_tag_table_section;
                             
                             temp_asset_reg_files[i].is_valid = true;
+                            ++valid_file_count;
                         }
                         
                         else if (file_header.magic_value == SwapEndianess(ASSET_REG_FILE_MAGIC_VALUE))
@@ -307,25 +313,26 @@ ReloadAssets(Game_Assets* assets, Memory_Arena* asset_arena)
                             
                             temp_asset_reg_files[i].wrong_endian = true;
                             temp_asset_reg_files[i].is_valid     = true;
+                            ++valid_file_count;
                         }
                         
                         else
                         {
-                            //// Error
+                            //// Error: Invalid magic value
                             temp_asset_reg_files[i].is_valid = false;
                         }
                     }
                     
                     else
                     {
-                        //// Error
+                        //// Error: Failed to read the header of the file
                         temp_asset_reg_files[i].is_valid = false;
                     }
                 }
                 
                 else
                 {
-                    //// Error
+                    //// Error: Failed to open the file
                     temp_asset_reg_files[i].is_valid = false;
                 }
                 
@@ -337,64 +344,72 @@ ReloadAssets(Game_Assets* assets, Memory_Arena* asset_arena)
             ClearArena(asset_arena);
             *assets = {};
             
-            assets->asset_file_count =  asset_reg_file_group.file_count;
-            assets->asset_files      = PushArray(asset_arena, Asset_File, assets->asset_file_count);
+            assets->asset_file_count = 0;
+            assets->asset_files      = PushArray(asset_arena, Asset_File, valid_file_count);
             
-            for (U32 i = 0; i < assets->asset_file_count; ++i)
+            for (U32 i = 0; i < asset_reg_file_group.file_count; ++i)
             {
-                Platform_File_Info* temp_file_info = assets->asset_files[i].file_info;
-                assets->asset_files[i].file_info   = PushStruct(asset_arena, Platform_File_Info);
-                
-                CopyStruct(temp_file_info, assets->asset_files[i].file_info);
-                
-                UMM base_name_length = StrLength(assets->asset_files[i].file_info->base_name);
-                char* temp_base_name = assets->asset_files[i].file_info->base_name;
-                
-                assets->asset_files[i].file_info->base_name = PushArray(asset_arena, char, base_name_length + 1);
-                
-                ZeroSize(assets->asset_files[i].file_info->base_name, base_name_length + 1);
-                
-                Copy(temp_base_name, assets->asset_files[i].file_info->base_name, base_name_length);
-                
-                Buffer temp_platform_data = assets->asset_files[i].file_info->platform_data;
-                
-                assets->asset_files[i].file_info->platform_data.data = (U8*) PushSize(asset_arena, temp_platform_data.size, MaxAlignOfPointer(temp_platform_data.data));
-                
-                ZeroSize(assets->asset_files[i].file_info->platform_data.data, temp_platform_data.size);
-                
-                Copy(temp_platform_data.data, assets->asset_files[i].file_info->platform_data.data, temp_platform_data.size);
+                if (temp_asset_reg_files[i].is_valid)
+                {
+                    Asset_File* current_file = &assets->asset_files[assets->asset_file_count++];
+                    Asset_File* temp_file    = &temp_asset_reg_files[i];
+                    
+                    *current_file = {};
+                    current_file->data_file_count = temp_file->data_file_count;
+                    current_file->tag_count       = temp_file->tag_count;
+                    current_file->asset_count     = temp_file->asset_count;
+                    
+                    current_file->one_past_end_of_data_file_section =
+                        temp_file->one_past_end_of_data_file_section;
+                    
+                    current_file->one_past_end_of_tag_table_section = temp_file->one_past_end_of_tag_table_section;
+                    
+                    current_file->wrong_endian = temp_file->wrong_endian;
+                    
+                    current_file->file_info.timestamp = temp_file->file_info.timestamp;
+                    current_file->file_info.file_size = temp_file->file_info.file_size;
+                    
+                    UMM base_name_size = temp_file->file_info.base_name.size;
+                    current_file->file_info.base_name.size = base_name_size;
+                    current_file->file_info.base_name.data = PushArray(asset_arena, U8, base_name_size);
+                    
+                    Copy(temp_file->file_info.base_name.data, current_file->file_info.base_name.data, base_name_size);
+                    
+                    UMM platform_data_size = temp_file->file_info.platform_data.size;
+                    current_file->file_info.platform_data.size = platform_data_size;
+                    current_file->file_info.platform_data.data = PushArray(asset_arena, U8, platform_data_size);
+                    
+                    Copy(temp_file->file_info.platform_data.data, current_file->file_info.platform_data.data, platform_data_size);
+                    
+                    current_file->is_valid = true;
+                }
             }
         }
         
         Platform->GetAllFilesOfTypeEnd(&asset_reg_file_group);
+        ClearArena(&temp_memory);
     }
     
     if (assets->asset_file_count)
     {
-        ClearArena(&temp_memory);
-        
         U32 max_data_file_count = 0;
         U32 max_tag_count       = 0;
         U32 max_asset_count     = 0;
         
         for (U32 i = 0; i < assets->asset_file_count; ++i)
         {
-            if (assets->asset_files[i].is_valid)
-            {
-                max_data_file_count += assets->asset_files[i].data_file_count;
-                max_tag_count       += assets->asset_files[i].tag_count;
-                max_asset_count     += assets->asset_files[i].asset_count;
-            }
+            max_data_file_count += assets->asset_files[i].data_file_count;
+            max_tag_count       += assets->asset_files[i].tag_count;
+            max_asset_count     += assets->asset_files[i].asset_count;
         }
         
-        Platform_File_Info* temp_data_files    = PushArray(&temp_memory, Platform_File_Info, max_data_file_count + 1);
-        Asset_Tag_Table_Entry* temp_tag_table  = PushArray(&temp_memory, Asset_Tag_Table_Entry, max_tag_count + 1);
-        Asset* temp_assets                     = PushArray(&temp_memory, Asset, max_asset_count + 1);
+        String* temp_data_files               = PushArray(&temp_memory, String, max_data_file_count);
+        Asset_Tag_Table_Entry* temp_tag_table = PushArray(&temp_memory, Asset_Tag_Table_Entry, max_tag_count);
+        Asset* temp_assets                    = PushArray(&temp_memory, Asset, max_asset_count);
         
-        // NOTE(soimn): The 0th member is reserved
-        U32 real_data_file_count = 1;
-        U32 real_tag_count       = 1;
-        U32 real_asset_count     = 1; // TODO(soimn): Find out how to assign default assets to erroneous ones
+        U32 real_data_file_count = 0;
+        U32 real_tag_count       = 0;
+        U32 real_asset_count     = 0;
         
         void* file_buffer = PushSize(&temp_memory, MEGABYTES(128));
         
@@ -406,147 +421,129 @@ ReloadAssets(Game_Assets* assets, Memory_Arena* asset_arena)
         
         for (U32 i = 0; i < assets->asset_file_count; ++i)
         {
-            if (assets->asset_files[i].is_valid)
+            Platform_File_Handle file_handle = Platform->OpenFile(&assets->asset_files[i].file_info, Platform_OpenRead);
+            
+            if (file_handle.is_valid)
             {
-                Platform_File_Handle file_handle = Platform->OpenFile(assets->asset_files[i].file_info, Platform_OpenRead);
-                
-                if (file_handle.is_valid)
+                if (assets->asset_files[i].file_info.file_size <= MEGABYTES(128))
                 {
-                    if (assets->asset_files[i].file_info->file_size <= MEGABYTES(128))
+                    Asset_File* current_file = &assets->asset_files[i];
+                    
+                    File_Error_Code read_error = Platform->ReadFromFile(file_handle, sizeof(Asset_Reg_File_Header), MEGABYTES(128), file_buffer);
+                    
+                    if (read_error > 0)
                     {
-                        Asset_File* current_file = &assets->asset_files[i];
+                        String file_contents = {(UMM) read_error, (U8*) file_buffer};
                         
-                        File_Error_Code read_error = Platform->ReadFromFile(file_handle, sizeof(Asset_Reg_File_Header), MEGABYTES(128), file_buffer);
+                        current_file->local_data_file_table = PushArray(asset_arena, I64, current_file->data_file_count);
+                        current_file->local_tag_table = PushArray(asset_arena, I64, current_file->tag_count);
+                        current_file->assets          = PushArray(asset_arena, I64, current_file->asset_count);
                         
-                        if (read_error > 0)
-                        {
-                            String file_contents = {(UMM) read_error, (U8*) file_buffer};
-                            
-                            current_file->local_data_file_table = PushArray(asset_arena, U32, current_file->data_file_count);
-                            current_file->local_tag_table = PushArray(asset_arena, U32, current_file->tag_count);
-                            current_file->assets          = PushArray(asset_arena, U32, current_file->asset_count);
-                            
-                            ZeroSize(current_file->local_data_file_table, sizeof(U32) * current_file->data_file_count);
-                            ZeroSize(current_file->local_tag_table, sizeof(U32) * current_file->tag_count);
-                            ZeroSize(current_file->assets, sizeof(U32) * current_file->asset_count);
-                            
+                        // NOTE(soimn): This sets all the values to -1. This is my best attempt at making the 
+                        //              erroneous members a bit more manageable, as reserving the 0th member of 
+                        //              the global tables or incrementing all valid indecies by one seemed a bit 
+                        //              cumbersome. This way the loading functions are quickly able to determine 
+                        //              if the file exists or not, as the index is -1 if it doesn't. Although the 
+                        //              same is true for zero initialized lists, instead of -1 initialized, this 
+                        //              way seems to be a tad bit cleaner.
+                        MemSet(current_file->local_data_file_table, sizeof(I64) * current_file->data_file_count, 0xFF);
+                        MemSet(current_file->local_tag_table, sizeof(I64) * current_file->tag_count, 0xFF);
+                        MemSet(current_file->assets, sizeof(I64) * current_file->asset_count, 0xFF);
+                        
+                        { /// Parse data file section
                             U32 bytes_read = sizeof(Asset_Reg_File_Header);
                             
-                            { /// Parse data file section
-                                U32 index                   = 0;
-                                U32 one_past_end_of_section = current_file->one_past_end_of_data_file_section;
+                            U32 index = 0;
+                            
+                            U32 one_past_end_of_section = current_file->one_past_end_of_data_file_section;
+                            
+                            while (bytes_read < one_past_end_of_section)
+                            {
+                                String path      = {};
+                                String base_name = {};
                                 
-                                while (bytes_read < one_past_end_of_section)
+                                U8* start = file_contents.data + bytes_read;
+                                U8* scan  = start;
+                                
+                                while (scan < file_contents.data + one_past_end_of_section && *scan != ';')
                                 {
-                                    String path      = {};
-                                    String base_name = {};
+                                    ++scan;
+                                    ++bytes_read;
+                                }
+                                
+                                if (scan != file_contents.data + one_past_end_of_section)
+                                {
+                                    String extracted_path = {(UMM)(start - scan), start};
                                     
-                                    U8* start = file_contents.data + bytes_read;
-                                    U8* scan  = start;
+                                    ++scan;
+                                    ++bytes_read;
                                     
-                                    while (scan < file_contents.data + one_past_end_of_section && *scan != ';')
+                                    I64 found_equal = -1;
+                                    for (U32 j = 0; j < real_data_file_count; ++j)
                                     {
-                                        ++scan;
-                                        ++bytes_read;
+                                        if (StringCompare(extracted_path, temp_data_files[j]))
+                                        {
+                                            found_equal = j;
+                                        }
                                     }
                                     
-                                    if (scan != file_contents.data + one_past_end_of_section)
+                                    if (found_equal != -1)
                                     {
-                                        String extracted_path = {(UMM)(start - scan), start};
-                                        
-                                        ++scan;
-                                        ++bytes_read;
-                                        
-                                        Platform_File_Handle data_file_handle = Platform->OpenFileUTF8(extracted_path, Platform_OpenRead, &temp_memory, true);
-                                        
-                                        // TODO(soimn): Should this requirement be removed and a system for handling missing 
-                                        //              files be impemented, such that files could be created during runtime 
-                                        //              without the need for a full asset reload?
-                                        if (data_file_handle.is_valid)
-                                        {
-                                            // NOTE(soimn): Do not swap this fetch with a manual path traversal and base name 
-                                            //              extraction, as what is stored in the table are Platform_File_Handles, 
-                                            //              and the content residing in the base_name and platform_data of those 
-                                            //              structures are platform dependent.
-                                            Platform_File_Info data_file_info = Platform->GetFileInfo(data_file_handle, &temp_memory);
-                                            
-                                            I64 found_equal = -1;
-                                            for (U32 j = 0; j < real_data_file_count; ++j)
-                                            {
-                                                bool base_name_equal = StrCompare(data_file_info.base_name, temp_data_files[j].base_name);
-                                                
-                                                // NOTE(soimn): This StringCompare runs on a Buffer and therefore the comparison is 
-                                                //              bytewise, eventhough the contained string may be UTF16.
-                                                bool platform_data_equal = StringCompare(data_file_info.platform_data, temp_data_files[j].platform_data);
-                                                
-                                                if (base_name_equal && platform_data_equal)
-                                                {
-                                                    found_equal = j;
-                                                    break;
-                                                }
-                                            }
-                                            
-                                            if (found_equal != -1)
-                                            {
-                                                current_file->local_data_file_table[index] = (U32) found_equal;
-                                            }
-                                            
-                                            else
-                                            {
-                                                current_file->local_data_file_table[index] = real_data_file_count;
-                                                temp_data_files[real_data_file_count++]    = data_file_info;
-                                            }
-                                        }
-                                        
-                                        Platform->CloseFile(&data_file_handle);
+                                        current_file->local_data_file_table[index] = found_equal;
                                     }
                                     
                                     else
                                     {
-                                        //// Error
+                                        current_file->local_data_file_table[index] = real_data_file_count;
+                                        temp_data_files[real_data_file_count].size = extracted_path.size;
+                                        temp_data_files[real_data_file_count].data = (U8*) PushSize(&temp_memory, extracted_path.size);
+                                        
+                                        ++real_data_file_count;
                                     }
-                                    
-                                    ++index;
                                 }
-                            }
-                            
-                            { /// Parse tag table section
-                                U32 index = 0;
-                                U32 one_past_end_of_section = current_file->one_past_end_of_tag_table_section;
                                 
-                                while (bytes_read < one_past_end_of_section)
+                                else
                                 {
-                                    U8* start = file_contents.data + bytes_read;
-                                    U8* scan  = start;
+                                    //// Error: Reached the end of the data file section before the termination of the path belonging to the current entry
+                                }
+                                
+                                ++index;
+                            }
+                        }
+                        
+                        { /// Parse tag table section
+                            U32 bytes_read = current_file->one_past_end_of_data_file_section;
+                            
+                            U32 index = 0;
+                            U32 one_past_end_of_section = current_file->one_past_end_of_tag_table_section;
+                            
+                            while (bytes_read < one_past_end_of_section)
+                            {
+                                U8* start = file_contents.data + bytes_read;
+                                U8* scan  = start;
+                                
+                                while (scan < file_contents.data + one_past_end_of_section && *scan != ';')
+                                {
+                                    ++scan;
+                                    ++bytes_read;
+                                }
+                                
+                                if (scan != file_contents.data + one_past_end_of_section)
+                                {
+                                    String extracted_name = {(UMM)(scan - start), start};
                                     
-                                    while (scan < file_contents.data + one_past_end_of_section && *scan != ';')
-                                    {
-                                        ++scan;
-                                        ++bytes_read;
-                                    }
+                                    ++scan;
+                                    ++bytes_read;
                                     
-                                    if (scan != file_contents.data + one_past_end_of_section)
+                                    if (scan + 1 < file_contents.data + one_past_end_of_section)
                                     {
-                                        String extracted_name = {(UMM)(scan - start), start};
-                                        
-                                        ++scan;
-                                        ++bytes_read;
-                                        
-                                        start = scan;
-                                        while (scan < file_contents.data + one_past_end_of_section && *scan != ';')
+                                        if (scan[1] == ';')
                                         {
-                                            ++scan;
-                                        }
-                                        
-                                        if (scan != file_contents.data + one_past_end_of_section && (UMM)(scan - start) == sizeof(U8))
-                                        {
-                                            bytes_read += (U32) (scan - start) + 1;
-                                            
-                                            U8 precedence   = *start;
+                                            U8 precedence = scan[0];
                                             
                                             Asset_Tag_Table_Entry temp_entry = {};
-                                            temp_entry.name        = extracted_name;
-                                            temp_entry.precedence  = precedence;
+                                            temp_entry.name       = extracted_name;
+                                            temp_entry.precedence = precedence;
                                             
                                             I64 found_equal = -1;
                                             for (U32 j = 0; j < real_tag_count; ++j)
@@ -559,7 +556,7 @@ ReloadAssets(Game_Assets* assets, Memory_Arena* asset_arena)
                                             
                                             if (found_equal != -1)
                                             {
-                                                current_file->local_tag_table[index] = (U32) found_equal;
+                                                current_file->local_tag_table[index] = found_equal;
                                             }
                                             
                                             else
@@ -568,45 +565,50 @@ ReloadAssets(Game_Assets* assets, Memory_Arena* asset_arena)
                                                 temp_tag_table[real_tag_count++]     = temp_entry;
                                             }
                                         }
-                                        
-                                        else
-                                        {
-                                            //// Error
-                                        }
                                     }
                                     
                                     else
                                     {
-                                        //// Error
+                                        //// Error: Reached the end of the tag table section before the termination of the precedence belonging to the current entry
                                     }
-                                    
-                                    ++index;
                                 }
-                            }
-                            
-                            { /// Parse asset section
-                                U32 index = 0;
                                 
-                                while (bytes_read < file_contents.size)
+                                else
                                 {
-                                    U8* start = file_contents.data + bytes_read;
-                                    U8* scan  = start;
-                                    while (scan < file_contents.data + file_contents.size && *scan != ';')
-                                    {
-                                        ++scan;
-                                        ++bytes_read;
-                                    }
-                                    
+                                    //// Error: Reached the end of the tag table section before the termination of the name belonging to the current entry
+                                }
+                                
+                                ++index;
+                            }
+                        }
+                        
+                        { /// Parse asset section
+                            U32 bytes_read = current_file->one_past_end_of_tag_table_section;
+                            
+                            U32 index = 0;
+                            
+                            while (bytes_read < file_contents.size)
+                            {
+                                U8* start = file_contents.data + bytes_read;
+                                U8* scan  = start;
+                                while (scan < file_contents.data + file_contents.size && *scan != ';')
+                                {
+                                    ++scan;
+                                    ++bytes_read;
+                                }
+                                
+                                if (scan < file_contents.data + file_contents.size)
+                                {
                                     ++bytes_read;
                                     
-                                    if (scan < file_contents.data + file_contents.size)
+                                    Asset_Reg_File_Asset_Entry temp_entry = {};
+                                    UMM base_size = sizeof(U64) * 2 + sizeof(U16) * ASSET_MAX_PER_ASSET_TAG_COUNT;
+                                    
+                                    StaticAssert(sizeof(temp_entry) == sizeof(U64) * 2 + sizeof(U16) * ASSET_MAX_PER_ASSET_TAG_COUNT + MAX(sizeof(temp_entry.mesh_metadata), sizeof(temp_entry.texture_metadata)));
+                                    
+                                    if ((UMM)(scan - start) >= base_size)
                                     {
-                                        Asset_Reg_File_Asset_Entry temp_entry = *(Asset_Reg_File_Asset_Entry*) start;
-                                        U32 base_size = sizeof(U64) * 2 + sizeof(U16) * ASSET_MAX_PER_ASSET_TAG_COUNT;
-                                        
-                                        StaticAssert(sizeof(temp_entry) == sizeof(U64) * 2 + sizeof(U16) * ASSET_MAX_PER_ASSET_TAG_COUNT + MAX(sizeof(temp_entry.mesh_metadata), sizeof(temp_entry.texture_metadata)));
-                                        
-                                        U32 required_space = 0;
+                                        UMM required_space = 0;
                                         switch (temp_entry.type)
                                         {
                                             case Asset_Mesh:
@@ -618,7 +620,7 @@ ReloadAssets(Game_Assets* assets, Memory_Arena* asset_arena)
                                             break;
                                         }
                                         
-                                        if ((U32)(scan - start) == required_space)
+                                        if ((UMM)(scan - start) == required_space)
                                         {
                                             // NOTE(soimn): At this point the size of the terminated region is the same as the 
                                             //              required space for the type specified. This, and checking the existance 
@@ -659,99 +661,114 @@ ReloadAssets(Game_Assets* assets, Memory_Arena* asset_arena)
                                             
                                             if (temp_entry.source_file_id < current_file->data_file_count)
                                             {
-                                                U32 source_file_id = current_file->local_data_file_table[temp_entry.source_file_id];
+                                                I64 source_file_id = -1;
                                                 
-                                                if (!IsStructZero(&temp_data_files[source_file_id]))
+                                                if (temp_entry.source_file_id != -1 && temp_entry.source_file_id < current_file->data_file_count)
                                                 {
-                                                    Asset asset = {};
-                                                    
-                                                    asset.reg_file_id    = i;
-                                                    asset.source_file_id = temp_entry.source_file_id;
-                                                    asset.offset         = temp_entry.offset;
-                                                    asset.size           = temp_entry.size;
-                                                    asset.type           = temp_entry.type;
-                                                    asset.state          = Asset_Unloaded;
-                                                    
-                                                    switch (asset.type)
-                                                    {
-                                                        case Asset_Mesh:
-                                                        asset.mesh.triangle_list_count = temp_entry.mesh_metadata.triangle_list_count;
-                                                        break;
-                                                        
-                                                        case Asset_Texture:
-                                                        asset.texture.type          = temp_entry.texture_metadata.type;
-                                                        asset.texture.format        = temp_entry.texture_metadata.format;
-                                                        asset.texture.u_wrapping    = temp_entry.texture_metadata.u_wrapping;
-                                                        asset.texture.v_wrapping    = temp_entry.texture_metadata.v_wrapping;
-                                                        asset.texture.min_filtering = temp_entry.texture_metadata.min_filtering;
-                                                        asset.texture.mag_filtering = temp_entry.texture_metadata.mag_filtering;
-                                                        asset.texture.width         = temp_entry.texture_metadata.width;
-                                                        asset.texture.height        = temp_entry.texture_metadata.height;
-                                                        asset.texture.mip_levels    = temp_entry.texture_metadata.mip_levels;
-                                                        break;
-                                                        
-                                                        INVALID_DEFAULT_CASE;
-                                                    }
-                                                    
-                                                    // NOTE(soimn): This translates the tags from the file local values, to the global 
-                                                    //              values.
-                                                    for (U32 j = 0; j < ASSET_MAX_PER_ASSET_TAG_COUNT; ++j)
-                                                    {
-                                                        asset.tags[j].value = (U16) current_file->local_tag_table[temp_entry.tags[j]];
-                                                    }
-                                                    
-                                                    temp_assets[real_asset_count++] = asset;
+                                                    source_file_id = current_file->local_data_file_table[temp_entry.source_file_id];
                                                 }
                                                 
-                                                else
+                                                Asset asset = {};
+                                                
+                                                asset.reg_file_id    = i;
+                                                asset.source_file_id = source_file_id;
+                                                asset.offset         = temp_entry.offset;
+                                                asset.size           = temp_entry.size;
+                                                asset.type           = temp_entry.type;
+                                                asset.state          = Asset_Unloaded;
+                                                
+                                                switch (asset.type)
                                                 {
-                                                    //// Error: The data file does not exist
+                                                    case Asset_Mesh:
+                                                    asset.mesh.triangle_list_count = temp_entry.mesh_metadata.triangle_list_count;
+                                                    break;
+                                                    
+                                                    case Asset_Texture:
+                                                    asset.texture.type          = temp_entry.texture_metadata.type;
+                                                    asset.texture.format        = temp_entry.texture_metadata.format;
+                                                    asset.texture.u_wrapping    = temp_entry.texture_metadata.u_wrapping;
+                                                    asset.texture.v_wrapping    = temp_entry.texture_metadata.v_wrapping;
+                                                    asset.texture.min_filtering = temp_entry.texture_metadata.min_filtering;
+                                                    asset.texture.mag_filtering = temp_entry.texture_metadata.mag_filtering;
+                                                    asset.texture.width         = temp_entry.texture_metadata.width;
+                                                    asset.texture.height        = temp_entry.texture_metadata.height;
+                                                    asset.texture.mip_levels    = temp_entry.texture_metadata.mip_levels;
+                                                    break;
+                                                    
+                                                    INVALID_DEFAULT_CASE;
                                                 }
+                                                
+                                                // NOTE(soimn): This translates the tags from the file local values, to the global 
+                                                //              values.
+                                                for (U32 j = 0; j < ASSET_MAX_PER_ASSET_TAG_COUNT; ++j)
+                                                {
+                                                    if (temp_entry.tags[j] < current_file->tag_count)
+                                                    {
+                                                        I64 tag_value = current_file->local_tag_table[temp_entry.tags[j]];
+                                                        
+                                                        if (tag_value != -1)
+                                                        {
+                                                            asset.tags[j].value = (U16) tag_value;
+                                                        }
+                                                    }
+                                                }
+                                                
+                                                temp_assets[real_asset_count++] = asset;
                                             }
                                             
                                             else
                                             {
-                                                //// Error: The size of the terminated region does not equal the size required for the specified asset type
+                                                //// Error: The source file id does not exist
                                             }
+                                        }
+                                        
+                                        else
+                                        {
+                                            //// Error: The size of the terminated region does not equal the size required for the specified asset type
                                         }
                                     }
                                     
                                     else
                                     {
-                                        //// Error: The scan reached the end of the file without encountering a terminator
+                                        //// Error: The size of the terminated region is too small to be an asset of any kind
                                     }
-                                    
-                                    ++index;
                                 }
                                 
+                                else
+                                {
+                                    //// Error: The scan reached the end of the file without encountering a terminator
+                                }
+                                
+                                ++index;
                             }
-                        }
-                        
-                        else
-                        {
-                            //// Error: No data was read from the asset reg file
-                            assets->asset_files[i].is_valid = false;
+                            
                         }
                     }
                     
                     else
                     {
-                        //// Error: The asset reg file is too large
+                        //// Error: No data was read from the asset reg file
                         assets->asset_files[i].is_valid = false;
                     }
                 }
                 
                 else
                 {
-                    //// Error: Failed to open file
+                    //// Error: The asset reg file is too large
                     assets->asset_files[i].is_valid = false;
                 }
-                
-                Platform->CloseFile(&file_handle);
             }
+            
+            else
+            {
+                //// Error: Failed to open file
+                assets->asset_files[i].is_valid = false;
+            }
+            
+            Platform->CloseFile(&file_handle);
         }
         
-        assets->data_files      = PushArray(asset_arena, Platform_File_Info, real_data_file_count);
+        assets->data_files      = PushArray(asset_arena, String, real_data_file_count);
         assets->data_file_count = real_data_file_count;
         
         assets->tag_table = PushArray(asset_arena, Asset_Tag_Table_Entry, real_tag_count);
@@ -762,18 +779,9 @@ ReloadAssets(Game_Assets* assets, Memory_Arena* asset_arena)
         
         for (U32 i = 0; i < assets->data_file_count; ++i)
         {
-            CopyStruct(&temp_data_files[i], &assets->data_files[i]);
-            
-            UMM base_name_length = StrLength(temp_data_files[i].base_name);
-            assets->data_files[i].base_name = PushArray(asset_arena, char, base_name_length + 1);
-            ZeroSize(assets->data_files[i].base_name, base_name_length + 1);
-            Copy(temp_data_files[i].base_name, assets->data_files[i].base_name, base_name_length);
-            
-            assets->data_files[i].platform_data.size = temp_data_files[i].platform_data.size;
-            assets->data_files[i].platform_data.data = (U8*) PushSize(asset_arena, temp_data_files[i].platform_data.size, MaxAlignOfPointer(temp_data_files[i].platform_data.data));
-            ZeroSize(assets->data_files[i].platform_data.data, assets->data_files[i].platform_data.size);
-            Copy(temp_data_files[i].platform_data.data, assets->data_files[i].platform_data.data, assets->data_files[i].platform_data.size);
-            
+            assets->data_files[i].size = temp_data_files[i].size;
+            assets->data_files[i].data = (U8*) PushSize(asset_arena, temp_data_files[i].size);
+            Copy(temp_data_files[i].data, assets->data_files[i].data, temp_data_files[i].size);
         }
         
         for (U32 i = 0; i < assets->tag_count; ++i)

@@ -152,6 +152,14 @@ ZeroSize(void* ptr, UMM size)
 #define ZeroStruct(type) ZeroSize(type, sizeof(type[0]))
 #define ZeroArray(type, count) ZeroSize(type, sizeof(type[0]) * (count))
 
+inline void
+MemSet(void* ptr, UMM size, U8 value)
+{
+    U8* bptr = (U8*) ptr;
+    
+    while (bptr < (U8*) ptr + size) *(bptr++) = value;
+}
+
 inline bool
 IsZero(void* ptr, UMM size)
 {

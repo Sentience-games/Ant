@@ -45,8 +45,8 @@ struct Asset
 {
     Asset_Tag tags[ASSET_MAX_PER_ASSET_TAG_COUNT];
     
+    I64 source_file_id;
     U32 reg_file_id;
-    U32 source_file_id;
     U32 offset;
     U32 size;
     
@@ -68,11 +68,11 @@ struct Asset_List
 
 struct Asset_File
 {
-    Platform_File_Info* file_info;
+    Platform_File_Info file_info;
     
-    U32* local_data_file_table;
-    U32* local_tag_table;
-    U32* assets;
+    I64* local_data_file_table;
+    I64* local_tag_table;
+    I64* assets;
     
     U32 data_file_count;
     U32 tag_count;
@@ -93,7 +93,7 @@ struct Game_Assets
     U32 asset_file_count;
     Asset_File* asset_files;
     
-    Platform_File_Info* data_files;
+    String* data_files;
     U32 data_file_count;
     
     U32 asset_count;
