@@ -91,7 +91,7 @@ typedef PLATFORM_GET_ALL_FILES_OF_TYPE_BEGIN_FUNCTION(platform_get_all_files_of_
 typedef PLATFORM_GET_ALL_FILES_OF_TYPE_END_FUNCTION(platform_get_all_files_of_type_end_function);
 
 #define PLATFORM_OPEN_FILE_UTF8_FUNCTION(name)\
-Platform_File_Handle name (String file_path, Flag8(PLATFORM_OPEN_FILE_FLAGS) open_flags, Memory_Arena* temporary_memory, bool is_relative)
+Platform_File_Handle name (String file_path, Flag8(PLATFORM_OPEN_FILE_FLAGS) open_flags, struct Memory_Arena* temporary_memory, bool is_relative)
 typedef PLATFORM_OPEN_FILE_UTF8_FUNCTION(platform_open_file_utf8_function);
 
 #define PLATFORM_OPEN_FILE_FUNCTION(name)\
@@ -101,7 +101,7 @@ typedef PLATFORM_OPEN_FILE_FUNCTION(platform_open_file_function);
 #define PLATFORM_CLOSE_FILE_FUNCTION(name) void name (Platform_File_Handle* file_handle)
 typedef PLATFORM_CLOSE_FILE_FUNCTION(platform_close_file_function);
 
-#define PLATFORM_GET_FILE_INFO_FUNCTION(name) Platform_File_Info name (Platform_File_Handle file_handle, Memory_Arena* memory)
+#define PLATFORM_GET_FILE_INFO_FUNCTION(name) Platform_File_Info name (Platform_File_Handle file_handle, struct Memory_Arena* memory)
 typedef PLATFORM_GET_FILE_INFO_FUNCTION(platform_get_file_info_function);
 
 #define PLATFORM_READ_FROM_FILE_FUNCTION(name) File_Error_Code name (Platform_File_Handle handle, U32 offset, U32 size, void* dest)
@@ -161,16 +161,7 @@ struct Platform_API_Functions
 	platform_write_to_file_function* WriteToFile;
     
     renderer_prepare_frame_function* PrepareFrame;
-    renderer_push_mesh_function* PushMesh;
     renderer_present_frame_function* PresentFrame;
-    
-    renderer_create_prepping_batch_function* CreatePreppingBatch;
-    renderer_prep_render_batch_function* PrepBatch;
-    renderer_render_batch_function* RenderBatch;
-    renderer_clean_batch_function* CleanBatch;
-    
-    renderer_create_texture_function* CreateTexture;
-    renderer_delete_texture_function* DeleteTexture;
 };
 
 extern Platform_API_Functions* Platform;

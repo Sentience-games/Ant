@@ -1,14 +1,31 @@
 #pragma once
 
-#include "ant_shared.h"
+#include "ant_types.h"
 
+#include "math/bounding_volumes.h"
 #include "math/vector.h"
 #include "math/matrix.h"
 #include "math/transform.h"
-#include "math/aabb.h"
 
-#define RENDERER_MAX_FRAMEBUFFER_COLOR_ATTACHMENTS 8
-#define RENDERER_RENDER_BATCH_BLOCK_SIZE 1024
+// NOTE(soimn):
+// - Culling and layer filtering is performed on an per triangle mesh basis, this means a triangle mesh may not 
+//   contain submeshes which exhibit different layer filtering tags or bounding volumes
+// - Each camera has a layer filtering flag, and every object tagged with, at least, those layers are rendered by //   the camera
+// - All gpu memory is handled in sufficiently sized blocks which are persistently bound and shared between 
+//   several objects
+// - When data is to be uploaded to gpu memory, the current blocks are inspected and the block with the least 
+//   remaining contious space still fitting the size of the data to be uploaded is chosen.
+// - When data is to be evicted from gpu memory, the data is removed and the block is scheduled for reordering 
+//   in order to minimize fragmentation. This reordering is performed once the accumulated waste space has crossed 
+//   a certain threshold, or the block is full, and is performed at the start of the frame, running in the 
+//   background, and must finish before any other interaction with gpu memory, or state changes in the case of 
+//   OpenGL.
+
+#define RENDERER_DEFAULT_RENDER_BATCH_BLOCK_SIZE 128
+#define RENDERER_DEFAULT_CAMERA_FOV 45.0f
+#define RENDERER_DEFAULT_CAMERA_NEAR 0.1f
+#define RENDERER_DEFAULT_CAMERA_FAR 100.0f
+#define RENDERER_DEFAULT_CAMERA_ASPECT_RATIO 16.0f / 9.0f
 
 struct GPU_Buffer
 {
@@ -79,47 +96,6 @@ struct Texture
     U8 is_valid;
 };
 
-enum MATERIAL_FLAGS
-{
-    MaterialFlag_HasNormalMap    = BITS(0),
-    MaterialFlag_HasAlbedoMap    = BITS(1),
-    MaterialFlag_HasSpecularMap  = BITS(2),
-    MaterialFlag_HasMetallicMap  = BITS(3),
-    MaterialFlag_HasRoughnessMap = BITS(4),
-};
-
-struct Material
-{
-    alignas(4) Flag16(MATERIAL_FLAGS) flags;
-    U16 shader;
-    
-    U32 normal_map;
-    
-    union
-    {
-        U32 albedo_map;
-        V3 abledo;
-    };
-    
-    union
-    {
-        U32 specular_map;
-        V3 specular;
-    };
-    
-    union
-    {
-        U32 metallic_map;
-        V3 metallic;
-    };
-    
-    union
-    {
-        U32 roughness_map;
-        V3 roughness;
-    };
-};
-
 struct Triangle_List
 {
     U32 material;
@@ -136,90 +112,73 @@ struct Triangle_Mesh
     U32 triangle_list_count;
 };
 
+struct Render_Batch_Block
+{
+    Render_Batch_Block* previous;
+    Render_Batch_Block* next;
+    U64 size;
+};
+
+struct Render_Batch_Entry
+{
+    Vertex_Buffer vertex_buffer;
+    Index_Buffer index_buffer;
+    U32 vertex_count;
+    U32 material;
+    M4 mvp;
+};
+
 struct Render_Batch
 {
     struct Memory_Arena* arena;
-    struct Render_Batch_Entry* first_block;
-    struct Render_Batch_Entry* current_block;
-    U16 block_count;
-    U16 current_block_index;
-    U32 block_size;
-    U32 entry_count;
-    U32 current_entry_count;
+    Render_Batch_Block* current_block;
+    U64 current_index;
 };
 
 struct Camera
 {
+    U64 layer_flag;
+    
+    M4 view_projection_matrix;
     V3 position;
-    Quat heading;
-    F32 far;
-    F32 near;
-    F32 fov;
-    F32 aspect_ratio;
+    Quat rotation;
+    F32 fov  = RENDERER_DEFAULT_CAMERA_FOV;
+    F32 near = RENDERER_DEFAULT_CAMERA_NEAR;
+    F32 far  = RENDERER_DEFAULT_CAMERA_FAR;
+    F32 aspect_ratio = RENDERER_DEFAULT_CAMERA_ASPECT_RATIO;
+    
+    // NOTE(soimn): Up, down, left, right
+    V3 culling_vectors[4];
+    
+    U32 default_block_size = RENDERER_DEFAULT_RENDER_BATCH_BLOCK_SIZE;
+    Render_Batch* batch;
+    
+    bool is_prepared;
 };
 
-struct Prepped_Render_Batch
+struct Light
 {
-    struct Render_Batch_Cull_Entry* first;
-    
-    M4 view_projection;
-    Camera camera;
-    
-    U32 count;
-    U32 capacity;
-};
-
-enum FRAMEBUFFER_FLAGS
-{
-    FramebufferFlag_Multisampled,
-    FramebufferFlag_HasDepthStencil,
+    // TODO(soimn): Fill this
 };
 
 struct Framebuffer
 {
-    Texture color_attachments[RENDERER_MAX_FRAMEBUFFER_COLOR_ATTACHMENTS];
-    U32 color_attachment_count;
-    Texture depth_stencil_attachment;
-    Flag8(FRAMEBUFFER_FLAGS) flags;
+    // TODO(soimn): Fill this
 };
 
-typedef U32 Framebuffer_ID;
-
-// MANAGED RENDERING
-////////////////////////////////
+struct G_Buffer
+{
+    // TODO(soimn): Fill this
+};
 
 #define RENDERER_PREPARE_FRAME_FUNCTION(name) void name (void)
 typedef RENDERER_PREPARE_FRAME_FUNCTION(renderer_prepare_frame_function);
 
-#define RENDERER_PUSH_MESH_FUNCTION(name) void name (Render_Batch* batch, Transform transform, Bounding_Sphere bounding_sphere, Triangle_Mesh* mesh)
-typedef RENDERER_PUSH_MESH_FUNCTION(renderer_push_mesh_function);
-
-// TODO(soimn): Post process stage
-
 #define RENDERER_PRESENT_FRAME_FUNCTION(name) void name (void)
 typedef RENDERER_PRESENT_FRAME_FUNCTION(renderer_present_frame_function);
 
-// RENDER BATCH
-////////////////////////////////
+#define RENDERER_PUSH_MESH_FUNCTION(name) void name (Camera* camera, Triangle_Mesh* mesh, Transform transform, Bounding_Sphere bounding_sphere)
+typedef RENDERER_PUSH_MESH_FUNCTION(renderer_push_mesh_function);
 
-#define RENDERER_CREATE_PREPPING_BATCH_FUNCTION(name) Prepped_Render_Batch name (Render_Batch* batch, struct Memory_Arena* arena, Camera camera)
-typedef RENDERER_CREATE_PREPPING_BATCH_FUNCTION(renderer_create_prepping_batch_function);
-
-#define RENDERER_PREP_RENDER_BATCH_FUNCTION(name) void name (Render_Batch* batch, Prepped_Render_Batch* resulting_batch)
-typedef RENDERER_PREP_RENDER_BATCH_FUNCTION(renderer_prep_render_batch_function);
-
-#define RENDERER_RENDER_BATCH_FUNCTION(name) void name (Prepped_Render_Batch* batch, Framebuffer_ID framebuffer_id)
-typedef RENDERER_RENDER_BATCH_FUNCTION(renderer_render_batch_function);
-
-#define RENDERER_CLEAN_BATCH_FUNCTION(name) void name (Render_Batch* batch, bool should_deallocate)
-typedef RENDERER_CLEAN_BATCH_FUNCTION(renderer_clean_batch_function);
-
-
-// TEXTURES
-////////////////////////////////
-
-#define RENDERER_CREATE_TEXTURE_FUNCTION(name) Texture name (Enum8(TEXTURE_TYPE) type, Enum8(TEXTURE_FORMAT) format, Enum8(TEXTURE_WRAPPING) u_wrapping, Enum8(TEXTURE_WRAPPING) v_wrapping, Enum8(TEXTURE_FILTERING) min_filtering, Enum8(TEXTURE_FILTERING) mag_filtering, U16 width, U16 height, U8 mip_levels)
-typedef RENDERER_CREATE_TEXTURE_FUNCTION(renderer_create_texture_function);
-
-#define RENDERER_DELETE_TEXTURE_FUNCTION(name) void name (Texture* handle)
-typedef RENDERER_DELETE_TEXTURE_FUNCTION(renderer_delete_texture_function);
+#define RENDERER_RENDER_FUNCTION(name) void name (Camera* camera, Light* lights, U32 light_count, Framebuffer* framebuffer, G_Buffer* gbuffer)
+typedef RENDERER_RENDER_FUNCTION(renderer_render_function);

@@ -486,8 +486,6 @@ Normalized(const V4& v)
 
 // Quaternion
 
-// TODO(soimn): Sin, cosine
-
 inline V4
 operator * (const Quat& q_1, const Quat& q_2)
 {

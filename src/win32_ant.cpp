@@ -255,7 +255,7 @@ PLATFORM_GET_ALL_FILES_OF_TYPE_BEGIN_FUNCTION(Win32GetAllFilesOfTypeBegin)
 	while(find_handle != INVALID_HANDLE_VALUE)
 	{
 		++result.file_count;
-		Platform_File_Info* info = PushStruct(&win32_file_group->memory, Platform_File_Info);
+		Platform_File_Info* info = PushStruct(win32_file_group->memory, Platform_File_Info);
 		info->next = result.first_file_info;
         
 		FILETIME timestamp = find_data.ftLastWriteTime;
@@ -288,7 +288,7 @@ PLATFORM_GET_ALL_FILES_OF_TYPE_BEGIN_FUNCTION(Win32GetAllFilesOfTypeBegin)
 															 0, 0);
         
 		info->base_name.size = required_base_name_storage;
-        info->base_name.data = (U8*) PushSize(&win32_file_group->memory, required_base_name_storage);
+        info->base_name.data = (U8*) PushSize(win32_file_group->memory, required_base_name_storage);
         
 		required_base_name_storage = WideCharToMultiByte(CP_UTF8, 0, base_name_begin, base_name_length,
 														 (LPSTR) info->base_name.data, required_base_name_storage, 0, 0);
@@ -296,7 +296,7 @@ PLATFORM_GET_ALL_FILES_OF_TYPE_BEGIN_FUNCTION(Win32GetAllFilesOfTypeBegin)
 		
 		U32 file_name_size = (U32)(scan - find_data.cFileName) + 1;
         
-		info->platform_data.data = (U8*) PushArray(&win32_file_group->memory, wchar_t, directory_length + file_name_size);
+		info->platform_data.data = (U8*) PushArray(win32_file_group->memory, wchar_t, directory_length + file_name_size);
         info->platform_data.size = sizeof(wchar_t) * (directory_length + file_name_size);
         
 		CopyArray(directory, info->platform_data.data, directory_length);
@@ -321,7 +321,7 @@ PLATFORM_GET_ALL_FILES_OF_TYPE_END_FUNCTION(Win32GetAllFilesOfTypeEnd)
     
 	if (win32_file_group)
 	{
-		ClearArena(&win32_file_group->memory);
+		ClearArena(win32_file_group->memory);
 	}
 }
 

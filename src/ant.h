@@ -10,8 +10,6 @@
 #include "assets/assets.h"
 #include "assets/assets.cpp"
 
-#include "entity/entity.h"
-
 struct Game_State
 {
     Memory_Arena persistent_memory;

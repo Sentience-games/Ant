@@ -55,7 +55,7 @@ PLATFORM_LOG_INFO_FUNCTION(Win32LogInfo);
 /// FILE API
 struct Win32_File_Group
 {
-	Memory_Arena memory;
+	Memory_Arena* memory;
 };
 
 /// Game

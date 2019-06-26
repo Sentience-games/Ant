@@ -1,5 +1,8 @@
 #include "renderer/renderer.h"
 
+#include "ant_shared.h"
+#include "ant_memory.h"
+
 #ifdef ANT_PLATFORM_WINDOWS
 #define Error(message, ...) Win32LogError("Renderer", false, __FUNCTION__, __LINE__, message, __VA_ARGS__)
 #define Info(message, ...) Win32LogInfo("Renderer", false, __FUNCTION__, __LINE__, message, __VA_ARGS__)
@@ -20,166 +23,116 @@ global OpenGL_Binding GLBinding = {};
 
 #include "renderer/opengl.h"
 
-#include "math/trigonometry.h"
-
-struct Render_Batch_Entry
-{
-    Transform transform;
-    Bounding_Sphere bounding_sphere;
-    Triangle_Mesh* mesh;
-};
-
-struct Render_Batch_Cull_Entry
-{
-    Triangle_Mesh* mesh;
-    M4 mvp_matrix;
-};
-
-inline void
-RendererPushNewRenderBatchBlock(Render_Batch* batch)
-{
-    void* new_block = PushSize(batch->arena, sizeof(Render_Batch_Entry) * batch->block_size + sizeof(void*), alignof(void*));
-    
-    new_block = (U8*) new_block + sizeof(void*);
-    
-    *(void**)((U8*) batch->current_block - sizeof(void*)) = new_block;
-    batch->current_block = (Render_Batch_Entry*) new_block;
-    
-    batch->block_count++;
-}
-
 RENDERER_PUSH_MESH_FUNCTION(RendererPushMesh)
 {
-    if (batch->current_entry_count >= batch->block_count)
+    Render_Batch* batch = camera->batch;
+    
+    if (!camera->is_prepared)
     {
-        if (batch->current_block_index == batch->block_count - 1)
+        Assert(camera->default_block_size && camera->fov && camera->near && camera->far);
+        
+        UMM block_size = sizeof(Render_Batch_Block) + camera->default_block_size * sizeof(Render_Batch_Entry);
+        Assert(MaxAlignOfPointer((Render_Batch_Block*)0 + 1) == 8 && MaxAlignOfPointer((Render_Batch_Block*)0 + 1) == MaxAlignOfPointer((Render_Batch*)0 + 1));
+        
+        if (!batch)
         {
-            RendererPushNewRenderBatchBlock(batch);
+            batch = BootstrapPushSize(Render_Batch, arena, block_size);
+            batch->current_block  = (Render_Batch_Block*)(batch + 1);
+            *batch->current_block = {0, 0, camera->default_block_size};
         }
         
-        else
+        while (batch->current_block->previous)
         {
-            batch->current_block = (Render_Batch_Entry*) *((void**)((U8*) batch->current_block - sizeof(void*)));
+            batch->current_block = batch->current_block->previous;
         }
         
-        batch->current_entry_count = 0;
-        ++batch->current_block_index;
+        { /// Find new culling vectors
+            // NOTE(soimn): This is a collection of vectors which start from the upper left corner of the cameras 
+            //              frustum, nearest to the near clip plane, and point towards the positive direction of 
+            //              each axis along the bounds of the frustum. The "bridge" points from the upper left 
+            //              corner nearest the near clip plane, to the upper left corner nearest the far clip 
+            //              plane.
+            V3 right  = {1.0f, 0.0f, 0.0f};
+            V3 down   = {0.0f, 1.0f, 0.0f};
+            V3 bridge = {};
+            {
+                F32 l  = camera->far - camera->near;
+                F32 dx = Tan(camera->fov / 2.0f) * l;
+                F32 dy = dx * (1.0f / camera->aspect_ratio);
+                
+                bridge = Normalized(Vec3(-dx, -dy, 1.0f));
+            }
+            
+            V3 plane_up    = Cross(right, bridge);
+            V3 plane_down  = {-plane_up.x, -plane_up.y, plane_up.z};
+            V3 plane_left  = Cross(bridge, down);
+            V3 plane_right = {-plane_left.x, -plane_left.y, plane_left.z};
+            
+            camera->culling_vectors[0] = plane_up;
+            camera->culling_vectors[1] = plane_down;
+            camera->culling_vectors[2] = plane_left;
+            camera->culling_vectors[2] = plane_right;
+        }
+        
+        camera->view_projection_matrix = Perspective(camera->aspect_ratio, camera->fov, camera->near, camera->far).m * Rotation(camera->rotation);
+        
+        camera->is_prepared = true;
     }
     
-    Render_Batch_Entry* new_entry = (batch->current_block + batch->current_entry_count);
+    V3 to_p = bounding_sphere.position - camera->position;
+    to_p = Rotate(to_p, Conjugate(camera->rotation));
     
-    new_entry->transform       = transform;
-    new_entry->bounding_sphere = bounding_sphere;
-    new_entry->mesh            = mesh;
-    
-    ++batch->entry_count, ++batch->current_entry_count;
-}
-
-RENDERER_CREATE_PREPPING_BATCH_FUNCTION(RendererCreatePreppingBatch)
-{
-    Prepped_Render_Batch result = {};
-    
-    result.first    = PushArray(arena, Render_Batch_Cull_Entry, batch->entry_count);
-    result.capacity = batch->entry_count;
-    
-    result.camera = camera;
-    
-    M4 view_matrix = Translation(camera.position) * Rotation(-camera.heading);
-    M4 perspective_matrix = (Perspective(camera.aspect_ratio, camera.fov, camera.near, camera.far)).m;
-    
-    result.view_projection = perspective_matrix * view_matrix;
-    
-    return result;
-}
-
-RENDERER_PREP_RENDER_BATCH_FUNCTION(RendererPrepBatch)
-{
-    Assert(resulting_batch->first && resulting_batch->capacity >= batch->entry_count);
-    
-    Camera* camera = &resulting_batch->camera;
-    
-    if (batch->entry_count)
+    if (Inner(to_p, camera->culling_vectors[0]) - bounding_sphere.radius <= 0.0f && Inner(to_p, camera->culling_vectors[1]) - bounding_sphere.radius <= 0.0f && Inner(to_p, camera->culling_vectors[2]) - bounding_sphere.radius <= 0.0f && Inner(to_p, camera->culling_vectors[3]) - bounding_sphere.radius <= 0.0f &&
+        to_p.z >= camera->near && to_p.z <= camera->far)
     {
-        F32 near_width  = Cos(camera->fov / 2) * camera->near;
-        F32 far_width   = Cos(camera->fov / 2) * camera->far;
-        F32 near_height = near_width / camera->aspect_ratio;
-        F32 far_height  = near_height / camera->aspect_ratio;
+        M4 mvp = camera->view_projection_matrix * ModelMatrix(transform).m;
+        Vertex_Buffer vertex_buffer = mesh->vertex_buffer;
+        Index_Buffer index_buffer   = mesh->index_buffer;
         
-        V3 frustum_vectors[3] = {};
-        
-        frustum_vectors[0] = Rotate(Normalized(Vec3(far_width, far_height, camera->far) - Vec3(near_width, near_height, camera->near)), camera->heading);
-        
-        frustum_vectors[1] = Rotate(Normalized(Vec3(near_width, -near_height, camera->far) - Vec3(near_width, near_height, camera->near)), camera->heading);
-        
-        frustum_vectors[2] = Rotate(Normalized(Vec3(-near_width, near_height, camera->far) - Vec3(near_width, -near_height, camera->far)), camera->heading);
-        
-        V3 frustum_planes[4] = {};
-        
-        frustum_planes[0] = Cross(frustum_vectors[1],  frustum_vectors[0]);
-        frustum_planes[1] = Cross(frustum_vectors[0],  frustum_vectors[2]);
-        frustum_planes[2] = Cross(frustum_vectors[0],  frustum_vectors[1]);
-        frustum_planes[3] = Cross(frustum_vectors[0], -frustum_vectors[1]);
-        
+        U32 lists_left = mesh->triangle_list_count;
+        while (lists_left)
         {
-            Render_Batch_Entry* scan = batch->first_block;
-            V3 view_vector = Rotate(Vec3(0, 0, 1), camera->heading);
-            
-            do
+            for (U32 i = 0; i < MAX(lists_left, batch->current_block->size - batch->current_index); ++i)
             {
-                U32 entry_count = (scan == batch->current_block ? batch->current_entry_count : batch->block_size);
+                Triangle_List* current_list = &mesh->triangle_lists[i];
                 
-                for (U32 i = 0; i < entry_count; ++i)
+                Render_Batch_Entry* entry = (Render_Batch_Entry*)(batch->current_block + 1) + batch->current_index;
+                
+                entry->vertex_buffer = {vertex_buffer.handle, vertex_buffer.offset + current_list->offset};
+                entry->index_buffer  = {index_buffer.handle, index_buffer.offset + current_list->offset};
+                entry->material      = current_list->material;
+                entry->vertex_count  = current_list->vertex_count;
+                entry->mvp           = mvp;
+                
+                ++batch->current_index;
+            }
+            
+            if (batch->current_index == batch->current_block->size)
+            {
+                batch->current_index = 0;
+                
+                if (batch->current_block->next)
                 {
-                    Render_Batch_Entry* current_entry = scan + i;
-                    V3 p = current_entry->bounding_sphere.position - camera->position;
-                    
-                    if (Inner(frustum_planes[0], p) - current_entry->bounding_sphere.radius > 0) continue;
-                    else if (Inner(frustum_planes[1], p) - current_entry->bounding_sphere.radius > 0) continue;
-                    else if (Inner(frustum_planes[2], p) - current_entry->bounding_sphere.radius > 0) continue;
-                    else if (Inner(frustum_planes[3], p) - current_entry->bounding_sphere.radius > 0) continue;
-                    else
-                    {
-                        F32 dist_from_camera = Inner(view_vector, p);
-                        
-                        if (dist_from_camera > camera->far || dist_from_camera < camera->near) continue;
-                        else
-                        {
-                            M4 model_matrix = Translation(current_entry->transform.position) * Rotation(current_entry->transform.rotation);
-                            
-                            Render_Batch_Cull_Entry new_entry = {current_entry->mesh, resulting_batch->view_projection * model_matrix};
-                            CopyStruct(&new_entry, resulting_batch->first + resulting_batch->count++);
-                        }
-                    }
+                    batch->current_block = batch->current_block->next;
                 }
                 
-                scan = (Render_Batch_Entry*) *(void**)((U8*) scan - sizeof(void*));
-            } while (scan != batch->current_block);
-            
-            // TODO(soimn): sort
+                else
+                {
+                    UMM block_size = sizeof(Render_Batch_Block) + camera->default_block_size * sizeof(Render_Batch_Entry);
+                    
+                    Render_Batch_Block* new_block = (Render_Batch_Block*) PushSize(batch->arena, block_size, alignof(Render_Batch_Block));
+                    
+                    *new_block = {0, 0, camera->default_block_size};
+                    
+                    batch->current_block->next = new_block;
+                    new_block->previous = batch->current_block;
+                    
+                    batch->current_block = new_block;
+                }
+            }
         }
+        
     }
-}
-
-RENDERER_RENDER_BATCH_FUNCTION(RendererRenderBatch)
-{
-    Camera* camera = &batch->camera;
-    
-    (void) camera;
-}
-
-RENDERER_CLEAN_BATCH_FUNCTION(RendererCleanBatch)
-{
-    if (should_deallocate)
-    {
-        ClearArena(batch->arena);
-        batch->first_block = 0;
-        batch->block_count = 0;
-    }
-    
-    batch->current_block       = 0;
-    batch->current_block_index = 0;
-    batch->entry_count         = 0;
-    batch->current_entry_count = 0;
 }
 
 inline bool
@@ -190,16 +143,7 @@ InitRenderer (Platform_API_Functions* platform_api, Process_Handle process_handl
     if (GLLoad(&GLBinding, process_handle, window_handle))
     {
         platform_api->PrepareFrame  = &GLPrepareFrame;
-        platform_api->PushMesh      = &RendererPushMesh;
         platform_api->PresentFrame  = &GLPresentFrame;
-        
-        platform_api->CreatePreppingBatch = &RendererCreatePreppingBatch;
-        platform_api->PrepBatch           = &RendererPrepBatch;
-        platform_api->RenderBatch         = &RendererRenderBatch;
-        platform_api->CleanBatch          = &RendererCleanBatch;
-        
-        platform_api->CreateTexture = &GLCreateTexture;
-        platform_api->DeleteTexture = &GLDeleteTexture;
         
         succeeded = true;
     }

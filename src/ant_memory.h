@@ -7,7 +7,7 @@ struct Memory_Block
 	Memory_Block* prev;
 	Memory_Block* next;
 	U8* push_ptr;
-	UMM space;
+	U64 space;
 };
 
 struct Memory_Arena
@@ -196,11 +196,20 @@ BootstrapPushSize_(UMM container_size, U8 container_alignment, UMM offset_to_are
 {
 	void* result = 0;
     
-	Memory_Arena bootstrap_arena = {};
-	bootstrap_arena.block_size = block_size;
-	
-	result = PushSize(&bootstrap_arena, container_size, container_alignment);
-	*((Memory_Arena*) ((U8*) result + offset_to_arena_member)) = bootstrap_arena;
+    U8 adjustment         = AlignOffset((Memory_Arena*)0 + 1, container_alignment);
+	UMM total_header_size = sizeof(Memory_Arena) + adjustment + container_size;
+    
+    Memory_Arena bootstrap_arena = {};
+	bootstrap_arena.block_size   = block_size;
+    
+    bootstrap_arena.current_block = Platform->AllocateMemoryBlock(total_header_size + block_size);
+    ++bootstrap_arena.block_count;
+    
+    Memory_Arena* stored_arena = PushStruct(&bootstrap_arena, Memory_Arena);
+    *stored_arena = bootstrap_arena;
+    
+	result = PushSize(stored_arena, container_size, container_alignment);
+	*((Memory_Arena**) ((U8*) result + offset_to_arena_member)) = stored_arena;
     
 	return result;
 }

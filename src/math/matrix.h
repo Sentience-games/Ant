@@ -3,6 +3,7 @@
 #include "ant_types.h"
 
 #include "math/trigonometry.h"
+#include "math/transform.h"
 
 // TODO(soimn): Speed!
 
@@ -372,6 +373,15 @@ Translation(const V3& delta)
         delta.x, delta.y, delta.z, 1};
 }
 
+inline M4
+Scale(const V3& delta)
+{
+    return {delta.x, 0, 0, 0,
+        0, delta.y, 0, 0,
+        0, 0, delta.z, 0,
+        0, 0, 0, 1};
+}
+
 inline M2
 Transpose(const M2& m)
 {
@@ -438,6 +448,20 @@ Perspective(F32 aspect_ratio, F32 fov, F32 near, F32 far)
     result.inv.w.y = -(top - bottom) / (2 * near);
     result.inv.w.z = -1;
     result.inv.w.w = (far + near) / (2 * far * near);
+    
+    return result;
+}
+
+inline M4_Inv
+ModelMatrix(Transform transform)
+{
+    M4_Inv result = {};
+    
+    M4 rotation = Rotation(transform.rotation);
+    
+    result.m = Translation(transform.position) * rotation * Scale(transform.scale);
+    
+    result.inv = Translation(-transform.position) * Transpose(rotation) * Scale(Vec3(1.0f / transform.scale.x, 1.0f / transform.scale.y, 1.0f / transform.scale.z));
     
     return result;
 }
