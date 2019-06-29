@@ -122,13 +122,12 @@ Win32GetCWD(Memory_Arena* persistent_memory, U32* result_length)
 	wchar_t* result = NULL;
     
 	// FIXME(soimn): this could span multiple memory blocks, which will fail.
-	struct temporary_memory { Memory_Arena arena; };
-	temporary_memory* temp_memory = BootstrapPushSize(temporary_memory, arena, KILOBYTES(32));
+    Memory_Arena temp_memory = {};
     
 	U32 file_path_growth_amount = 256 * sizeof(wchar_t);
 	U32 file_path_memory_size = file_path_growth_amount;
     
-	wchar_t* file_path = (wchar_t*) PushSize(&temp_memory->arena, file_path_growth_amount);
+	wchar_t* file_path = (wchar_t*) PushSize(&temp_memory, file_path_growth_amount);
 	U32 path_length;
     
 	for (;;)
@@ -145,7 +144,7 @@ Win32GetCWD(Memory_Arena* persistent_memory, U32* result_length)
         
 		else
 		{
-			if (file_path_growth_amount >= temp_memory->arena.current_block->space)
+			if (file_path_growth_amount >= temp_memory.current_block->space)
 			{
 				WIN32LOG_FATAL("Failed to get the current working directory of the game, out of memory");
 				return NULL;
@@ -155,7 +154,7 @@ Win32GetCWD(Memory_Arena* persistent_memory, U32* result_length)
 			{
 				file_path_memory_size += file_path_growth_amount;
                 
-				PushSize(&temp_memory->arena, file_path_memory_size);
+				PushSize(&temp_memory, file_path_memory_size);
 				continue;
 			}
 		}
@@ -781,35 +780,36 @@ int CALLBACK WinMain(HINSTANCE instance,
 					 int window_show_mode)
 {
 	UNUSED_PARAMETER(prev_instance);
-	UNUSED_PARAMETER(command_line);
-	UNUSED_PARAMETER(window_show_mode);
+    UNUSED_PARAMETER(command_line);
+    UNUSED_PARAMETER(window_show_mode);
     
-	HWND window_handle;
-	WNDCLASSEXW window_class = {};
+    HWND window_handle;
+    WNDCLASSEXW window_class = {};
     
-	window_class.cbSize        = sizeof(WNDCLASSEX);
-	window_class.style         = CS_VREDRAW | CS_HREDRAW | CS_OWNDC;
-	window_class.lpfnWndProc   = &Win32MainWindowProc;
-	window_class.hInstance     = instance;
-	window_class.hbrBackground = 0;
-	window_class.lpszClassName = CONCAT(L, APPLICATION_NAME);
+    window_class.cbSize        = sizeof(WNDCLASSEX);
+    window_class.style         = CS_VREDRAW | CS_HREDRAW | CS_OWNDC;
+    window_class.lpfnWndProc   = &Win32MainWindowProc;
+    window_class.hInstance     = instance;
+    window_class.hbrBackground = 0;
+    window_class.lpszClassName = CONCAT(L, APPLICATION_NAME);
     
-	if (RegisterClassExW(&window_class))
-	{
-		window_handle =
-			CreateWindowExW(window_class.style,
-							window_class.lpszClassName,
-							CONCAT(L, APPLICATION_NAME),
-							WS_OVERLAPPEDWINDOW | WS_SYSMENU,
-							CW_USEDEFAULT, CW_USEDEFAULT,
-							CW_USEDEFAULT, CW_USEDEFAULT,
-							NULL, NULL,
-							instance, NULL);
-		if (window_handle)
-		{
-			/// Setup
+    if (RegisterClassExW(&window_class))
+    {
+        window_handle =
+            CreateWindowExW(window_class.style,
+                            window_class.lpszClassName,
+                            CONCAT(L, APPLICATION_NAME),
+                            WS_OVERLAPPEDWINDOW | WS_SYSMENU,
+                            CW_USEDEFAULT, CW_USEDEFAULT,
+                            CW_USEDEFAULT, CW_USEDEFAULT,
+                            NULL, NULL,
+                            instance, NULL);
+        
+        if (window_handle)
+        {
+            /// Setup
             
-			// Memory
+            // Memory
             
             Memory_Arena win32_persistent_memory   = {};
             win32_persistent_memory.block_size = KILOBYTES(1);
@@ -824,83 +824,83 @@ int CALLBACK WinMain(HINSTANCE instance,
             memory->state->frame_local_memory.current_block = Win32AllocateMemoryBlock(KILOBYTES(1));
             ++memory->state->frame_local_memory.block_count;
             
-			// Platform API function pointers
-			memory->platform_api = {};
+            // Platform API function pointers
+            memory->platform_api = {};
             memory->platform_api.AllocateMemoryBlock    = &Win32AllocateMemoryBlock;
             memory->platform_api.FreeMemoryBlock        = &Win32FreeMemoryBlock;
             
-			memory->platform_api.LogInfo				= &Win32LogInfo;
-			memory->platform_api.LogError			   = &Win32LogError;
+            memory->platform_api.LogInfo				= &Win32LogInfo;
+            memory->platform_api.LogError			   = &Win32LogError;
             
-			memory->platform_api.GetAllFilesOfTypeBegin = &Win32GetAllFilesOfTypeBegin;
-			memory->platform_api.GetAllFilesOfTypeEnd   = &Win32GetAllFilesOfTypeEnd;
-			memory->platform_api.OpenFile			   = &Win32OpenFile;
+            memory->platform_api.GetAllFilesOfTypeBegin = &Win32GetAllFilesOfTypeBegin;
+            memory->platform_api.GetAllFilesOfTypeEnd   = &Win32GetAllFilesOfTypeEnd;
+            memory->platform_api.OpenFile			   = &Win32OpenFile;
             memory->platform_api.OpenFileUTF8		   = &Win32OpenFileUTF8;
-			memory->platform_api.CloseFile			  = &Win32CloseFile;
+            memory->platform_api.CloseFile			  = &Win32CloseFile;
             memory->platform_api.GetFileInfo            = &Win32GetFileInfo;
-			memory->platform_api.ReadFromFile		   = &Win32ReadFromFile;
-			memory->platform_api.WriteToFile			= &Win32WriteToFile;
+            memory->platform_api.ReadFromFile		   = &Win32ReadFromFile;
+            memory->platform_api.WriteToFile			= &Win32WriteToFile;
             
             Platform = &memory->platform_api;
             
-			// Game Info
-			bool game_info_valid = false;
+            // Game Info
+            bool game_info_valid = false;
             
-			GameInfo.cwd = Win32GetCWD(&memory->state->persistent_memory, (U32*) &GameInfo.cwd_length);
+            GameInfo.cwd = Win32GetCWD(&memory->state->persistent_memory, (U32*) &GameInfo.cwd_length);
             
-			{ // Build dll path
-				const wchar_t* appendage = CONCAT(L, APPLICATION_NAME) L".dll";
-				U32 buffer_length        = GameInfo.cwd_length + (U32) WStrLength(appendage) + 1;
+            { // Build dll path
+                const wchar_t* appendage = CONCAT(L, APPLICATION_NAME) L".dll";
+                U32 buffer_length        = GameInfo.cwd_length + (U32) WStrLength(appendage) + 1;
                 
-				GameInfo.dll_path = PushArray(&win32_persistent_memory, wchar_t, buffer_length);
-				Win32BuildFullyQualifiedPath(&GameInfo, appendage, (wchar_t*) GameInfo.dll_path, buffer_length);
-			}
+                GameInfo.dll_path = PushArray(&win32_persistent_memory, wchar_t, buffer_length);
+                Win32BuildFullyQualifiedPath(&GameInfo, appendage, (wchar_t*) GameInfo.dll_path, buffer_length);
+            }
             
-			{ // Build loaded dll path
-				const wchar_t* appendage = CONCAT(L, APPLICATION_NAME) L"_loaded.dll";
-				U32 buffer_length        = GameInfo.cwd_length + (U32) WStrLength(appendage) + 1;
+            { // Build loaded dll path
+                const wchar_t* appendage = CONCAT(L, APPLICATION_NAME) L"_loaded.dll";
+                U32 buffer_length        = GameInfo.cwd_length + (U32) WStrLength(appendage) + 1;
                 
-				GameInfo.loaded_dll_path = PushArray(&win32_persistent_memory, wchar_t, buffer_length);
-				Win32BuildFullyQualifiedPath(&GameInfo, appendage, (wchar_t*) GameInfo.loaded_dll_path, buffer_length);
-			}
+                GameInfo.loaded_dll_path = PushArray(&win32_persistent_memory, wchar_t, buffer_length);
+                Win32BuildFullyQualifiedPath(&GameInfo, appendage, (wchar_t*) GameInfo.loaded_dll_path, buffer_length);
+            }
             
-			
-			{ // Set working directory
-				BOOL successfully_set_wd = SetCurrentDirectoryW(GameInfo.cwd);
-                
-				if (successfully_set_wd == FALSE)
-				{
-					WIN32LOG_FATAL("Failed to set working directory to the proper value");
-				}
-                
-				game_info_valid = (successfully_set_wd != 0);
-			}
             
-			// Input
-			bool input_ready = Win32RegisterRawInputDevices(window_handle);
+            { // Set working directory
+                BOOL successfully_set_wd = SetCurrentDirectoryW(GameInfo.cwd);
+                
+                if (successfully_set_wd == FALSE)
+                {
+                    WIN32LOG_FATAL("Failed to set working directory to the proper value");
+                }
+                
+                game_info_valid = (successfully_set_wd != 0);
+            }
+            
+            // Input
+            bool input_ready = Win32RegisterRawInputDevices(window_handle);
             
             Platform_Game_Input input[2];
             Platform_Game_Input* old_input = &input[0];
             Platform_Game_Input* new_input = &input[1];
             
-			// Game code
+            // Game code
             Win32_Game_Code game_code = {};
             
-			if (game_info_valid)
-			{
-				game_code = Win32LoadGameCode(GameInfo.dll_path, GameInfo.loaded_dll_path);
-			}
+            if (game_info_valid)
+            {
+                game_code = Win32LoadGameCode(GameInfo.dll_path, GameInfo.loaded_dll_path);
+            }
             
             // Renderer
             bool renderer_ready = InitRenderer(&memory->platform_api, instance, window_handle);
             
-			ClearArena(&memory->state->frame_local_memory);
+            ClearArena(&memory->state->frame_local_memory);
             
-			if (input_ready && game_info_valid && game_code.is_valid && renderer_ready)
-			{
-				Running = true;
+            if (input_ready && game_info_valid && game_code.is_valid && renderer_ready)
+            {
+                Running = true;
                 
-				ShowWindow(window_handle, SW_SHOW);
+                ShowWindow(window_handle, SW_SHOW);
                 
                 // TODO(soimn): adjust this to support dynamically changing the balance of game time and real time
                 F32 game_update_dt = 1.0f / 60.0f;
@@ -936,15 +936,14 @@ int CALLBACK WinMain(HINSTANCE instance,
             }
         }
         
-		else
-		{
-			WIN32LOG_FATAL("Failed to create window");
-		}
-        
-	}
+        else
+        {
+            WIN32LOG_FATAL("Failed to create window");
+        }
+    }
     
-	else
-	{
-		WIN32LOG_FATAL("Failed to register main window");
-	}
+    else
+    {
+        WIN32LOG_FATAL("Failed to register main window");
+    }
 }

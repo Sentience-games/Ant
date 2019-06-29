@@ -36,7 +36,7 @@ Ceil(F32 num)
     F32 result  = num;
     F32 floored = (F32) ((U64) num);
     
-    result = (result == floored ? result : floored + 1.0f);
+    result = (result == floored ? floored : floored + 1.0f);
     
     return result;
 }

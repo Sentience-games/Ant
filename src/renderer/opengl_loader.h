@@ -133,6 +133,7 @@ GL_FUNC(void,     glDeleteTextures, GLsizei n, const GLuint* textures)\
 GL_FUNC(void,     glBindTexture,    GLenum target, GLuint texture)\
 GL_FUNC(void,     glTexParameteri,  GLenum target, GLenum pname, GLint param)\
 GL_FUNC(void,     glTexStorage2D,   GLenum target, GLsizei levels, GLenum internalformat, GLsizei width,GLsizei height)\
+GL_FUNC(void,     glMultiDrawElementsIndirect, GLenum mode, GLenum type, const void *indirect, GLsizei drawcount,GLsizei stride)\
 
 #define GL_FUNC(ret, name, ...)\
 typedef ret (GLAPI *PFN_##name) (__VA_ARGS__);

@@ -25,33 +25,23 @@ global OpenGL_Binding GLBinding = {};
 
 RENDERER_PUSH_MESH_FUNCTION(RendererPushMesh)
 {
+    Assert(camera->is_prepared);
+    Assert(camera->default_block_size && camera->fov && camera->aspect_ratio);
+    
     Render_Batch* batch = camera->batch;
     
     if (!camera->is_prepared)
     {
-        Assert(camera->default_block_size && camera->fov && camera->near && camera->far);
+        // TODO(soimn): Push a job which subdivides the camera frustum into clusters and assigns a list of 
+        //              relavent lights to each.
         
-        UMM block_size = sizeof(Render_Batch_Block) + camera->default_block_size * sizeof(Render_Batch_Entry);
-        Assert(MaxAlignOfPointer((Render_Batch_Block*)0 + 1) == 8 && MaxAlignOfPointer((Render_Batch_Block*)0 + 1) == MaxAlignOfPointer((Render_Batch*)0 + 1));
-        
-        if (!batch)
-        {
-            batch = BootstrapPushSize(Render_Batch, arena, block_size);
-            batch->current_block  = (Render_Batch_Block*)(batch + 1);
-            *batch->current_block = {0, 0, camera->default_block_size};
-        }
-        
-        while (batch->current_block->previous)
-        {
-            batch->current_block = batch->current_block->previous;
-        }
-        
-        { /// Find new culling vectors
+        { /// Construct culling vectors
             // NOTE(soimn): This is a collection of vectors which start from the upper left corner of the cameras 
             //              frustum, nearest to the near clip plane, and point towards the positive direction of 
             //              each axis along the bounds of the frustum. The "bridge" points from the upper left 
             //              corner nearest the near clip plane, to the upper left corner nearest the far clip 
             //              plane.
+            
             V3 right  = {1.0f, 0.0f, 0.0f};
             V3 down   = {0.0f, 1.0f, 0.0f};
             V3 bridge = {};
@@ -68,13 +58,27 @@ RENDERER_PUSH_MESH_FUNCTION(RendererPushMesh)
             V3 plane_left  = Cross(bridge, down);
             V3 plane_right = {-plane_left.x, -plane_left.y, plane_left.z};
             
-            camera->culling_vectors[0] = plane_up;
-            camera->culling_vectors[1] = plane_down;
-            camera->culling_vectors[2] = plane_left;
-            camera->culling_vectors[2] = plane_right;
+            camera->culling_vectors[0] = Normalized(plane_up);
+            camera->culling_vectors[1] = Normalized(plane_down);
+            camera->culling_vectors[2] = Normalized(plane_left);
+            camera->culling_vectors[3] = Normalized(plane_right);
         }
         
-        camera->view_projection_matrix = Perspective(camera->aspect_ratio, camera->fov, camera->near, camera->far).m * Rotation(camera->rotation);
+        
+        { /// Create render batch
+            UMM batch_block_size = sizeof(Render_Batch_Block) + camera->default_block_size * sizeof(Render_Batch_Entry);
+            
+            Assert(MaxAlignOfPointer((Render_Batch_Block*)0 + 1) == 8 && MaxAlignOfPointer((Render_Batch_Block*)0 + 1) == MaxAlignOfPointer((Render_Batch*)0 + 1));
+            
+            camera->batch = BootstrapPushSize(Render_Batch, arena, batch_block_size);
+            camera->batch->current_block  = (Render_Batch_Block*) PushSize(camera->batch->arena, batch_block_size, 8);
+            *camera->batch->current_block = {0, 0, camera->default_block_size};
+        }
+        
+        camera->view_matrix      = ViewMatrix(camera->position, camera->rotation);
+        camera->projection_matrix = Perspective(camera->aspect_ratio, camera->fov, camera->near, camera->far);
+        
+        camera->view_projection_matrix = camera->projection_matrix.m * camera->view_matrix.m;
         
         camera->is_prepared = true;
     }
@@ -105,6 +109,9 @@ RENDERER_PUSH_MESH_FUNCTION(RendererPushMesh)
                 entry->mvp           = mvp;
                 
                 ++batch->current_index;
+                ++batch->entry_count;
+                
+                --lists_left;
             }
             
             if (batch->current_index == batch->current_block->size)
@@ -131,7 +138,6 @@ RENDERER_PUSH_MESH_FUNCTION(RendererPushMesh)
                 }
             }
         }
-        
     }
 }
 
@@ -145,6 +151,9 @@ InitRenderer (Platform_API_Functions* platform_api, Process_Handle process_handl
         platform_api->PrepareFrame  = &GLPrepareFrame;
         platform_api->PresentFrame  = &GLPresentFrame;
         
+        platform_api->PushMesh      = &RendererPushMesh;
+        platform_api->Render        = &GLRender;
+        
         succeeded = true;
     }
     
@@ -155,7 +164,6 @@ InitRenderer (Platform_API_Functions* platform_api, Process_Handle process_handl
     
     return succeeded;
 }
-
 
 #undef Error
 #undef Info

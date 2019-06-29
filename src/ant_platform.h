@@ -162,6 +162,9 @@ struct Platform_API_Functions
     
     renderer_prepare_frame_function* PrepareFrame;
     renderer_present_frame_function* PresentFrame;
+    
+    renderer_push_mesh_function* PushMesh;
+    renderer_render_function* Render;
 };
 
 extern Platform_API_Functions* Platform;

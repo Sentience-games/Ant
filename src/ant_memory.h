@@ -52,16 +52,27 @@ ClearArena(Memory_Arena* arena)
 	{
 		while (block->next) block = block->next;
         
-		do
+        while (block->prev)
 		{
-			Memory_Block* prev_block = block->prev;
-			Platform->FreeMemoryBlock(block);
-            block = (prev_block ? prev_block : block);
-		} while (block->prev);
+            Memory_Block* prev_block = block->prev;
+            Platform->FreeMemoryBlock(block);
+            block = prev_block;
+        }
+        
+        if (!((U8*) arena > (U8*) block && (U8*) arena < (U8*) block->push_ptr + block->space))
+        {
+            arena->block_count   = 0;
+            arena->current_block = 0;
+        }
+        
+        Platform->FreeMemoryBlock(block);
 	}
     
-	arena->block_count   = 0;
-	arena->current_block = 0;
+    else
+    {
+        arena->block_count   = 0;
+        arena->current_block = 0;
+    }
 }
 
 inline void
@@ -209,7 +220,7 @@ BootstrapPushSize_(UMM container_size, U8 container_alignment, UMM offset_to_are
     *stored_arena = bootstrap_arena;
     
 	result = PushSize(stored_arena, container_size, container_alignment);
-	*((Memory_Arena**) ((U8*) result + offset_to_arena_member)) = stored_arena;
+    *((Memory_Arena**)((U8*) result + offset_to_arena_member)) = stored_arena;
     
 	return result;
 }

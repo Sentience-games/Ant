@@ -21,12 +21,6 @@
 //   background, and must finish before any other interaction with gpu memory, or state changes in the case of 
 //   OpenGL.
 
-#define RENDERER_DEFAULT_RENDER_BATCH_BLOCK_SIZE 128
-#define RENDERER_DEFAULT_CAMERA_FOV 45.0f
-#define RENDERER_DEFAULT_CAMERA_NEAR 0.1f
-#define RENDERER_DEFAULT_CAMERA_FAR 100.0f
-#define RENDERER_DEFAULT_CAMERA_ASPECT_RATIO 16.0f / 9.0f
-
 struct GPU_Buffer
 {
     U64 handle;
@@ -96,6 +90,11 @@ struct Texture
     U8 is_valid;
 };
 
+struct Material
+{
+    // TODO(soimn): Fill this
+};
+
 struct Triangle_List
 {
     U32 material;
@@ -132,25 +131,30 @@ struct Render_Batch
 {
     struct Memory_Arena* arena;
     Render_Batch_Block* current_block;
-    U64 current_index;
+    U32 current_index;
+    U32 entry_count;
 };
 
 struct Camera
 {
     U64 layer_flag;
     
+    M4_Inv projection_matrix;
+    M4_Inv view_matrix;
     M4 view_projection_matrix;
+    
     V3 position;
     Quat rotation;
-    F32 fov  = RENDERER_DEFAULT_CAMERA_FOV;
-    F32 near = RENDERER_DEFAULT_CAMERA_NEAR;
-    F32 far  = RENDERER_DEFAULT_CAMERA_FAR;
-    F32 aspect_ratio = RENDERER_DEFAULT_CAMERA_ASPECT_RATIO;
+    
+    F32 fov;
+    F32 near;
+    F32 far;
+    F32 aspect_ratio;
     
     // NOTE(soimn): Up, down, left, right
     V3 culling_vectors[4];
     
-    U32 default_block_size = RENDERER_DEFAULT_RENDER_BATCH_BLOCK_SIZE;
+    U32 default_block_size;
     Render_Batch* batch;
     
     bool is_prepared;
@@ -180,5 +184,5 @@ typedef RENDERER_PRESENT_FRAME_FUNCTION(renderer_present_frame_function);
 #define RENDERER_PUSH_MESH_FUNCTION(name) void name (Camera* camera, Triangle_Mesh* mesh, Transform transform, Bounding_Sphere bounding_sphere)
 typedef RENDERER_PUSH_MESH_FUNCTION(renderer_push_mesh_function);
 
-#define RENDERER_RENDER_FUNCTION(name) void name (Camera* camera, Light* lights, U32 light_count, Framebuffer* framebuffer, G_Buffer* gbuffer)
+#define RENDERER_RENDER_FUNCTION(name) void name (Camera* camera, Framebuffer* framebuffer, G_Buffer* gbuffer, Memory_Arena* temp_memory)
 typedef RENDERER_RENDER_FUNCTION(renderer_render_function);

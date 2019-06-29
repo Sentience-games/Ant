@@ -465,3 +465,16 @@ ModelMatrix(Transform transform)
     
     return result;
 }
+
+inline M4_Inv
+ViewMatrix(V3 position, Quat rotation)
+{
+    M4_Inv result = {};
+    
+    M4 rotation_matrix = Rotation(rotation);
+    
+    result.m = Translation(position) * rotation_matrix;
+    result.inv = Translation(-position) * Transpose(rotation_matrix);
+    
+    return result;
+}
