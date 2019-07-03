@@ -1,6 +1,8 @@
 #include "assets/assets.h"
 
 #include "utils/string.h"
+#include "utils/error_stream.h"
+#include "utils/tokenizer.h"
 
 inline void
 SortTags(Game_Assets* assets, Asset_Tag* tags)
@@ -257,22 +259,19 @@ GetBestMatchingAssets(Game_Assets* assets, Enum8(ASSET_TYPE) type, const Asset_T
     return result;
 }
 
-inline I32
-ReloadAssets(Game_Assets* assets, Memory_Arena* asset_arena)
+inline void
+ReloadAssets(Game_Assets* assets, Error_Stream* error_stream)
 {
-    I32 result = -1;
+    ClearArena(&assets->arena);
+    *assets = {};
     
-    Memory_Arena temp_memory;
-    // block size
     
     { /// Open all asset reg files and validate the headers
         Platform_File_Group asset_reg_file_group = Platform->GetAllFilesOfTypeBegin(Platform_AssetFile);
         
-        U32 valid_file_count = 0;
-        
         if (asset_reg_file_group.file_count)
         {
-            Asset_File* temp_asset_reg_files = PushArray(&temp_memory, Asset_File, asset_reg_file_group.file_count);
+            assets->asset_files = PushArray(&assets->arena, Asset_File, asset_reg_file_group.file_count);
             Platform_File_Info* scan = asset_reg_file_group.first_file_info;
             
             for (U32 i = 0; i < asset_reg_file_group.file_count; ++i)
@@ -281,59 +280,67 @@ ReloadAssets(Game_Assets* assets, Memory_Arena* asset_arena)
                 
                 if (file_handle.is_valid)
                 {
-                    CopyStruct(scan, &temp_asset_reg_files[i].file_info);
+                    U8 header_buffer[512] = {};
+                    File_Error_Code read_error = Platform->ReadFromFile(file_handle, 0, ARRAY_COUNT(header_buffer), header_buffer);
                     
-                    Asset_Reg_File_Header file_header = {};
-                    
-                    File_Error_Code read_error =Platform->ReadFromFile(file_handle, 0, sizeof(Asset_Reg_File_Header), &file_header);
-                    
-                    if (read_error == sizeof(Asset_Reg_File_Header))
+                    if (read_error > 0)
                     {
-                        if (file_header.magic_value == ASSET_REG_FILE_MAGIC_VALUE)
-                        {
-                            temp_asset_reg_files[i].data_file_count = file_header.data_file_count;
-                            temp_asset_reg_files[i].tag_count       = file_header.tag_count;
-                            temp_asset_reg_files[i].asset_count     = file_header.asset_count;
-                            
-                            temp_asset_reg_files[i].one_past_end_of_data_file_section = file_header.one_past_end_of_data_file_section;
-                            temp_asset_reg_files[i].one_past_end_of_tag_table_section = file_header.one_past_end_of_tag_table_section;
-                            
-                            temp_asset_reg_files[i].is_valid = true;
-                            ++valid_file_count;
-                        }
+                        String header     = {ARRAY_COUNT(header_buffer), (U8*) header_buffer};
+                        String first_word = GetWord(&header);
                         
-                        else if (file_header.magic_value == SwapEndianess(ASSET_REG_FILE_MAGIC_VALUE))
+                        if (StringCompare(first_word, CONST_STRING("ARF")))
                         {
-                            temp_asset_reg_files[i].data_file_count = SwapEndianess(file_header.data_file_count);
-                            temp_asset_reg_files[i].tag_count       = SwapEndianess(file_header.tag_count);
-                            temp_asset_reg_files[i].asset_count     = SwapEndianess(file_header.asset_count);
+                            String version_tag = GetWord(&header);
                             
-                            temp_asset_reg_files[i].one_past_end_of_data_file_section = SwapEndianess(file_header.one_past_end_of_data_file_section);
-                            temp_asset_reg_files[i].one_past_end_of_tag_table_section = SwapEndianess(file_header.one_past_end_of_tag_table_section);
+                            UMM divider = 0;
+                            if (!FindChar(version_tag, '.', &divider))
+                            {
+                                divider = version_tag.size;
+                            }
                             
-                            temp_asset_reg_files[i].wrong_endian = true;
-                            temp_asset_reg_files[i].is_valid     = true;
-                            ++valid_file_count;
+                            I64 major_version = 0;
+                            String major      = {divider, version_tag.data};
+                            bool is_major_valid = ParseInt(major, 10, &major_version);
+                            is_major_valid = is_major_valid && (major_version <= (I64) U16_MAX);
+                            
+                            I64 minor_version = 0;
+                            String minor      = {version_tag.size - divider, version_tag.data + divider};
+                            bool is_minor_valid = ParseInt(minor, 10, &minor_version) || divider == version_tag.size;
+                            is_minor_valid = is_minor_valid && (0 <= minor_version && minor_version <= (I64) U16_MAX);
+                            
+                            if (is_major_valid && is_minor_valid)
+                            {
+                                CopyStruct(scan, &assets->asset_files[assets->asset_file_count].file_info);
+                                assets->asset_files[assets->asset_file_count].version = ((U32) major_version << 15) & (U32) minor_version;
+                                
+                                ++assets->asset_file_count;
+                            }
+                            
+                            else
+                            {
+                                //// Error: File version is invalid
+                                PushError(error_stream, "The asset file \"%S\" has an invalid version tag. Expected \"MAJOR.MINOR\" got \"%S\"", scan->base_name, version_tag);
+                            }
                         }
                         
                         else
                         {
-                            //// Error: Invalid magic value
-                            temp_asset_reg_files[i].is_valid = false;
+                            //// Error: File is missing ARF tag
+                            PushError(error_stream, "The asset file \"%S\" is missing an \"ARF\" tag.", scan->base_name);
                         }
                     }
                     
                     else
                     {
-                        //// Error: Failed to read the header of the file
-                        temp_asset_reg_files[i].is_valid = false;
+                        //// Error: Failed to read the first 512 bytes
+                        PushError(error_stream, "Failed to read the first 512 bytes the asset file: \"%S\"", scan->base_name);
                     }
                 }
                 
                 else
                 {
                     //// Error: Failed to open the file
-                    temp_asset_reg_files[i].is_valid = false;
+                    PushError(error_stream, "Failed to open the asset file: \"%S\"", scan->base_name);
                 }
                 
                 Platform->CloseFile(&file_handle);
@@ -341,471 +348,683 @@ ReloadAssets(Game_Assets* assets, Memory_Arena* asset_arena)
                 scan = scan->next;
             }
             
-            ClearArena(asset_arena);
-            *assets = {};
-            
-            assets->asset_file_count = 0;
-            assets->asset_files      = PushArray(asset_arena, Asset_File, valid_file_count);
-            
-            for (U32 i = 0; i < asset_reg_file_group.file_count; ++i)
-            {
-                if (temp_asset_reg_files[i].is_valid)
-                {
-                    Asset_File* current_file = &assets->asset_files[assets->asset_file_count++];
-                    Asset_File* temp_file    = &temp_asset_reg_files[i];
-                    
-                    *current_file = {};
-                    current_file->data_file_count = temp_file->data_file_count;
-                    current_file->tag_count       = temp_file->tag_count;
-                    current_file->asset_count     = temp_file->asset_count;
-                    
-                    current_file->one_past_end_of_data_file_section =
-                        temp_file->one_past_end_of_data_file_section;
-                    
-                    current_file->one_past_end_of_tag_table_section = temp_file->one_past_end_of_tag_table_section;
-                    
-                    current_file->wrong_endian = temp_file->wrong_endian;
-                    
-                    current_file->file_info.timestamp = temp_file->file_info.timestamp;
-                    current_file->file_info.file_size = temp_file->file_info.file_size;
-                    
-                    UMM base_name_size = temp_file->file_info.base_name.size;
-                    current_file->file_info.base_name.size = base_name_size;
-                    current_file->file_info.base_name.data = PushArray(asset_arena, U8, base_name_size);
-                    
-                    Copy(temp_file->file_info.base_name.data, current_file->file_info.base_name.data, base_name_size);
-                    
-                    UMM platform_data_size = temp_file->file_info.platform_data.size;
-                    current_file->file_info.platform_data.size = platform_data_size;
-                    current_file->file_info.platform_data.data = PushArray(asset_arena, U8, platform_data_size);
-                    
-                    Copy(temp_file->file_info.platform_data.data, current_file->file_info.platform_data.data, platform_data_size);
-                    
-                    current_file->is_valid = true;
-                }
-            }
+            Platform->GetAllFilesOfTypeEnd(&asset_reg_file_group);
         }
         
-        Platform->GetAllFilesOfTypeEnd(&asset_reg_file_group);
-        ClearArena(&temp_memory);
-    }
-    
-    if (assets->asset_file_count)
-    {
-        U32 max_data_file_count = 0;
-        U32 max_tag_count       = 0;
-        U32 max_asset_count     = 0;
+        
+        Memory_Arena temp_memory = {};
+        temp_memory.block_size = KILOBYTES(1);
+        
+        void* file_buffer = PushSize(&temp_memory, MEGABYTES(512));
+        
+        struct Data_File_Entry
+        {
+            String path;
+            Data_File_Entry* next;
+        };
+        
+        struct Tag_Entry
+        {
+            String name;
+            U32 precedence;
+            Tag_Entry* next;
+        };
+        
+        struct Asset_Entry
+        {
+            Asset asset;
+            Asset_Entry* next;
+        };
+        
+        Data_File_Entry* first_data_file_entry = 0;
+        Tag_Entry* first_tag_entry             = 0;
+        Asset_Entry* first_asset_entry         = 0;
+        
+        Data_File_Entry* current_data_file_entry = 0;
+        Tag_Entry* current_tag_entry             = 0;
+        Asset_Entry* current_asset_entry         = 0;
+        
+        U32 data_file_count = 0;
+        // TODO(soimn): Ensure tag_count does not overflow
+        U32 tag_count       = 0;
+        U32 asset_count     = 0;
         
         for (U32 i = 0; i < assets->asset_file_count; ++i)
         {
-            max_data_file_count += assets->asset_files[i].data_file_count;
-            max_tag_count       += assets->asset_files[i].tag_count;
-            max_asset_count     += assets->asset_files[i].asset_count;
-        }
-        
-        String* temp_data_files               = PushArray(&temp_memory, String, max_data_file_count);
-        Asset_Tag_Table_Entry* temp_tag_table = PushArray(&temp_memory, Asset_Tag_Table_Entry, max_tag_count);
-        Asset* temp_assets                    = PushArray(&temp_memory, Asset, max_asset_count);
-        
-        U32 real_data_file_count = 0;
-        U32 real_tag_count       = 0;
-        U32 real_asset_count     = 0;
-        
-        void* file_buffer = PushSize(&temp_memory, MEGABYTES(128));
-        
-        // NOTE(soimn): Up until this point, the allocations in the temp_memory arena had a block size equal to 
-        //              the allocation size. This is set to a fixed value at this point in order to lower the heap 
-        //              allocations during the following loop, as the following allocations are sometimes quite 
-        //              small.
-        temp_memory.block_size = 1024;
-        
-        for (U32 i = 0; i < assets->asset_file_count; ++i)
-        {
+            bool encountered_errors = false;
+            
+            Data_File_Entry* first_temp_data_file_entry = 0;
+            Tag_Entry* first_temp_tag_entry             = 0;
+            Asset_Entry* first_temp_asset_entry         = 0;
+            
+            Data_File_Entry* current_temp_data_file_entry = 0;
+            Tag_Entry* current_temp_tag_entry             = 0;
+            Asset_Entry* current_temp_asset_entry         = 0;
+            
+            U32 temp_data_file_count = 0;
+            U32 temp_tag_count       = 0;
+            U32 temp_asset_count     = 0;
+            
             Platform_File_Handle file_handle = Platform->OpenFile(&assets->asset_files[i].file_info, Platform_OpenRead);
             
-            if (file_handle.is_valid)
+            File_Error_Code read_error = Platform->ReadFromFile(file_handle, 0, MEGABYTES(512), file_buffer);
+            
+            if (read_error > 0 && read_error != MEGABYTES(512))
             {
-                if (assets->asset_files[i].file_info.file_size <= MEGABYTES(128))
+                UMM file_size = read_error;
+                String file_contents = {file_size, (U8*) file_buffer};
+                
+                // Skip header
+                GetWord(&file_contents);
+                GetWord(&file_contents);
+                
+                Tokenizer tokenizer = Tokenize(file_contents);
+                
+                Token token = GetToken(&tokenizer);
+                
+                while (token.type != Token_EndOfStream)
                 {
-                    Asset_File* current_file = &assets->asset_files[i];
-                    
-                    File_Error_Code read_error = Platform->ReadFromFile(file_handle, sizeof(Asset_Reg_File_Header), MEGABYTES(128), file_buffer);
-                    
-                    if (read_error > 0)
+                    switch (token.type)
                     {
-                        String file_contents = {(UMM) read_error, (U8*) file_buffer};
-                        
-                        current_file->local_data_file_table = PushArray(asset_arena, I64, current_file->data_file_count);
-                        current_file->local_tag_table = PushArray(asset_arena, I64, current_file->tag_count);
-                        current_file->assets          = PushArray(asset_arena, I64, current_file->asset_count);
-                        
-                        // NOTE(soimn): This sets all the values to -1. This is my best attempt at making the 
-                        //              erroneous members a bit more manageable, as reserving the 0th member of 
-                        //              the global tables or incrementing all valid indecies by one seemed a bit 
-                        //              cumbersome. This way the loading functions are quickly able to determine 
-                        //              if the file exists or not, as the index is -1 if it doesn't. Although the 
-                        //              same is true for zero initialized lists, instead of -1 initialized, this 
-                        //              way seems to be a tad bit cleaner.
-                        MemSet(current_file->local_data_file_table, sizeof(I64) * current_file->data_file_count, 0xFF);
-                        MemSet(current_file->local_tag_table, sizeof(I64) * current_file->tag_count, 0xFF);
-                        MemSet(current_file->assets, sizeof(I64) * current_file->asset_count, 0xFF);
-                        
-                        { /// Parse data file section
-                            U32 bytes_read = sizeof(Asset_Reg_File_Header);
+                        case Token_Identifier:
+                        if (StringCompare(token.string, CONST_STRING("TAG")))
+                        {
+                            token = GetToken(&tokenizer);
                             
-                            U32 index = 0;
-                            
-                            U32 one_past_end_of_section = current_file->one_past_end_of_data_file_section;
-                            
-                            while (bytes_read < one_past_end_of_section)
+                            if (token.type == Token_Identifier)
                             {
-                                String path      = {};
-                                String base_name = {};
+                                String tag_name = token.string;
                                 
-                                U8* start = file_contents.data + bytes_read;
-                                U8* scan  = start;
-                                
-                                while (scan < file_contents.data + one_past_end_of_section && *scan != ';')
+                                if (tag_name.size)
                                 {
-                                    ++scan;
-                                    ++bytes_read;
-                                }
-                                
-                                if (scan != file_contents.data + one_past_end_of_section)
-                                {
-                                    String extracted_path = {(UMM)(start - scan), start};
-                                    
-                                    ++scan;
-                                    ++bytes_read;
-                                    
-                                    I64 found_equal = -1;
-                                    for (U32 j = 0; j < real_data_file_count; ++j)
+                                    if (RequireToken(&tokenizer, Token_Colon))
                                     {
-                                        if (StringCompare(extracted_path, temp_data_files[j]))
-                                        {
-                                            found_equal = j;
-                                        }
-                                    }
-                                    
-                                    if (found_equal != -1)
-                                    {
-                                        current_file->local_data_file_table[index] = found_equal;
-                                    }
-                                    
-                                    else
-                                    {
-                                        current_file->local_data_file_table[index] = real_data_file_count;
-                                        temp_data_files[real_data_file_count].size = extracted_path.size;
-                                        temp_data_files[real_data_file_count].data = (U8*) PushSize(&temp_memory, extracted_path.size);
+                                        token = GetToken(&tokenizer);
                                         
-                                        ++real_data_file_count;
-                                    }
-                                }
-                                
-                                else
-                                {
-                                    //// Error: Reached the end of the data file section before the termination of the path belonging to the current entry
-                                }
-                                
-                                ++index;
-                            }
-                        }
-                        
-                        { /// Parse tag table section
-                            U32 bytes_read = current_file->one_past_end_of_data_file_section;
-                            
-                            U32 index = 0;
-                            U32 one_past_end_of_section = current_file->one_past_end_of_tag_table_section;
-                            
-                            while (bytes_read < one_past_end_of_section)
-                            {
-                                U8* start = file_contents.data + bytes_read;
-                                U8* scan  = start;
-                                
-                                while (scan < file_contents.data + one_past_end_of_section && *scan != ';')
-                                {
-                                    ++scan;
-                                    ++bytes_read;
-                                }
-                                
-                                if (scan != file_contents.data + one_past_end_of_section)
-                                {
-                                    String extracted_name = {(UMM)(scan - start), start};
-                                    
-                                    ++scan;
-                                    ++bytes_read;
-                                    
-                                    if (scan + 1 < file_contents.data + one_past_end_of_section)
-                                    {
-                                        if (scan[1] == ';')
+                                        if (token.type == Token_Number && !token.is_float)
                                         {
-                                            U8 precedence = scan[0];
+                                            I32 tag_precedence = token.value_i32;
                                             
-                                            Asset_Tag_Table_Entry temp_entry = {};
-                                            temp_entry.name       = extracted_name;
-                                            temp_entry.precedence = precedence;
-                                            
-                                            I64 found_equal = -1;
-                                            for (U32 j = 0; j < real_tag_count; ++j)
+                                            if (RequireToken(&tokenizer, Token_Semicolon))
                                             {
-                                                if (StringCompare(temp_entry.name, temp_tag_table[i].name) && temp_entry.precedence == temp_tag_table[i].precedence)
+                                                /// ADD TAG
+                                                
+                                                bool found_equal = false;
+                                                Tag_Entry* scan  = first_temp_tag_entry;
+                                                
+                                                while (scan)
                                                 {
-                                                    found_equal = j;
-                                                }
-                                            }
-                                            
-                                            if (found_equal != -1)
-                                            {
-                                                current_file->local_tag_table[index] = found_equal;
-                                            }
-                                            
-                                            else
-                                            {
-                                                current_file->local_tag_table[index] = real_tag_count;
-                                                temp_tag_table[real_tag_count++]     = temp_entry;
-                                            }
-                                        }
-                                    }
-                                    
-                                    else
-                                    {
-                                        //// Error: Reached the end of the tag table section before the termination of the precedence belonging to the current entry
-                                    }
-                                }
-                                
-                                else
-                                {
-                                    //// Error: Reached the end of the tag table section before the termination of the name belonging to the current entry
-                                }
-                                
-                                ++index;
-                            }
-                        }
-                        
-                        { /// Parse asset section
-                            U32 bytes_read = current_file->one_past_end_of_tag_table_section;
-                            
-                            U32 index = 0;
-                            
-                            while (bytes_read < file_contents.size)
-                            {
-                                U8* start = file_contents.data + bytes_read;
-                                U8* scan  = start;
-                                while (scan < file_contents.data + file_contents.size && *scan != ';')
-                                {
-                                    ++scan;
-                                    ++bytes_read;
-                                }
-                                
-                                if (scan < file_contents.data + file_contents.size)
-                                {
-                                    ++bytes_read;
-                                    
-                                    Asset_Reg_File_Asset_Entry temp_entry = {};
-                                    UMM base_size = sizeof(U64) * 2 + sizeof(U16) * ASSET_MAX_PER_ASSET_TAG_COUNT;
-                                    
-                                    StaticAssert(sizeof(temp_entry) == sizeof(U64) * 2 + sizeof(U16) * ASSET_MAX_PER_ASSET_TAG_COUNT + MAX(sizeof(temp_entry.mesh_metadata), sizeof(temp_entry.texture_metadata)));
-                                    
-                                    if ((UMM)(scan - start) >= base_size)
-                                    {
-                                        UMM required_space = 0;
-                                        switch (temp_entry.type)
-                                        {
-                                            case Asset_Mesh:
-                                            required_space = base_size + sizeof(temp_entry.mesh_metadata);
-                                            break;
-                                            
-                                            case Asset_Texture:
-                                            required_space = base_size + sizeof(temp_entry.texture_metadata);
-                                            break;
-                                        }
-                                        
-                                        if ((UMM)(scan - start) == required_space)
-                                        {
-                                            // NOTE(soimn): At this point the size of the terminated region is the same as the 
-                                            //              required space for the type specified. This, and checking the existance 
-                                            //              of the data file of each asset, is all the validity checks I can think 
-                                            //              of at the moment (without changing the asset file format to a non-binary 
-                                            //              format, akin to JSON). It would be nice if more checks could be done, 
-                                            //              and weird errors averted, however the tell-tale signs of a parsing fault 
-                                            //              is the lack of certain assets or default data assigned to said assets. 
-                                            //              Therefore such a fault would hopefully not be very disruptive towards 
-                                            //              development, and could most likely be resolved by making a asset reg 
-                                            //              file visualizer.
-                                            
-                                            if (current_file->wrong_endian)
-                                            {
-                                                temp_entry.source_file_id = SwapEndianess(temp_entry.source_file_id);
-                                                temp_entry.offset         = SwapEndianess(temp_entry.offset);
-                                                temp_entry.size           = SwapEndianess(temp_entry.size);
-                                                
-                                                for (U32 j = 0; j < ASSET_MAX_PER_ASSET_TAG_COUNT; ++j)
-                                                {
-                                                    temp_entry.tags[j] = SwapEndianess(temp_entry.tags[j]);
-                                                }
-                                                
-                                                switch (temp_entry.type)
-                                                {
-                                                    case Asset_Mesh:
-                                                    temp_entry.mesh_metadata.triangle_list_count = SwapEndianess(temp_entry.mesh_metadata.triangle_list_count);
-                                                    break;
-                                                    
-                                                    case Asset_Texture:
-                                                    temp_entry.texture_metadata.width  = SwapEndianess(temp_entry.texture_metadata.width);
-                                                    temp_entry.texture_metadata.height = SwapEndianess(temp_entry.texture_metadata.height);
-                                                    break;
-                                                    
-                                                    INVALID_DEFAULT_CASE;
-                                                }
-                                            }
-                                            
-                                            if (temp_entry.source_file_id < current_file->data_file_count)
-                                            {
-                                                I64 source_file_id = -1;
-                                                
-                                                if (temp_entry.source_file_id != -1 && temp_entry.source_file_id < current_file->data_file_count)
-                                                {
-                                                    source_file_id = current_file->local_data_file_table[temp_entry.source_file_id];
-                                                }
-                                                
-                                                Asset asset = {};
-                                                
-                                                asset.reg_file_id    = i;
-                                                asset.source_file_id = source_file_id;
-                                                asset.offset         = temp_entry.offset;
-                                                asset.size           = temp_entry.size;
-                                                asset.type           = temp_entry.type;
-                                                asset.state          = Asset_Unloaded;
-                                                
-                                                switch (asset.type)
-                                                {
-                                                    case Asset_Mesh:
-                                                    asset.mesh.triangle_list_count = temp_entry.mesh_metadata.triangle_list_count;
-                                                    break;
-                                                    
-                                                    case Asset_Texture:
-                                                    asset.texture.type          = temp_entry.texture_metadata.type;
-                                                    asset.texture.format        = temp_entry.texture_metadata.format;
-                                                    asset.texture.u_wrapping    = temp_entry.texture_metadata.u_wrapping;
-                                                    asset.texture.v_wrapping    = temp_entry.texture_metadata.v_wrapping;
-                                                    asset.texture.min_filtering = temp_entry.texture_metadata.min_filtering;
-                                                    asset.texture.mag_filtering = temp_entry.texture_metadata.mag_filtering;
-                                                    asset.texture.width         = temp_entry.texture_metadata.width;
-                                                    asset.texture.height        = temp_entry.texture_metadata.height;
-                                                    asset.texture.mip_levels    = temp_entry.texture_metadata.mip_levels;
-                                                    break;
-                                                    
-                                                    INVALID_DEFAULT_CASE;
-                                                }
-                                                
-                                                // NOTE(soimn): This translates the tags from the file local values, to the global 
-                                                //              values.
-                                                for (U32 j = 0; j < ASSET_MAX_PER_ASSET_TAG_COUNT; ++j)
-                                                {
-                                                    if (temp_entry.tags[j] < current_file->tag_count)
+                                                    if (StringCompare(tag_name, scan->name))
                                                     {
-                                                        I64 tag_value = current_file->local_tag_table[temp_entry.tags[j]];
-                                                        
-                                                        if (tag_value != -1)
+                                                        found_equal = true;
+                                                        break;
+                                                    }
+                                                    
+                                                    scan = scan->next;
+                                                }
+                                                
+                                                if (!found_equal)
+                                                {
+                                                    scan = first_tag_entry;
+                                                    
+                                                    while (scan)
+                                                    {
+                                                        if (StringCompare(tag_name, scan->name))
                                                         {
-                                                            asset.tags[j].value = (U16) tag_value;
+                                                            found_equal = true;
+                                                            break;
                                                         }
+                                                        
+                                                        scan = scan->next;
                                                     }
                                                 }
                                                 
-                                                temp_assets[real_asset_count++] = asset;
+                                                if (!found_equal && !(StringCompare(tag_name, CONST_STRING("none")) || StringCompare(tag_name, CONST_STRING("replacement"))))
+                                                {
+                                                    Tag_Entry* new_entry = PushStruct(&temp_memory, Tag_Entry);
+                                                    
+                                                    *new_entry = {};
+                                                    new_entry->precedence = tag_precedence;
+                                                    new_entry->name       = tag_name;
+                                                    
+                                                    if (first_temp_tag_entry)
+                                                    {
+                                                        current_temp_tag_entry->next = new_entry;
+                                                    }
+                                                    
+                                                    else
+                                                    {
+                                                        first_temp_tag_entry = new_entry;
+                                                    }
+                                                    
+                                                    current_temp_tag_entry = new_entry;
+                                                    
+                                                    ++temp_tag_count;
+                                                }
+                                                
+                                                else
+                                                {
+                                                    //// ERROR
+                                                    PushError(error_stream, "The tag name \"%S\", in the asset file \"%S\", is already in use", tag_name, assets->asset_files[i].file_info.base_name);
+                                                    encountered_errors = true;
+                                                }
                                             }
                                             
                                             else
                                             {
-                                                //// Error: The source file id does not exist
+                                                //// ERROR
+                                                PushError(error_stream, "Missing semicolon after tag definition");
+                                                encountered_errors = true;
                                             }
                                         }
                                         
                                         else
                                         {
-                                            //// Error: The size of the terminated region does not equal the size required for the specified asset type
+                                            //// ERROR
+                                            PushError(error_stream, "Invalid precedence in tag definition");
+                                            encountered_errors = true;
                                         }
                                     }
                                     
                                     else
                                     {
-                                        //// Error: The size of the terminated region is too small to be an asset of any kind
+                                        //// ERROR
+                                        PushError(error_stream, "Missing colon after tag name in tag definition");
+                                        encountered_errors = true;
                                     }
                                 }
                                 
                                 else
                                 {
-                                    //// Error: The scan reached the end of the file without encountering a terminator
+                                    //// ERROR
+                                    PushError(error_stream, "Empty name in tag definition");
+                                    encountered_errors = true;
                                 }
-                                
-                                ++index;
                             }
                             
+                            else
+                            {
+                                //// ERROR
+                                PushError(error_stream, "Missing name after tag definition tag");
+                                encountered_errors = true;
+                            }
                         }
+                        
+                        else if (StringCompare(token.string, CONST_STRING("MESH"))
+                                 || StringCompare(token.string, CONST_STRING("TEXTURE")))
+                        {
+                            Asset_Entry temp_entry = {};
+                            U32 tag_index = 0;
+                            
+                            if (RequireToken(&tokenizer, Token_Colon))
+                            {
+                                token = GetToken(&tokenizer);
+                                
+                                if (token.type == Token_String)
+                                {
+                                    String data_file_path = token.string;
+                                    
+                                    bool found_data_file_equal      = false;
+                                    U32 data_file_index             = data_file_count;
+                                    Data_File_Entry* data_file_scan = first_temp_data_file_entry;
+                                    while (data_file_scan)
+                                    {
+                                        if (StringCompare(data_file_path, data_file_scan->path))
+                                        {
+                                            found_data_file_equal = true;
+                                        }
+                                        
+                                        ++data_file_index;
+                                        data_file_scan = data_file_scan->next;
+                                    }
+                                    
+                                    if (!found_data_file_equal)
+                                    {
+                                        data_file_index = 0;
+                                        data_file_scan  = first_data_file_entry;
+                                        while (data_file_scan)
+                                        {
+                                            if (StringCompare(data_file_path, data_file_scan->path))
+                                            {
+                                                found_data_file_equal = true;
+                                            }
+                                            
+                                            ++data_file_index;
+                                            data_file_scan = data_file_scan->next;
+                                        }
+                                    }
+                                    
+                                    if (!found_data_file_equal)
+                                    {
+                                        Data_File_Entry* new_entry = PushStruct(&temp_memory, Data_File_Entry);
+                                        
+                                        *new_entry = {};
+                                        new_entry->path = data_file_path;
+                                        
+                                        if (first_temp_data_file_entry)
+                                        {
+                                            current_temp_data_file_entry->next = new_entry;
+                                        }
+                                        
+                                        else
+                                        {
+                                            first_temp_data_file_entry = new_entry;
+                                        }
+                                        
+                                        current_temp_data_file_entry = new_entry;
+                                        
+                                        temp_entry.asset.source_file_id = temp_data_file_count++;
+                                    }
+                                    
+                                    else
+                                    {
+                                        temp_entry.asset.source_file_id = data_file_index;
+                                    }
+                                    
+                                    token = GetToken(&tokenizer);
+                                    if (token.type == Token_Brace && token.value_c == '{')
+                                    {
+                                        token = GetToken(&tokenizer);
+                                        
+                                        while (!(token.type == Token_Brace && token.value_c == '}'))
+                                        {
+                                            if (token.type == Token_Identifier)
+                                            {
+                                                if (StringCompare(token.string, CONST_STRING("TAGS")))
+                                                {
+                                                    if (RequireToken(&tokenizer, Token_Colon))
+                                                    {
+                                                        while (token.type != Token_Semicolon)
+                                                        {
+                                                            token = GetToken(&tokenizer);
+                                                            
+                                                            if (token.type == Token_Identifier)
+                                                            {
+                                                                String tag_name = token.string;
+                                                                
+                                                                token = GetToken(&tokenizer);
+                                                                
+                                                                if (token.type == Token_Equals || (token.type == Token_Operator && token.value_c == ','))
+                                                                {
+                                                                    U16 index        = (U16) tag_count;
+                                                                    bool found_equal = false;
+                                                                    Tag_Entry* scan  = first_temp_tag_entry;
+                                                                    while (scan)
+                                                                    {
+                                                                        if (StringCompare(scan->name, tag_name))
+                                                                        {
+                                                                            found_equal = true;
+                                                                            break;
+                                                                        }
+                                                                        
+                                                                        ++index;
+                                                                        scan = scan->next;
+                                                                    }
+                                                                    
+                                                                    if (!found_equal)
+                                                                    {
+                                                                        index = 0;
+                                                                        scan  = first_tag_entry;
+                                                                        while (scan)
+                                                                        {
+                                                                            if (StringCompare(scan->name, tag_name))
+                                                                            {
+                                                                                found_equal = true;
+                                                                                break;
+                                                                            }
+                                                                            
+                                                                            ++index;
+                                                                            scan = scan->next;
+                                                                        }
+                                                                    }
+                                                                    
+                                                                    if (found_equal)
+                                                                    {
+                                                                        if (token.type == Token_Equals)
+                                                                        {
+                                                                            token = GetToken(&tokenizer);
+                                                                            
+                                                                            if (token.type == Token_Number)
+                                                                            {
+                                                                                token = GetToken(&tokenizer);
+                                                                                
+                                                                                if ((token.type == Token_Operator && token.value_c == ',') || token.type == Token_Semicolon)
+                                                                                {
+                                                                                    temp_entry.asset.tags[tag_index++].value = index + 1;
+                                                                                    
+                                                                                    // TODO(soimn): Handle tag values
+                                                                                    
+                                                                                    if (token.type == Token_Semicolon)
+                                                                                    {
+                                                                                        break;
+                                                                                    }
+                                                                                }
+                                                                                
+                                                                                else
+                                                                                {
+                                                                                    //// ERROR
+                                                                                    encountered_errors = true;
+                                                                                    break;
+                                                                                }
+                                                                            }
+                                                                            
+                                                                            else
+                                                                            {
+                                                                                //// ERROR
+                                                                                encountered_errors = true;
+                                                                                break;
+                                                                            }
+                                                                        }
+                                                                        
+                                                                        else
+                                                                        {
+                                                                            temp_entry.asset.tags[tag_index++].value = index + 1;
+                                                                            
+                                                                            if (token.type == Token_Semicolon)
+                                                                            {
+                                                                                break;
+                                                                            }
+                                                                        }
+                                                                    }
+                                                                    
+                                                                    else
+                                                                    {
+                                                                        //// ERROR
+                                                                        encountered_errors = true;
+                                                                        break;
+                                                                    }
+                                                                }
+                                                                
+                                                                else if (token.type != Token_Semicolon)
+                                                                {
+                                                                    //// ERROR
+                                                                    encountered_errors = true;
+                                                                    break;
+                                                                }
+                                                            }
+                                                            
+                                                            else
+                                                            {
+                                                                //// ERROR
+                                                                encountered_errors = true;
+                                                                break;
+                                                            }
+                                                        }
+                                                    }
+                                                    
+                                                    else
+                                                    {
+                                                        //// ERROR
+                                                        PushError(error_stream, "Missing colon after TAGS tag");
+                                                        encountered_errors = true;
+                                                    }
+                                                }
+                                                
+                                                else if (StringCompare(token.string, CONST_STRING("OFFSET"))
+                                                         || StringCompare(token.string, CONST_STRING("SIZE")))
+                                                {
+                                                    bool is_offset = (token.string.data[0] == 'O');
+                                                    
+                                                    if (RequireToken(&tokenizer, Token_Colon))
+                                                    {
+                                                        token = GetToken(&tokenizer);
+                                                        
+                                                        if (token.type == Token_Number && !token.is_float && token.value_i32 >= 0)
+                                                        {
+                                                            U64 amount = (U64) token.value_i32;
+                                                            
+                                                            token = PeekToken(&tokenizer);
+                                                            
+                                                            if (token.type == Token_Semicolon)
+                                                            {
+                                                                if (is_offset)
+                                                                {
+                                                                    temp_entry.asset.offset = (U32)amount;
+                                                                }
+                                                                
+                                                                else
+                                                                {
+                                                                    temp_entry.asset.size = (U32)amount;
+                                                                }
+                                                            }
+                                                            
+                                                            else if (token.type == Token_Identifier)
+                                                            {
+                                                                GetToken(&tokenizer);
+                                                                
+                                                                if (RequireToken(&tokenizer, Token_Semicolon))
+                                                                {
+                                                                    if (token.string.size == 2 && (token.string.data[0] == 'K' || token.string.data[0] == 'M' || token.string.data[0] == 'G') && token.string.data[1] == 'B')
+                                                                    {
+                                                                        char c = token.string.data[0];
+                                                                        U64 multiplier = (c == 'K' ? KILOBYTES(1) : (c == 'M' ? MEGABYTES(1) : GIGABYTES(1)));
+                                                                        
+                                                                        U64 final_amount = amount * multiplier;
+                                                                        
+                                                                        if (final_amount <= U32_MAX)
+                                                                        {
+                                                                            if (is_offset)
+                                                                            {
+                                                                                temp_entry.asset.offset = (U32)final_amount;
+                                                                            }
+                                                                            
+                                                                            else
+                                                                            {
+                                                                                temp_entry.asset.size = (U32)final_amount;
+                                                                            }
+                                                                        }
+                                                                        
+                                                                        else
+                                                                        {
+                                                                            //// ERROR
+                                                                            PushError(error_stream, "Specified %s is too large. Max value is 4GB.", (is_offset ? "offset" : "size"));
+                                                                            encountered_errors = true;
+                                                                        }
+                                                                    }
+                                                                    
+                                                                    else
+                                                                    {
+                                                                        //// ERROR
+                                                                        PushError(error_stream, "Invalid unit");
+                                                                        encountered_errors = true;
+                                                                    }
+                                                                }
+                                                                
+                                                                else
+                                                                {
+                                                                    //// ERROR
+                                                                    PushError(error_stream, "Expected a semicolon at the end of the line");
+                                                                    encountered_errors = true;
+                                                                }
+                                                            }
+                                                            
+                                                            else
+                                                            {
+                                                                //// ERROR
+                                                                PushError(error_stream, "Expected a semicolon at the end of the line");
+                                                                encountered_errors = true;
+                                                            }
+                                                        }
+                                                        
+                                                        else
+                                                        {
+                                                            //// ERROR
+                                                            PushError(error_stream, "Invalid token after \"%s\" in asset definition. Expected  a number.", (is_offset ? "OFFSET" : "SIZE"));
+                                                            encountered_errors = true;
+                                                        }
+                                                    }
+                                                    
+                                                    else
+                                                    {
+                                                        //// ERROR
+                                                        PushError(error_stream, "Missing colon after \"%s\" in asset definition", (is_offset ? "OFFSET" : "SIZE"));
+                                                        encountered_errors = true;
+                                                    }
+                                                }
+                                                
+                                                else
+                                                {
+                                                    //// ERROR
+                                                    encountered_errors = true;
+                                                }
+                                            }
+                                            
+                                            else
+                                            {
+                                                //// ERROR
+                                                encountered_errors = true;
+                                            }
+                                            
+                                            if (!encountered_errors)
+                                            {
+                                                token = GetToken(&tokenizer);
+                                            }
+                                            
+                                            else
+                                            {
+                                                break;
+                                            }
+                                        }
+                                    }
+                                    
+                                    else
+                                    {
+                                        //// ERROR
+                                        PushError(error_stream, "Expected open brace after asset definition header");
+                                        encountered_errors = true;
+                                    }
+                                }
+                                
+                                else
+                                {
+                                    //// ERROR
+                                    PushError(error_stream, "Missing path string after asset definition type tag");
+                                    encountered_errors = true;
+                                }
+                            }
+                            
+                            else
+                            {
+                                //// ERROR
+                                PushError(error_stream, "Missing colon after asset definition type tag");
+                                encountered_errors = true;
+                            }
+                            
+                            if (!encountered_errors)
+                            {
+                                Asset_Entry* new_entry = PushStruct(&temp_memory, Asset_Entry);
+                                
+                                *new_entry = {};
+                                new_entry->asset.reg_file_id = i;
+                                new_entry->asset.offset      = temp_entry.asset.offset;
+                                new_entry->asset.size        = temp_entry.asset.size;
+                                
+                                CopyArray(temp_entry.asset.tags, new_entry->asset.tags, ASSET_MAX_PER_ASSET_TAG_COUNT);
+                                
+                                if (first_temp_asset_entry)
+                                {
+                                    current_temp_asset_entry->next = new_entry;
+                                }
+                                
+                                else
+                                {
+                                    first_temp_asset_entry = new_entry;
+                                }
+                                
+                                current_temp_asset_entry = new_entry;
+                                
+                                ++temp_asset_count;
+                            }
+                        }
+                        
+                        else
+                        {
+                            //// ERROR
+                            PushError(error_stream, "Encountered unkown identifier");
+                            encountered_errors = true;
+                        }
+                        break;
+                        
+                        default:
+                        //// ERROR
+                        PushError(error_stream, "Encountered an unkown token");
+                        encountered_errors = true;
+                        break;
+                    }
+                    
+                    if (!encountered_errors)
+                    {
+                        token = GetToken(&tokenizer);
                     }
                     
                     else
                     {
-                        //// Error: No data was read from the asset reg file
-                        assets->asset_files[i].is_valid = false;
+                        break;
                     }
-                }
-                
-                else
-                {
-                    //// Error: The asset reg file is too large
-                    assets->asset_files[i].is_valid = false;
                 }
             }
             
             else
             {
-                //// Error: Failed to open file
-                assets->asset_files[i].is_valid = false;
+                //// Error: Failed to read contents of file
+                PushError(error_stream, "Failed to read the contents of the asset file: \"%S\"", assets->asset_files[i].file_info.base_name);
+                encountered_errors = true;
             }
             
-            Platform->CloseFile(&file_handle);
+            if (!encountered_errors)
+            {
+                if (first_data_file_entry)
+                {
+                    current_data_file_entry->next = first_temp_data_file_entry;
+                }
+                
+                else
+                {
+                    first_data_file_entry   = first_temp_data_file_entry;
+                    current_data_file_entry = first_data_file_entry;
+                }
+                
+                if (current_temp_data_file_entry)
+                {
+                    current_data_file_entry = current_temp_data_file_entry;
+                }
+                
+                if (first_tag_entry)
+                {
+                    current_tag_entry->next = first_temp_tag_entry;
+                }
+                
+                else
+                {
+                    first_tag_entry   = first_temp_tag_entry;
+                    current_tag_entry = first_tag_entry;
+                }
+                
+                if (current_temp_tag_entry)
+                {
+                    current_tag_entry = current_temp_tag_entry;
+                }
+                
+                if (first_asset_entry)
+                {
+                    current_asset_entry->next = first_temp_asset_entry;
+                }
+                
+                else
+                {
+                    first_asset_entry   = first_temp_asset_entry;
+                    current_asset_entry = first_asset_entry;
+                }
+                
+                if (current_temp_asset_entry)
+                {
+                    current_asset_entry = current_temp_asset_entry;
+                }
+                
+                data_file_count += temp_data_file_count;
+                tag_count       += temp_tag_count;
+                asset_count     += temp_asset_count;
+            }
         }
-        
-        assets->data_files      = PushArray(asset_arena, String, real_data_file_count);
-        assets->data_file_count = real_data_file_count;
-        
-        assets->tag_table = PushArray(asset_arena, Asset_Tag_Table_Entry, real_tag_count);
-        assets->tag_count = real_tag_count;
-        
-        assets->assets      = PushArray(asset_arena, Asset, real_asset_count);
-        assets->asset_count = real_asset_count;
-        
-        for (U32 i = 0; i < assets->data_file_count; ++i)
-        {
-            assets->data_files[i].size = temp_data_files[i].size;
-            assets->data_files[i].data = (U8*) PushSize(asset_arena, temp_data_files[i].size);
-            Copy(temp_data_files[i].data, assets->data_files[i].data, temp_data_files[i].size);
-        }
-        
-        for (U32 i = 0; i < assets->tag_count; ++i)
-        {
-            assets->tag_table[i].name.size = temp_tag_table[i].name.size;
-            assets->tag_table[i].name.data = PushArray(asset_arena, U8, temp_tag_table[i].name.size);
-            Copy(temp_tag_table[i].name.data, assets->tag_table[i].name.data, temp_tag_table[i].name.size);
-        }
-        
-        for (U32 i = 0; i < assets->asset_count; ++i)
-        {
-            CopyStruct(&temp_assets[i], &assets->assets[i]);
-        }
-        
-        SortTagTable(assets);
-        SortAssets(assets);
     }
-    
-    else
-    {
-        //// Error: There were no asset reg files found
-        result = -2;
-    }
-    
-    
-    return result;
 }

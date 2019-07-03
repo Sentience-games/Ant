@@ -84,13 +84,27 @@ ResetArena(Memory_Arena* arena)
 	{
 		while (block->next) block = block->next;
         
-		do
+		while(block->prev)
 		{
 			U8* new_push_ptr = (U8*) Align((void*)(block + 1), 8);
 			block->space    += block->push_ptr - new_push_ptr;
+            block->push_ptr  = new_push_ptr;
             
-			block = (block->prev ? block->prev : block);
-		} while(block->prev);
+			block = block->prev;
+		}
+        
+        U8* new_push_ptr = (U8*) Align((void*)(block + 1), 8);
+        UMM block_space  = block->push_ptr - new_push_ptr;
+        
+        if (((U8*) arena > (U8*) block && (U8*) arena < (U8*) block->push_ptr + block->space))
+        {
+            UMM adjustment = AlignOffset(new_push_ptr, alignof(Memory_Arena)) + sizeof(Memory_Arena);
+            new_push_ptr += adjustment;
+            block_space  -= adjustment;
+        }
+        
+        block->space    += block_space;
+        block->push_ptr  = new_push_ptr;
 	}
 }
 
@@ -160,8 +174,8 @@ ZeroSize(void* ptr, UMM size)
 	while (bptr < (U8*) ptr + size) *(bptr++) = 0;
 }
 
-#define ZeroStruct(type) ZeroSize(type, sizeof(type[0]))
-#define ZeroArray(type, count) ZeroSize(type, sizeof(type[0]) * (count))
+#define ZeroStruct(type) ZeroSize(type, sizeof((type)[0]))
+#define ZeroArray(type, count) ZeroSize(type, sizeof((type)[0]) * (count))
 
 inline void
 MemSet(void* ptr, UMM size, U8 value)

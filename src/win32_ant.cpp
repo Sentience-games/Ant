@@ -86,15 +86,15 @@ Win32RegisterRawInputDevices(HWND window_handle)
 	RAWINPUTDEVICE devices[2];
     
 	devices[0].usUsagePage = 0x1;
-	devices[0].usUsage	   = 0x6;
-	devices[0].dwFlags	   = RIDEV_DEVNOTIFY
+	devices[0].usUsage	 = 0x6;
+	devices[0].dwFlags	 = RIDEV_DEVNOTIFY
         | RIDEV_NOHOTKEYS
         | RIDEV_NOLEGACY;
 	devices[0].hwndTarget  = window_handle;
     
 	devices[1].usUsagePage = 0x1;
-	devices[1].usUsage	   = 0x2;
-	devices[1].dwFlags	   = RIDEV_DEVNOTIFY;
+	devices[1].usUsage	 = 0x2;
+	devices[1].dwFlags	 = RIDEV_DEVNOTIFY;
 	devices[1].hwndTarget  = window_handle;
     
 	if (RegisterRawInputDevices(devices, 2, sizeof(RAWINPUTDEVICE)) == FALSE)
@@ -236,7 +236,7 @@ PLATFORM_GET_ALL_FILES_OF_TYPE_BEGIN_FUNCTION(Win32GetAllFilesOfTypeBegin)
 	{
 		case Platform_AssetFile:
         directory = L"data\\";
-        wildcard  = L"data\\*.aaf";
+        wildcard  = L"data\\*.arf";
 		break;
         
 		INVALID_DEFAULT_CASE;
@@ -497,7 +497,7 @@ PLATFORM_READ_FROM_FILE_FUNCTION(Win32ReadFromFile)
 		overlapped.Offset	 = LARGE_INT_LOW(offset);
 		overlapped.OffsetHigh = LARGE_INT_HIGH(offset);
 		
-		if (ReadFile(win32_handle, dest, size, (LPDWORD) &result, &overlapped))
+		if (!ReadFile(win32_handle, dest, size, (LPDWORD) &result, &overlapped))
 		{
             DWORD error = GetLastError();
             
@@ -514,6 +514,11 @@ PLATFORM_READ_FROM_FILE_FUNCTION(Win32ReadFromFile)
             }
         }
 	}
+    
+    else
+    {
+        result = Platform_InvalidFileHandle;
+    }
     
     return result;
 }

@@ -68,7 +68,7 @@ RENDERER_PUSH_MESH_FUNCTION(RendererPushMesh)
         { /// Create render batch
             UMM batch_block_size = sizeof(Render_Batch_Block) + camera->default_block_size * sizeof(Render_Batch_Entry);
             
-            Assert(MaxAlignOfPointer((Render_Batch_Block*)0 + 1) == 8 && MaxAlignOfPointer((Render_Batch_Block*)0 + 1) == MaxAlignOfPointer((Render_Batch*)0 + 1));
+            StaticAssert(sizeof(Render_Batch_Block) % 8 == 0 && sizeof(Render_Batch_Block) % 8 == 0);
             
             camera->batch = BootstrapPushSize(Render_Batch, arena, batch_block_size);
             camera->batch->current_block  = (Render_Batch_Block*) PushSize(camera->batch->arena, batch_block_size, 8);

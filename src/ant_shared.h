@@ -30,8 +30,10 @@
 #define STRINGIFY_(x) #x
 #define STRINGIFY(x) STRINGIFY_(x)
 
-#define BITS(num) (1 << (num))
+#define BITS(num) (1ll << (num))
 #define ISBITSET(flag, bit) (((flag) & (bit)) != 0)
+
+#define ROUNDTO(num_to_be_rounded, num) (((num_to_be_rounded) + ((num) - 1)) & ~((num) - 1))
 
 #define OFFSETOF(obj, var) (UMM) &(((obj*)0)->var)
 
@@ -40,9 +42,6 @@
 #define NOT_IMPLEMENTED Assert(!"Not implemented");
 
 #define BREAK_ON_FALSE(boolean) if ((boolean)); else break
-
-#define MAKE_VERSION(major, minor, patch)\
-(((major) << 22) | ((minor) << 12) | (patch))
 
 #include "ant_types.h"
 #include "utils/assert.h"

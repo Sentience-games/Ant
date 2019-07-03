@@ -22,20 +22,25 @@ typedef __UINT32_TYPE__ U32;
 typedef __UINT64_TYPE__ U64;
 #endif
 
-#define U8_MAX  (~((U8)0))
-#define U16_MAX (~((U16)0))
-#define U32_MAX (~((U32)0))
-#define U64_MAX (~((U64)0))
+#define U8_MAX  (U8)  0xFF
+#define U16_MAX (U16) 0xFFFF
+#define U32_MAX (U32) 0xFFFFFFFF
+#define U64_MAX (U64) 0xFFFFFFFFFFFFFFFF
 
-#define I8_MAX  ((~((U8)0))  >> 1)
-#define I16_MAX ((~((U16)0)) >> 1)
-#define I32_MAX ((~((U32)0)) >> 1)
-#define I64_MAX ((~((U64)0)) >> 1)
+#define U8_MIN  (U8)  0
+#define U16_MIN (U16) 0
+#define U32_MIN (U32) 0
+#define U64_MIN (U64) 0
 
-#define I8_MIN  (~I8_MAX)
-#define I16_MIN (~I16_MAX)
-#define I32_MIN (~I32_MAX)
-#define I64_MIN (~I64_MAX)
+#define I8_MAX  (I8)  (U8_MAX  >> 1)
+#define I16_MAX (I16) (U16_MAX >> 1)
+#define I32_MAX (I32) (U32_MAX >> 1)
+#define I64_MAX (I64) (U64_MAX >> 1)
+
+#define I8_MIN  (I8)  (~I8_MAX)
+#define I16_MIN (I16) (~I16_MAX)
+#define I32_MIN (I32) (~I32_MAX)
+#define I64_MIN (I64) (~I64_MAX)
 
 typedef float  F32;
 typedef double F64;

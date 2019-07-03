@@ -10,6 +10,8 @@
 #include "assets/assets.h"
 #include "assets/assets.cpp"
 
+#include "utils/error_stream.h"
+
 struct Game_State
 {
     Memory_Arena persistent_memory;
@@ -17,4 +19,6 @@ struct Game_State
     Memory_Arena asset_arena;
     
     Game_Assets assets;
+    
+    bool is_initialized;
 };

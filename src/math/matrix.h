@@ -473,8 +473,8 @@ ViewMatrix(V3 position, Quat rotation)
     
     M4 rotation_matrix = Rotation(rotation);
     
-    result.m = Translation(position) * rotation_matrix;
-    result.inv = Translation(-position) * Transpose(rotation_matrix);
+    result.m   = Translation(-position) * Transpose(rotation_matrix);
+    result.inv = Translation(position) * rotation_matrix;
     
     return result;
 }
