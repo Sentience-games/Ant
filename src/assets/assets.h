@@ -75,14 +75,14 @@ struct Game_Assets
 {
     Memory_Arena arena;
     
-    Asset_Tag_Table_Entry* tag_table;
-    U32 tag_count;
+    String* data_files;
+    U32 data_file_count;
     
     U32 asset_file_count;
     Asset_File* asset_files;
     
-    String* data_files;
-    U32 data_file_count;
+    Asset_Tag_Table_Entry* tag_table;
+    U32 tag_count;
     
     U32 asset_count;
     Asset* assets;

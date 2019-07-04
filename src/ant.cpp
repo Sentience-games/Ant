@@ -12,6 +12,7 @@ GAME_UPDATE_AND_RENDER_FUNCTION(GameUpdateAndRender)
     {
         Error_Stream error_stream = BeginErrorStream(1024);
         ReloadAssets(&state->assets, &error_stream);
+        LogErrorStream(&error_stream);
         EndErrorStream(&error_stream);
         
         state->is_initialized = true;

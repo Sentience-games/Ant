@@ -11,12 +11,36 @@ SortTags(Game_Assets* assets, Asset_Tag* tags)
     {
         for (U32 j = i + 1; j < ASSET_MAX_PER_ASSET_TAG_COUNT; ++j)
         {
-            Assert(tags[i].value < assets->tag_count && tags[j].value < assets->tag_count);
+            bool should_swap = false;
             
-            bool less = tags[i].value > tags[j].value;
-            bool precedence_less = assets->tag_table[tags[i].value].precedence > assets->tag_table[tags[j].value].precedence;
+            if (tags[i].value == 0 && tags[j].value != 0)
+            {
+                should_swap = true;
+            }
             
-            if (less || (tags[i].value == tags[j].value && precedence_less) || !tags[i].value && tags[j].value)
+            else
+            {
+                U32 value_i = 0;
+                U32 value_j = 0;
+                U32 precedence_i = 0;
+                U32 precedence_j = 0;
+                
+                if (tags[i].value)
+                {
+                    value_i = tags[i].value - 1;
+                    precedence_i = assets->tag_table[tags[i].value - 1].precedence;
+                }
+                
+                if (tags[j].value)
+                {
+                    value_j = tags[j].value - 1;
+                    precedence_j = assets->tag_table[tags[j].value - 1].precedence;
+                }
+                
+                should_swap = (precedence_i < precedence_j || (precedence_i == precedence_j && value_i < value_j));
+            }
+            
+            if (should_swap)
             {
                 Asset_Tag temp = tags[i];
                 tags[i] = tags[j];
@@ -64,64 +88,6 @@ SortAssetsByTags(Game_Assets* assets, Asset* assets_to_sort, U32 count)
                 CopyStruct(&assets_to_sort[j], &assets_to_sort[i]);
                 CopyStruct(&temp, &assets_to_sort[j]);
                 j = i + 1;
-            }
-        }
-    }
-}
-
-inline void
-SortAssets(Game_Assets* assets)
-{
-    for (U32 i = 0; i < assets->asset_count; ++i)
-    {
-        switch (assets->assets[i].type)
-        {
-            case Asset_Mesh:
-            ++assets->mesh_count;
-            break;
-            
-            case Asset_Texture:
-            ++assets->texture_count;
-            break;
-            
-            INVALID_DEFAULT_CASE;
-        }
-    }
-    
-    for (U32 i = 0; i < assets->asset_count - 1; ++i)
-    {
-        for (U32 j = i + 1; j < assets->asset_count; ++j)
-        {
-            if (assets->assets[i].type > assets->assets[j].type)
-            {
-                Asset temp = {};
-                CopyStruct(&assets->assets[i], &temp);
-                CopyStruct(&assets->assets[j], &assets->assets[i]);
-                CopyStruct(&temp, &assets->assets[j]);
-                j = i + 1;
-            }
-        }
-    }
-    
-    assets->meshes   = assets->assets;
-    assets->textures = assets->meshes + assets->mesh_count;
-    
-    SortAssetsByTags(assets, assets->meshes, assets->mesh_count);
-    SortAssetsByTags(assets, assets->textures, assets->texture_count);
-}
-
-inline void
-SortTagTable(Game_Assets* assets)
-{
-    for (U32 i = 0; i < assets->tag_count - 1; ++i)
-    {
-        for (U32 j = i + 1; j < assets->tag_count; ++j)
-        {
-            if (assets->tag_table[i].name.data[0] > assets->tag_table[j].name.data[0] && assets->tag_table[i].precedence > assets->tag_table[j].precedence)
-            {
-                Asset_Tag_Table_Entry temp = {};
-                CopyStruct(&assets->tag_table[i], &temp);
-                CopyStruct(&assets->tag_table[j], &assets->tag_table[i]);
             }
         }
     }
@@ -259,101 +225,99 @@ GetBestMatchingAssets(Game_Assets* assets, Enum8(ASSET_TYPE) type, const Asset_T
     return result;
 }
 
+// NOTE(soimn): There are no overflow checks on data file, tag and asset count. Tag count is U16, others U32
 inline void
 ReloadAssets(Game_Assets* assets, Error_Stream* error_stream)
 {
     ClearArena(&assets->arena);
     *assets = {};
     
+    /// Open all asset reg files and validate the headers
+    Platform_File_Group asset_reg_file_group = Platform->GetAllFilesOfTypeBegin(Platform_AssetFile);
     
-    { /// Open all asset reg files and validate the headers
-        Platform_File_Group asset_reg_file_group = Platform->GetAllFilesOfTypeBegin(Platform_AssetFile);
+    if (asset_reg_file_group.file_count)
+    {
+        assets->asset_files = PushArray(&assets->arena, Asset_File, asset_reg_file_group.file_count);
+        Platform_File_Info* scan = asset_reg_file_group.first_file_info;
         
-        if (asset_reg_file_group.file_count)
+        for (U32 i = 0; i < asset_reg_file_group.file_count; ++i)
         {
-            assets->asset_files = PushArray(&assets->arena, Asset_File, asset_reg_file_group.file_count);
-            Platform_File_Info* scan = asset_reg_file_group.first_file_info;
+            Platform_File_Handle file_handle = Platform->OpenFile(scan, Platform_OpenRead);
             
-            for (U32 i = 0; i < asset_reg_file_group.file_count; ++i)
+            if (file_handle.is_valid)
             {
-                Platform_File_Handle file_handle = Platform->OpenFile(scan, Platform_OpenRead);
+                U8 header_buffer[512] = {};
+                File_Error_Code read_error = Platform->ReadFromFile(file_handle, 0, ARRAY_COUNT(header_buffer), header_buffer);
                 
-                if (file_handle.is_valid)
+                if (read_error > 0)
                 {
-                    U8 header_buffer[512] = {};
-                    File_Error_Code read_error = Platform->ReadFromFile(file_handle, 0, ARRAY_COUNT(header_buffer), header_buffer);
+                    String header     = {ARRAY_COUNT(header_buffer), (U8*) header_buffer};
+                    String first_word = GetWord(&header);
                     
-                    if (read_error > 0)
+                    if (StringCompare(first_word, CONST_STRING("ARF")))
                     {
-                        String header     = {ARRAY_COUNT(header_buffer), (U8*) header_buffer};
-                        String first_word = GetWord(&header);
+                        String version_tag = GetWord(&header);
                         
-                        if (StringCompare(first_word, CONST_STRING("ARF")))
+                        UMM divider = 0;
+                        if (!FindChar(version_tag, '.', &divider))
                         {
-                            String version_tag = GetWord(&header);
+                            divider = version_tag.size;
+                        }
+                        
+                        I64 major_version = 0;
+                        String major      = {divider, version_tag.data};
+                        bool is_major_valid = ParseInt(major, 10, &major_version);
+                        is_major_valid = is_major_valid && (major_version <= (I64) U16_MAX);
+                        
+                        I64 minor_version = 0;
+                        String minor      = {version_tag.size - divider, version_tag.data + divider};
+                        bool is_minor_valid = ParseInt(minor, 10, &minor_version) || divider == version_tag.size;
+                        is_minor_valid = is_minor_valid && (0 <= minor_version && minor_version <= (I64) U16_MAX);
+                        
+                        if (is_major_valid && is_minor_valid)
+                        {
+                            CopyStruct(scan, &assets->asset_files[assets->asset_file_count].file_info);
+                            assets->asset_files[assets->asset_file_count].version = ((U32) major_version << 15) & (U32) minor_version;
                             
-                            UMM divider = 0;
-                            if (!FindChar(version_tag, '.', &divider))
-                            {
-                                divider = version_tag.size;
-                            }
-                            
-                            I64 major_version = 0;
-                            String major      = {divider, version_tag.data};
-                            bool is_major_valid = ParseInt(major, 10, &major_version);
-                            is_major_valid = is_major_valid && (major_version <= (I64) U16_MAX);
-                            
-                            I64 minor_version = 0;
-                            String minor      = {version_tag.size - divider, version_tag.data + divider};
-                            bool is_minor_valid = ParseInt(minor, 10, &minor_version) || divider == version_tag.size;
-                            is_minor_valid = is_minor_valid && (0 <= minor_version && minor_version <= (I64) U16_MAX);
-                            
-                            if (is_major_valid && is_minor_valid)
-                            {
-                                CopyStruct(scan, &assets->asset_files[assets->asset_file_count].file_info);
-                                assets->asset_files[assets->asset_file_count].version = ((U32) major_version << 15) & (U32) minor_version;
-                                
-                                ++assets->asset_file_count;
-                            }
-                            
-                            else
-                            {
-                                //// Error: File version is invalid
-                                PushError(error_stream, "The asset file \"%S\" has an invalid version tag. Expected \"MAJOR.MINOR\" got \"%S\"", scan->base_name, version_tag);
-                            }
+                            ++assets->asset_file_count;
                         }
                         
                         else
                         {
-                            //// Error: File is missing ARF tag
-                            PushError(error_stream, "The asset file \"%S\" is missing an \"ARF\" tag.", scan->base_name);
+                            //// Error: File version is invalid
+                            PushError(error_stream, "The asset file \"%S\" has an invalid version tag. Expected \"MAJOR.MINOR\" got \"%S\"", scan->base_name, version_tag);
                         }
                     }
                     
                     else
                     {
-                        //// Error: Failed to read the first 512 bytes
-                        PushError(error_stream, "Failed to read the first 512 bytes the asset file: \"%S\"", scan->base_name);
+                        //// Error: File is missing ARF tag
+                        PushError(error_stream, "The asset file \"%S\" is missing an \"ARF\" tag.", scan->base_name);
                     }
                 }
                 
                 else
                 {
-                    //// Error: Failed to open the file
-                    PushError(error_stream, "Failed to open the asset file: \"%S\"", scan->base_name);
+                    //// Error: Failed to read the first 512 bytes
+                    PushError(error_stream, "Failed to read the first 512 bytes the asset file: \"%S\"", scan->base_name);
                 }
-                
-                Platform->CloseFile(&file_handle);
-                
-                scan = scan->next;
             }
             
-            Platform->GetAllFilesOfTypeEnd(&asset_reg_file_group);
+            else
+            {
+                //// Error: Failed to open the file
+                PushError(error_stream, "Failed to open the asset file: \"%S\"", scan->base_name);
+            }
+            
+            Platform->CloseFile(&file_handle);
+            
+            scan = scan->next;
         }
         
+        Platform->GetAllFilesOfTypeEnd(&asset_reg_file_group);
         
         Memory_Arena temp_memory = {};
-        temp_memory.block_size = KILOBYTES(1);
+        temp_memory.block_size = KILOBYTES(4);
         
         void* file_buffer = PushSize(&temp_memory, MEGABYTES(512));
         
@@ -385,8 +349,7 @@ ReloadAssets(Game_Assets* assets, Error_Stream* error_stream)
         Asset_Entry* current_asset_entry         = 0;
         
         U32 data_file_count = 0;
-        // TODO(soimn): Ensure tag_count does not overflow
-        U32 tag_count       = 0;
+        U16 tag_count       = 0;
         U32 asset_count     = 0;
         
         for (U32 i = 0; i < assets->asset_file_count; ++i)
@@ -402,7 +365,7 @@ ReloadAssets(Game_Assets* assets, Error_Stream* error_stream)
             Asset_Entry* current_temp_asset_entry         = 0;
             
             U32 temp_data_file_count = 0;
-            U32 temp_tag_count       = 0;
+            U16 temp_tag_count       = 0;
             U32 temp_asset_count     = 0;
             
             Platform_File_Handle file_handle = Platform->OpenFile(&assets->asset_files[i].file_info, Platform_OpenRead);
@@ -420,6 +383,8 @@ ReloadAssets(Game_Assets* assets, Error_Stream* error_stream)
                 
                 Tokenizer tokenizer = Tokenize(file_contents);
                 
+#define PushParsingError(message, ...) PushError(error_stream, "Encountered an error in the asset file: \"%S\", at line: %U. " message, assets->asset_files[i].file_info.base_name, tokenizer.line_nr, ##__VA_ARGS__)
+                
                 Token token = GetToken(&tokenizer);
                 
                 while (token.type != Token_EndOfStream)
@@ -435,6 +400,8 @@ ReloadAssets(Game_Assets* assets, Error_Stream* error_stream)
                             {
                                 String tag_name = token.string;
                                 
+                                EnforceCase(tag_name, 1);
+                                
                                 if (tag_name.size)
                                 {
                                     if (RequireToken(&tokenizer, Token_Colon))
@@ -447,35 +414,33 @@ ReloadAssets(Game_Assets* assets, Error_Stream* error_stream)
                                             
                                             if (RequireToken(&tokenizer, Token_Semicolon))
                                             {
-                                                /// ADD TAG
-                                                
                                                 bool found_equal = false;
-                                                Tag_Entry* scan  = first_temp_tag_entry;
+                                                Tag_Entry* tag_scan  = first_temp_tag_entry;
                                                 
-                                                while (scan)
+                                                while (tag_scan)
                                                 {
-                                                    if (StringCompare(tag_name, scan->name))
+                                                    if (StringCompare(tag_name, tag_scan->name))
                                                     {
                                                         found_equal = true;
                                                         break;
                                                     }
                                                     
-                                                    scan = scan->next;
+                                                    tag_scan = tag_scan->next;
                                                 }
                                                 
                                                 if (!found_equal)
                                                 {
-                                                    scan = first_tag_entry;
+                                                    tag_scan = first_tag_entry;
                                                     
-                                                    while (scan)
+                                                    while (tag_scan)
                                                     {
-                                                        if (StringCompare(tag_name, scan->name))
+                                                        if (StringCompare(tag_name, tag_scan->name))
                                                         {
                                                             found_equal = true;
                                                             break;
                                                         }
                                                         
-                                                        scan = scan->next;
+                                                        tag_scan = tag_scan->next;
                                                     }
                                                 }
                                                 
@@ -505,7 +470,7 @@ ReloadAssets(Game_Assets* assets, Error_Stream* error_stream)
                                                 else
                                                 {
                                                     //// ERROR
-                                                    PushError(error_stream, "The tag name \"%S\", in the asset file \"%S\", is already in use", tag_name, assets->asset_files[i].file_info.base_name);
+                                                    PushParsingError("The tag name \"%S\", in the asset file \"%S\", is already in use", tag_name, assets->asset_files[i].file_info.base_name);
                                                     encountered_errors = true;
                                                 }
                                             }
@@ -513,7 +478,7 @@ ReloadAssets(Game_Assets* assets, Error_Stream* error_stream)
                                             else
                                             {
                                                 //// ERROR
-                                                PushError(error_stream, "Missing semicolon after tag definition");
+                                                PushParsingError("Missing semicolon after tag definition");
                                                 encountered_errors = true;
                                             }
                                         }
@@ -521,7 +486,7 @@ ReloadAssets(Game_Assets* assets, Error_Stream* error_stream)
                                         else
                                         {
                                             //// ERROR
-                                            PushError(error_stream, "Invalid precedence in tag definition");
+                                            PushParsingError("Invalid precedence in tag definition");
                                             encountered_errors = true;
                                         }
                                     }
@@ -529,7 +494,7 @@ ReloadAssets(Game_Assets* assets, Error_Stream* error_stream)
                                     else
                                     {
                                         //// ERROR
-                                        PushError(error_stream, "Missing colon after tag name in tag definition");
+                                        PushParsingError("Missing colon after tag name in tag definition");
                                         encountered_errors = true;
                                     }
                                 }
@@ -537,7 +502,7 @@ ReloadAssets(Game_Assets* assets, Error_Stream* error_stream)
                                 else
                                 {
                                     //// ERROR
-                                    PushError(error_stream, "Empty name in tag definition");
+                                    PushParsingError("Empty name in tag definition");
                                     encountered_errors = true;
                                 }
                             }
@@ -545,7 +510,7 @@ ReloadAssets(Game_Assets* assets, Error_Stream* error_stream)
                             else
                             {
                                 //// ERROR
-                                PushError(error_stream, "Missing name after tag definition tag");
+                                PushParsingError("Missing name after tag definition tag");
                                 encountered_errors = true;
                             }
                         }
@@ -555,6 +520,16 @@ ReloadAssets(Game_Assets* assets, Error_Stream* error_stream)
                         {
                             Asset_Entry temp_entry = {};
                             U32 tag_index = 0;
+                            
+                            if (StringCompare(token.string, CONST_STRING("MESH")))
+                            {
+                                temp_entry.asset.type = Asset_Mesh;
+                            }
+                            
+                            else
+                            {
+                                temp_entry.asset.type = Asset_Texture;
+                            }
                             
                             if (RequireToken(&tokenizer, Token_Colon))
                             {
@@ -642,39 +617,42 @@ ReloadAssets(Game_Assets* assets, Error_Stream* error_stream)
                                                             {
                                                                 String tag_name = token.string;
                                                                 
+                                                                EnforceCase(tag_name, 1);
+                                                                
                                                                 token = GetToken(&tokenizer);
                                                                 
-                                                                if (token.type == Token_Equals || (token.type == Token_Operator && token.value_c == ','))
+                                                                if (token.type == Token_Equals || (token.type == Token_Operator && token.value_c == ',')
+                                                                    || token.type == Token_Semicolon)
                                                                 {
                                                                     U16 index        = (U16) tag_count;
                                                                     bool found_equal = false;
-                                                                    Tag_Entry* scan  = first_temp_tag_entry;
-                                                                    while (scan)
+                                                                    Tag_Entry* tag_scan  = first_temp_tag_entry;
+                                                                    while (tag_scan)
                                                                     {
-                                                                        if (StringCompare(scan->name, tag_name))
+                                                                        if (StringCompare(tag_scan->name, tag_name))
                                                                         {
                                                                             found_equal = true;
                                                                             break;
                                                                         }
                                                                         
                                                                         ++index;
-                                                                        scan = scan->next;
+                                                                        tag_scan = tag_scan->next;
                                                                     }
                                                                     
                                                                     if (!found_equal)
                                                                     {
                                                                         index = 0;
-                                                                        scan  = first_tag_entry;
-                                                                        while (scan)
+                                                                        tag_scan  = first_tag_entry;
+                                                                        while (tag_scan)
                                                                         {
-                                                                            if (StringCompare(scan->name, tag_name))
+                                                                            if (StringCompare(tag_scan->name, tag_name))
                                                                             {
                                                                                 found_equal = true;
                                                                                 break;
                                                                             }
                                                                             
                                                                             ++index;
-                                                                            scan = scan->next;
+                                                                            tag_scan = tag_scan->next;
                                                                         }
                                                                     }
                                                                     
@@ -703,6 +681,7 @@ ReloadAssets(Game_Assets* assets, Error_Stream* error_stream)
                                                                                 else
                                                                                 {
                                                                                     //// ERROR
+                                                                                    PushParsingError("Missing list delimeter or semicolon");
                                                                                     encountered_errors = true;
                                                                                     break;
                                                                                 }
@@ -711,6 +690,7 @@ ReloadAssets(Game_Assets* assets, Error_Stream* error_stream)
                                                                             else
                                                                             {
                                                                                 //// ERROR
+                                                                                PushParsingError("Expected a number after equal sign in tag list");
                                                                                 encountered_errors = true;
                                                                                 break;
                                                                             }
@@ -730,14 +710,16 @@ ReloadAssets(Game_Assets* assets, Error_Stream* error_stream)
                                                                     else
                                                                     {
                                                                         //// ERROR
+                                                                        PushParsingError("Unknown tag specified in asset tag list");
                                                                         encountered_errors = true;
                                                                         break;
                                                                     }
                                                                 }
                                                                 
-                                                                else if (token.type != Token_Semicolon)
+                                                                else
                                                                 {
                                                                     //// ERROR
+                                                                    PushParsingError("Invalid token following tag name in asset tag list");
                                                                     encountered_errors = true;
                                                                     break;
                                                                 }
@@ -746,6 +728,7 @@ ReloadAssets(Game_Assets* assets, Error_Stream* error_stream)
                                                             else
                                                             {
                                                                 //// ERROR
+                                                                PushParsingError("Expected tag name after TAGS tag");
                                                                 encountered_errors = true;
                                                                 break;
                                                             }
@@ -755,7 +738,7 @@ ReloadAssets(Game_Assets* assets, Error_Stream* error_stream)
                                                     else
                                                     {
                                                         //// ERROR
-                                                        PushError(error_stream, "Missing colon after TAGS tag");
+                                                        PushParsingError("Missing colon after TAGS tag");
                                                         encountered_errors = true;
                                                     }
                                                 }
@@ -817,7 +800,7 @@ ReloadAssets(Game_Assets* assets, Error_Stream* error_stream)
                                                                         else
                                                                         {
                                                                             //// ERROR
-                                                                            PushError(error_stream, "Specified %s is too large. Max value is 4GB.", (is_offset ? "offset" : "size"));
+                                                                            PushParsingError("Specified %s is too large. Max value is 4GB.", (is_offset ? "offset" : "size"));
                                                                             encountered_errors = true;
                                                                         }
                                                                     }
@@ -825,7 +808,7 @@ ReloadAssets(Game_Assets* assets, Error_Stream* error_stream)
                                                                     else
                                                                     {
                                                                         //// ERROR
-                                                                        PushError(error_stream, "Invalid unit");
+                                                                        PushParsingError("Invalid unit");
                                                                         encountered_errors = true;
                                                                     }
                                                                 }
@@ -833,7 +816,7 @@ ReloadAssets(Game_Assets* assets, Error_Stream* error_stream)
                                                                 else
                                                                 {
                                                                     //// ERROR
-                                                                    PushError(error_stream, "Expected a semicolon at the end of the line");
+                                                                    PushParsingError("Expected a semicolon at the end of the line");
                                                                     encountered_errors = true;
                                                                 }
                                                             }
@@ -841,7 +824,7 @@ ReloadAssets(Game_Assets* assets, Error_Stream* error_stream)
                                                             else
                                                             {
                                                                 //// ERROR
-                                                                PushError(error_stream, "Expected a semicolon at the end of the line");
+                                                                PushParsingError("Expected a semicolon at the end of the line");
                                                                 encountered_errors = true;
                                                             }
                                                         }
@@ -849,7 +832,7 @@ ReloadAssets(Game_Assets* assets, Error_Stream* error_stream)
                                                         else
                                                         {
                                                             //// ERROR
-                                                            PushError(error_stream, "Invalid token after \"%s\" in asset definition. Expected  a number.", (is_offset ? "OFFSET" : "SIZE"));
+                                                            PushParsingError("Invalid token after \"%s\" in asset definition. Expected  a number.", (is_offset ? "OFFSET" : "SIZE"));
                                                             encountered_errors = true;
                                                         }
                                                     }
@@ -857,7 +840,7 @@ ReloadAssets(Game_Assets* assets, Error_Stream* error_stream)
                                                     else
                                                     {
                                                         //// ERROR
-                                                        PushError(error_stream, "Missing colon after \"%s\" in asset definition", (is_offset ? "OFFSET" : "SIZE"));
+                                                        PushParsingError("Missing colon after \"%s\" in asset definition", (is_offset ? "OFFSET" : "SIZE"));
                                                         encountered_errors = true;
                                                     }
                                                 }
@@ -865,6 +848,7 @@ ReloadAssets(Game_Assets* assets, Error_Stream* error_stream)
                                                 else
                                                 {
                                                     //// ERROR
+                                                    PushParsingError("Invalid identifier in asset definition");
                                                     encountered_errors = true;
                                                 }
                                             }
@@ -872,6 +856,7 @@ ReloadAssets(Game_Assets* assets, Error_Stream* error_stream)
                                             else
                                             {
                                                 //// ERROR
+                                                PushParsingError("Encountered an unknown token in asset defintion");
                                                 encountered_errors = true;
                                             }
                                             
@@ -890,7 +875,7 @@ ReloadAssets(Game_Assets* assets, Error_Stream* error_stream)
                                     else
                                     {
                                         //// ERROR
-                                        PushError(error_stream, "Expected open brace after asset definition header");
+                                        PushParsingError("Expected open brace after asset definition header");
                                         encountered_errors = true;
                                     }
                                 }
@@ -898,7 +883,7 @@ ReloadAssets(Game_Assets* assets, Error_Stream* error_stream)
                                 else
                                 {
                                     //// ERROR
-                                    PushError(error_stream, "Missing path string after asset definition type tag");
+                                    PushParsingError("Missing path string after asset definition type tag");
                                     encountered_errors = true;
                                 }
                             }
@@ -906,7 +891,7 @@ ReloadAssets(Game_Assets* assets, Error_Stream* error_stream)
                             else
                             {
                                 //// ERROR
-                                PushError(error_stream, "Missing colon after asset definition type tag");
+                                PushParsingError("Missing colon after asset definition type tag");
                                 encountered_errors = true;
                             }
                             
@@ -916,6 +901,7 @@ ReloadAssets(Game_Assets* assets, Error_Stream* error_stream)
                                 
                                 *new_entry = {};
                                 new_entry->asset.reg_file_id = i;
+                                new_entry->asset.type        = temp_entry.asset.type;
                                 new_entry->asset.offset      = temp_entry.asset.offset;
                                 new_entry->asset.size        = temp_entry.asset.size;
                                 
@@ -940,14 +926,14 @@ ReloadAssets(Game_Assets* assets, Error_Stream* error_stream)
                         else
                         {
                             //// ERROR
-                            PushError(error_stream, "Encountered unkown identifier");
+                            PushParsingError("Encountered unkown identifier");
                             encountered_errors = true;
                         }
                         break;
                         
                         default:
                         //// ERROR
-                        PushError(error_stream, "Encountered an unkown token");
+                        PushParsingError("Encountered an unkown token");
                         encountered_errors = true;
                         break;
                     }
@@ -1025,6 +1011,135 @@ ReloadAssets(Game_Assets* assets, Error_Stream* error_stream)
                 tag_count       += temp_tag_count;
                 asset_count     += temp_asset_count;
             }
+            
+#undef PushParsingError
         }
+        
+        assets->data_file_count = data_file_count;
+        assets->tag_count       = tag_count;
+        assets->asset_count     = asset_count;
+        
+        if (data_file_count)
+        {
+            assets->data_files = PushArray(&assets->arena, String, data_file_count);
+            
+            Data_File_Entry* data_file_scan = first_data_file_entry;
+            for (U32 i = 0; i < data_file_count; ++i)
+            {
+                assets->data_files[i].size = data_file_scan->path.size;
+                assets->data_files[i].data = (U8*) PushSize(&assets->arena, data_file_scan->path.size);
+                Copy(data_file_scan->path.data, assets->data_files[i].data, data_file_scan->path.size);
+                
+                data_file_scan = data_file_scan->next;
+            }
+        }
+        
+        U16* tag_diff_table = 0;
+        
+        if (tag_count)
+        {
+            assets->tag_table = PushArray(&assets->arena, Asset_Tag_Table_Entry, tag_count);
+            
+            Tag_Entry* tag_scan = first_tag_entry;
+            for (U16 i = 0; i < tag_count; ++i)
+            {
+                assets->tag_table[i] = {};
+                assets->tag_table[i].name.size = tag_scan->name.size;
+                assets->tag_table[i].name.data = (U8*) PushSize(&assets->arena, tag_scan->name.size);
+                Copy(tag_scan->name.data, assets->tag_table[i].name.data, tag_scan->name.size);
+                
+                assets->tag_table[i].precedence = tag_scan->precedence;
+                
+                tag_scan = tag_scan->next;
+            }
+            
+            for (U16 i = 0; i < tag_count - 1; ++i)
+            {
+                for (U16 j = i + 1; j < tag_count; ++j)
+                {
+                    if (assets->tag_table[i].name.data[0] > assets->tag_table[j].name.data[0])
+                    {
+                        Asset_Tag_Table_Entry temp = {};
+                        CopyStruct(&assets->tag_table[i], &temp);
+                        CopyStruct(&assets->tag_table[j], &assets->tag_table[i]);
+                        CopyStruct(&temp, &assets->tag_table[j]);
+                    }
+                }
+            }
+            
+            tag_diff_table = PushArray(&temp_memory, U16, tag_count);
+            
+            tag_scan = first_tag_entry;
+            for (U16 i = 0; i < tag_count; ++i)
+            {
+                U16 new_index = 0;
+                for (U16 j = 0; j < tag_count; ++j)
+                {
+                    if (StringCompare(tag_scan->name, assets->tag_table[j].name))
+                    {
+                        new_index = j + 1;
+                        break;
+                    }
+                }
+                
+                tag_diff_table[i] = new_index;
+                
+                tag_scan = tag_scan->next;
+            }
+        }
+        
+        if (asset_count)
+        {
+            assets->assets = PushArray(&assets->arena, Asset, asset_count);
+            
+            Asset_Entry* asset_scan = first_asset_entry;
+            for (U32 i = 0; i < asset_count; ++i)
+            {
+                CopyStruct(&asset_scan->asset, &assets->assets[i]);
+                
+                for (U32 j = 0; j < ASSET_MAX_PER_ASSET_TAG_COUNT; ++j)
+                {
+                    assets->assets[i].tags[j].value = tag_diff_table[assets->assets[i].tags[j].value - 1];
+                }
+                
+                switch (assets->assets[i].type)
+                {
+                    case Asset_Mesh:
+                    ++assets->mesh_count;
+                    break;
+                    
+                    case Asset_Texture:
+                    ++assets->texture_count;
+                    break;
+                    
+                    INVALID_DEFAULT_CASE;
+                }
+                
+                asset_scan = asset_scan->next;
+            }
+            
+            for (U32 i = 0; i < assets->asset_count - 1; ++i)
+            {
+                for (U32 j = i + 1; j < assets->asset_count; ++j)
+                {
+                    if (assets->assets[i].type > assets->assets[j].type)
+                    {
+                        Asset temp = {};
+                        CopyStruct(&assets->assets[i], &temp);
+                        CopyStruct(&assets->assets[j], &assets->assets[i]);
+                        CopyStruct(&temp, &assets->assets[j]);
+                        j = i + 1;
+                    }
+                }
+            }
+            
+            assets->meshes   = assets->assets;
+            assets->textures = assets->meshes + assets->mesh_count;
+            
+            SortAssetsByTags(assets, assets->meshes, assets->mesh_count);
+            SortAssetsByTags(assets, assets->textures, assets->texture_count);
+        }
+        
+        ClearArena(&temp_memory);
     }
 }

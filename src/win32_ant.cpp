@@ -73,6 +73,23 @@ PLATFORM_LOG_ERROR_FUNCTION(Win32LogError)
 		Running = false;
 }
 
+PLATFORM_LOG_FUNCTION(Win32Log)
+{
+    char formatted_message[1024] = {};
+    
+    Assert(message.size < 1024);
+    
+    va_list arg_list;
+    va_start(arg_list, message);
+    
+    FormatString(&formatted_message[0], ARRAY_COUNT(formatted_message), message, arg_list);
+    
+    va_end(arg_list);
+    
+	OutputDebugStringA(formatted_message);
+    OutputDebugStringA("\n");
+}
+
 
 /// 
 /// Raw Input
@@ -836,6 +853,7 @@ int CALLBACK WinMain(HINSTANCE instance,
             
             memory->platform_api.LogInfo				= &Win32LogInfo;
             memory->platform_api.LogError			   = &Win32LogError;
+            memory->platform_api.Log			        = &Win32Log;
             
             memory->platform_api.GetAllFilesOfTypeBegin = &Win32GetAllFilesOfTypeBegin;
             memory->platform_api.GetAllFilesOfTypeEnd   = &Win32GetAllFilesOfTypeEnd;

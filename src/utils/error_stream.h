@@ -11,8 +11,7 @@ struct Error_Stream_Chunk
     String file_name;
     U32 line_nr;
     
-    U8* contents;
-    UMM size;
+    String contents;
     
     Error_Stream_Chunk* next;
 };
@@ -41,19 +40,22 @@ EndErrorStream(Error_Stream* stream)
 }
 
 inline void
-PushError_(const char* file_name, U32 line_nr, Error_Stream* stream, const char* format_string, ...)
+PushError_(const char* file_name, U32 line_nr, Error_Stream* stream, const char* format, ...)
 {
+    UMM format_length = StrLength(format);
+    String string_format = {format_length, (U8*) format};
+    
     va_list arg_list = {};
-    va_start(arg_list, format_string);
-    UMM required_size = FormatString(0, 0, format_string, arg_list);
+    va_start(arg_list, format);
+    UMM required_size = FormatString(0, 0, string_format, arg_list);
     va_end(arg_list);
     
     Error_Stream_Chunk* new_chunk = PushStruct(&stream->arena, Error_Stream_Chunk);
     new_chunk->file_name = WrapCString(file_name);
     new_chunk->line_nr   = line_nr;
     
-    new_chunk->size = required_size;
-    new_chunk->contents = (U8*) PushSize(&stream->arena, required_size);
+    new_chunk->contents.size = required_size;
+    new_chunk->contents.data = (U8*) PushSize(&stream->arena, required_size);
     
     if (stream->current_chunk)
     {
@@ -68,9 +70,22 @@ PushError_(const char* file_name, U32 line_nr, Error_Stream* stream, const char*
     stream->current_chunk = new_chunk;
     ++stream->chunk_count;
     
-    va_start(arg_list, format_string);
-    FormatString((char*) stream->current_chunk->contents, stream->current_chunk->size, format_string, arg_list);
+    va_start(arg_list, format);
+    FormatString((char*) stream->current_chunk->contents.data, stream->current_chunk->contents.size, string_format, arg_list);
     va_end(arg_list);
 }
 
-#define PushError(stream, format_string, ...) PushError_(__FILE__, __LINE__, stream, format_string, ## __VA_ARGS__)
+#define PushError(stream, format, ...) PushError_(__FILE__, __LINE__, stream, format, ## __VA_ARGS__)
+
+
+inline void
+LogErrorStream(Error_Stream* stream)
+{
+    Error_Stream_Chunk* scan = stream->first_chunk;
+    for (U32 i = 0; i < stream->chunk_count; ++i)
+    {
+        Platform->Log(scan->contents);
+        
+        scan = scan->next;
+    }
+}

@@ -39,6 +39,9 @@ typedef PLATFORM_LOG_ERROR_FUNCTION(platform_log_error_function);
 #endif
 
 
+#define PLATFORM_LOG_FUNCTION(name) void name (String message, ...)
+typedef PLATFORM_LOG_FUNCTION(platform_log_function);
+
 /// File API
 
 struct Platform_File_Handle
@@ -150,6 +153,7 @@ struct Platform_API_Functions
     
 	platform_log_info_function* LogInfo;
 	platform_log_error_function* LogError;
+    platform_log_function* Log;
     
 	platform_get_all_files_of_type_begin_function* GetAllFilesOfTypeBegin;
 	platform_get_all_files_of_type_end_function* GetAllFilesOfTypeEnd;

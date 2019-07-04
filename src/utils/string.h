@@ -110,11 +110,11 @@ AppendCString (char** dest, UMM* dest_capacity, const char* cstring)
 // TODO(soimn): Ensure this works properly on 32-Bit systems, int literal size
 // TODO(soimn): Find a better way to report the required size than the if (dest_capacity) {} ++required_size
 inline UMM
-FormatString (char* dest, UMM dest_capacity, const char* format, va_list arg_list)
+FormatString (char* dest, UMM dest_capacity, String format, va_list arg_list)
 {
     UMM required_size = 0;
     
-    for (char* scan = (char*) format; *scan; ++scan)
+    for (char* scan = (char*) format.data; scan < (char*) format.data + format.size; ++scan)
     {
         if (*scan == '%')
         {
@@ -271,6 +271,20 @@ FormatString (char* dest, UMM dest_capacity, const char* format, va_list arg_lis
 
 inline UMM
 FormatString (char* dest, UMM dest_capacity, const char* format, ...)
+{
+    UMM format_length = StrLength(format);
+    String string_format = {format_length, (U8*) format};
+    
+    va_list arg_list;
+    va_start(arg_list, format);
+    UMM required_size = FormatString(dest, dest_capacity, string_format, arg_list);
+    va_end(arg_list);
+    
+    return required_size;
+}
+
+inline UMM
+FormatString (char* dest, UMM dest_capacity, String format, ...)
 {
     va_list arg_list;
     va_start(arg_list, format);
@@ -436,4 +450,21 @@ FindChar(String input, char c, UMM* result)
     }
     
     return found_char;
+}
+
+inline void
+EnforceCase(String input, bool should_be_lowercase = 1)
+{
+    for (UMM i = 0; i < input.size; ++i)
+    {
+        if (input.data[i] >= 'A' && input.data[i] <= 'Z' && should_be_lowercase)
+        {
+            input.data[i] = (input.data[i] - 'A') + 'a';
+        }
+        
+        else if (input.data[i] >= 'a' && input.data[i] <= 'z' && !should_be_lowercase)
+        {
+            input.data[i] = (input.data[i] - 'a') + 'A';
+        }
+    }
 }
