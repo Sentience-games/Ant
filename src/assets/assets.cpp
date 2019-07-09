@@ -77,6 +77,7 @@ SortAssetsByTags(Game_Assets* assets, Asset* assets_to_sort, U32 count)
                     if (assets_to_sort[i].tags[k].value > assets_to_sort[j].tags[k].value)
                     {
                         should_swap = true;
+                        break;
                     }
                 }
             }
@@ -132,73 +133,64 @@ SearchAssetsByTag(Asset* first_asset, U32 count, U16 match_tag, U8 index, bool f
     return result;
 }
 
-inline Asset_List
-GetBestMatchingAssets(Game_Assets* assets, Enum8(ASSET_TYPE) type, const Asset_Tag (&tags) [ASSET_MAX_PER_ASSET_TAG_COUNT])
+// TODO(soimn): Match by the tags along with the value
+inline Asset_ID
+GetBestMatchingAsset(Game_Assets* assets, Enum8(ASSET_TYPE) type, Asset_Tag* passed_tags)
 {
-    Asset_List result = {};
-    
-    Asset_Tag copied_tags[ASSET_MAX_PER_ASSET_TAG_COUNT] = {};
-    CopyArray(tags, copied_tags, ASSET_MAX_PER_ASSET_TAG_COUNT);
-    SortTags(assets, copied_tags);
+    Asset_ID result = {};
     
     Asset* first_asset = 0;
-    U32 count = 0;
-    
+    U32 count          = 0;
     switch (type)
     {
         case Asset_Mesh:
         first_asset = assets->meshes;
-        count = assets->mesh_count;
+        count       = assets->mesh_count;
         break;
         
         case Asset_Texture:
         first_asset = assets->textures;
-        count = assets->texture_count;
+        count       = assets->texture_count;
         break;
         
         INVALID_DEFAULT_CASE;
     }
     
-    Asset* first_matching_asset = 0;
-    if (copied_tags[0].value) first_matching_asset = SearchAssetsByTag(first_asset, count, copied_tags[0].value, 0, false);
+    // TODO(soimn): Should this be moved out to the callers side?
+    Asset_Tag tags[ASSET_MAX_PER_ASSET_TAG_COUNT];
+    CopyArray(passed_tags, tags, ASSET_MAX_PER_ASSET_TAG_COUNT);
     
+    SortTags(assets, tags);
+    
+    
+    Asset* first_matching_asset = SearchAssetsByTag(first_asset, count, tags[0].value, 0, false);
     if (first_matching_asset)
     {
-        count -= (U32)(first_matching_asset - first_asset);
+        count = (U32)(first_matching_asset - first_asset + 1);
         
-        Asset* last_matching_asset = SearchAssetsByTag(first_matching_asset, count, copied_tags[0].value, 0, true);
-        
-        if (first_matching_asset == last_matching_asset)
+        for (U32 i = 0; i < ASSET_MAX_PER_ASSET_TAG_COUNT; ++i)
         {
-            result.first_asset = first_matching_asset;
-            result.count = 1;
-        }
-        
-        else
-        {
-            count = (U32)(last_matching_asset - first_matching_asset) + 1;
-            first_asset = first_matching_asset;
+            Asset* last_matching_asset = SearchAssetsByTag(first_matching_asset, count, tags[i].value, (U8) i, true);
             
-            for (U8 i = 1; i < ASSET_MAX_PER_ASSET_TAG_COUNT; ++i)
+            if (last_matching_asset == first_matching_asset)
             {
-                first_matching_asset = 0;
-                if (copied_tags[i].value) first_matching_asset = SearchAssetsByTag(first_asset, count, copied_tags[i].value, i, false);
+                result.value = (U32)(first_matching_asset - assets->assets);
+                break;
+            }
+            
+            else
+            {
+                count = (U32)(last_matching_asset - first_matching_asset + 1);
                 
-                if (first_matching_asset)
+                if (i == ASSET_MAX_PER_ASSET_TAG_COUNT - 1 || !tags[i].value)
                 {
-                    count -= (U32)(first_matching_asset - first_asset);
-                    first_asset = first_matching_asset;
-                    
-                    last_matching_asset = SearchAssetsByTag(first_matching_asset, count, copied_tags[i].value, i, true);
-                    
-                    count = (U32)(last_matching_asset - first_matching_asset) + 1;
+                    result.value = (U32)(first_matching_asset - assets->assets);
+                    break;
                 }
                 
                 else
                 {
-                    result.first_asset = first_asset;
-                    result.count = count;
-                    break;
+                    first_matching_asset = SearchAssetsByTag(first_matching_asset, count, tags[i + 1].value, (U8) i + 1, false);
                 }
             }
         }
@@ -209,20 +201,25 @@ GetBestMatchingAssets(Game_Assets* assets, Enum8(ASSET_TYPE) type, const Asset_T
         switch (type)
         {
             case Asset_Mesh:
-            result.first_asset = assets->default_mesh;
+            result = assets->default_mesh;
             break;
             
             case Asset_Texture:
-            result.first_asset = assets->default_texture;
+            result = assets->default_texture;
             break;
             
             INVALID_DEFAULT_CASE;
         }
-        
-        result.count = 1;
     }
     
     return result;
+}
+
+inline Asset*
+GetAsset(Game_Assets* assets, Asset_ID id)
+{
+    Assert(id.value < assets->asset_count);
+    return assets->assets + id.value;
 }
 
 // NOTE(soimn): There are no overflow checks on data file, tag and asset count. Tag count is U16, others U32
@@ -352,6 +349,30 @@ ReloadAssets(Game_Assets* assets, Error_Stream* error_stream)
         U16 tag_count       = 0;
         U32 asset_count     = 0;
         
+        { /// Adding default tags
+            Tag_Entry* none  = PushStruct(&temp_memory, Tag_Entry);
+            none->name       = CONST_STRING("none");
+            none->precedence = 0;
+            
+            first_tag_entry   = none;
+            current_tag_entry = none;
+            ++tag_count;
+        }
+        
+        { /// Adding default assets
+            Asset_Entry* default_mesh    = PushStruct(&temp_memory, Asset_Entry);
+            Asset_Entry* default_texture = PushStruct(&temp_memory, Asset_Entry);
+            
+            // TODO(soimn): Fill these
+            *default_mesh    = {};
+            *default_texture = {};
+            
+            first_asset_entry   = default_mesh;
+            default_mesh->next  = default_texture;
+            current_asset_entry = default_texture;
+            asset_count += ASSET_TYPE_COUNT;
+        }
+        
         for (U32 i = 0; i < assets->asset_file_count; ++i)
         {
             bool encountered_errors = false;
@@ -444,7 +465,7 @@ ReloadAssets(Game_Assets* assets, Error_Stream* error_stream)
                                                     }
                                                 }
                                                 
-                                                if (!found_equal && !(StringCompare(tag_name, CONST_STRING("none")) || StringCompare(tag_name, CONST_STRING("replacement"))))
+                                                if (!found_equal)
                                                 {
                                                     Tag_Entry* new_entry = PushStruct(&temp_memory, Tag_Entry);
                                                     
@@ -668,7 +689,7 @@ ReloadAssets(Game_Assets* assets, Error_Stream* error_stream)
                                                                                 
                                                                                 if ((token.type == Token_Operator && token.value_c == ',') || token.type == Token_Semicolon)
                                                                                 {
-                                                                                    temp_entry.asset.tags[tag_index++].value = index + 1;
+                                                                                    temp_entry.asset.tags[tag_index++].value = index;
                                                                                     
                                                                                     // TODO(soimn): Handle tag values
                                                                                     
@@ -698,7 +719,7 @@ ReloadAssets(Game_Assets* assets, Error_Stream* error_stream)
                                                                         
                                                                         else
                                                                         {
-                                                                            temp_entry.asset.tags[tag_index++].value = index + 1;
+                                                                            temp_entry.asset.tags[tag_index++].value = index;
                                                                             
                                                                             if (token.type == Token_Semicolon)
                                                                             {
@@ -957,61 +978,68 @@ ReloadAssets(Game_Assets* assets, Error_Stream* error_stream)
                 encountered_errors = true;
             }
             
-            if (!encountered_errors)
+            if (U16_MAX - temp_tag_count < tag_count)
             {
-                if (first_data_file_entry)
-                {
-                    current_data_file_entry->next = first_temp_data_file_entry;
-                }
-                
-                else
-                {
-                    first_data_file_entry   = first_temp_data_file_entry;
-                    current_data_file_entry = first_data_file_entry;
-                }
-                
-                if (current_temp_data_file_entry)
-                {
-                    current_data_file_entry = current_temp_data_file_entry;
-                }
-                
-                if (first_tag_entry)
-                {
-                    current_tag_entry->next = first_temp_tag_entry;
-                }
-                
-                else
-                {
-                    first_tag_entry   = first_temp_tag_entry;
-                    current_tag_entry = first_tag_entry;
-                }
-                
-                if (current_temp_tag_entry)
-                {
-                    current_tag_entry = current_temp_tag_entry;
-                }
-                
-                if (first_asset_entry)
-                {
-                    current_asset_entry->next = first_temp_asset_entry;
-                }
-                
-                else
-                {
-                    first_asset_entry   = first_temp_asset_entry;
-                    current_asset_entry = first_asset_entry;
-                }
-                
-                if (current_temp_asset_entry)
-                {
-                    current_asset_entry = current_temp_asset_entry;
-                }
-                
-                data_file_count += temp_data_file_count;
-                tag_count       += temp_tag_count;
-                asset_count     += temp_asset_count;
+                //// Error: Too many tags
+                PushError(error_stream, "Too many tags");
+                encountered_errors = true;
             }
             
+            if (!encountered_errors)
+            {
+                if (U32_MAX - temp_asset_count >= asset_count)
+                {
+                    if (first_data_file_entry)
+                    {
+                        current_data_file_entry->next = first_temp_data_file_entry;
+                    }
+                    
+                    else
+                    {
+                        first_data_file_entry   = first_temp_data_file_entry;
+                        current_data_file_entry = first_data_file_entry;
+                    }
+                    
+                    if (current_temp_data_file_entry)
+                    {
+                        current_data_file_entry = current_temp_data_file_entry;
+                    }
+                    
+                    current_tag_entry->next = first_temp_tag_entry;
+                    
+                    if (current_temp_tag_entry)
+                    {
+                        current_tag_entry = current_temp_tag_entry;
+                    }
+                    
+                    if (first_asset_entry)
+                    {
+                        current_asset_entry->next = first_temp_asset_entry;
+                    }
+                    
+                    else
+                    {
+                        first_asset_entry   = first_temp_asset_entry;
+                        current_asset_entry = first_asset_entry;
+                    }
+                    
+                    if (current_temp_asset_entry)
+                    {
+                        current_asset_entry = current_temp_asset_entry;
+                    }
+                    
+                    data_file_count += temp_data_file_count;
+                    tag_count       += temp_tag_count;
+                    asset_count     += temp_asset_count;
+                }
+                
+                else
+                {
+                    PushError(error_stream, "Too many assets");
+                    encountered_errors = true;
+                    break;
+                }
+            }
 #undef PushParsingError
         }
         
@@ -1043,7 +1071,7 @@ ReloadAssets(Game_Assets* assets, Error_Stream* error_stream)
             Tag_Entry* tag_scan = first_tag_entry;
             for (U16 i = 0; i < tag_count; ++i)
             {
-                assets->tag_table[i] = {};
+                assets->tag_table[i]           = {};
                 assets->tag_table[i].name.size = tag_scan->name.size;
                 assets->tag_table[i].name.data = (U8*) PushSize(&assets->arena, tag_scan->name.size);
                 Copy(tag_scan->name.data, assets->tag_table[i].name.data, tag_scan->name.size);
@@ -1053,7 +1081,7 @@ ReloadAssets(Game_Assets* assets, Error_Stream* error_stream)
                 tag_scan = tag_scan->next;
             }
             
-            for (U16 i = 0; i < tag_count - 1; ++i)
+            for (U16 i = 1; i < tag_count - 1; ++i)
             {
                 for (U16 j = i + 1; j < tag_count; ++j)
                 {
@@ -1077,7 +1105,7 @@ ReloadAssets(Game_Assets* assets, Error_Stream* error_stream)
                 {
                     if (StringCompare(tag_scan->name, assets->tag_table[j].name))
                     {
-                        new_index = j + 1;
+                        new_index = j;
                         break;
                     }
                 }
@@ -1093,13 +1121,19 @@ ReloadAssets(Game_Assets* assets, Error_Stream* error_stream)
             assets->assets = PushArray(&assets->arena, Asset, asset_count);
             
             Asset_Entry* asset_scan = first_asset_entry;
-            for (U32 i = 0; i < asset_count; ++i)
+            for (U32 i = 0; i < ASSET_TYPE_COUNT; ++i)
+            {
+                CopyStruct(&asset_scan->asset, &assets->assets[i]);
+                asset_scan = asset_scan->next;
+            }
+            
+            for (U32 i = ASSET_TYPE_COUNT; i < asset_count; ++i)
             {
                 CopyStruct(&asset_scan->asset, &assets->assets[i]);
                 
                 for (U32 j = 0; j < ASSET_MAX_PER_ASSET_TAG_COUNT; ++j)
                 {
-                    assets->assets[i].tags[j].value = tag_diff_table[assets->assets[i].tags[j].value - 1];
+                    assets->assets[i].tags[j].value = tag_diff_table[assets->assets[i].tags[j].value];
                 }
                 
                 switch (assets->assets[i].type)
@@ -1118,9 +1152,9 @@ ReloadAssets(Game_Assets* assets, Error_Stream* error_stream)
                 asset_scan = asset_scan->next;
             }
             
-            for (U32 i = 0; i < assets->asset_count - 1; ++i)
+            for (U32 i = 0; i < assets->asset_count - (ASSET_TYPE_COUNT + 1); ++i)
             {
-                for (U32 j = i + 1; j < assets->asset_count; ++j)
+                for (U32 j = i + 1; j < assets->asset_count - ASSET_TYPE_COUNT; ++j)
                 {
                     if (assets->assets[i].type > assets->assets[j].type)
                     {
@@ -1133,7 +1167,7 @@ ReloadAssets(Game_Assets* assets, Error_Stream* error_stream)
                 }
             }
             
-            assets->meshes   = assets->assets;
+            assets->meshes   = assets->assets + ASSET_TYPE_COUNT;
             assets->textures = assets->meshes + assets->mesh_count;
             
             SortAssetsByTags(assets, assets->meshes, assets->mesh_count);

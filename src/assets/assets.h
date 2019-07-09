@@ -4,12 +4,17 @@
 
 #define ASSET_MAX_PER_ASSET_TAG_COUNT 8
 
+// TODO(soimn):
+// - Add a replacement system on asset load
+// - Fill the default assets with meaningfull data
+// - Make use of the tag value assignment
+
 enum ASSET_TYPE
 {
-    Asset_NoType = 0,
-    
     Asset_Mesh,
     Asset_Texture,
+    
+    ASSET_TYPE_COUNT,
 };
 
 enum ASSET_STATE
@@ -23,6 +28,11 @@ enum ASSET_STATE
 struct Asset_Tag
 {
     U16 value;
+};
+
+struct Asset_ID
+{
+    U32 value;
 };
 
 struct Asset_Tag_Table_Entry
@@ -53,12 +63,6 @@ struct Asset
         Triangle_Mesh mesh;
         Texture texture;
     };
-};
-
-struct Asset_List
-{
-    Asset* first_asset;
-    U32 count;
 };
 
 struct Asset_File
@@ -92,6 +96,6 @@ struct Game_Assets
     Asset* meshes;
     Asset* textures;
     
-    Asset* default_mesh;
-    Asset* default_texture;
+    Asset_ID default_mesh;
+    Asset_ID default_texture;
 };
