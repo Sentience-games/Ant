@@ -284,6 +284,17 @@ FormatString (char* dest, UMM dest_capacity, const char* format, ...)
 }
 
 inline UMM
+FormatString (char* dest, UMM dest_capacity, const char* format, va_list arg_list)
+{
+    UMM format_length = StrLength(format);
+    String string_format = {format_length, (U8*) format};
+    
+    UMM required_size = FormatString(dest, dest_capacity, string_format, arg_list);
+    
+    return required_size;
+}
+
+inline UMM
 FormatString (char* dest, UMM dest_capacity, String format, ...)
 {
     va_list arg_list;
