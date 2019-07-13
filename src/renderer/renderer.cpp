@@ -94,7 +94,7 @@ RendererCullAndSortRequests(Camera camera, Render_Info render_info, Mesh_Renderi
             if (Inner(to_p, render_info.culling_vectors[0]) - p_radius <= 0.0f && Inner(to_p, render_info.culling_vectors[1]) - p_radius <= 0.0f && Inner(to_p, render_info.culling_vectors[2]) - p_radius <= 0.0f && Inner(to_p, render_info.culling_vectors[3]) - p_radius <= 0.0f &&
                 to_p.z >= camera.near && to_p.z <= camera.far)
             {
-                M4 mvp = render_info.view_projection_matrix * ModelMatrix(*current->transform).m;
+                M4 mvp = render_info.view_projection_matrix * ModelMatrix(current->transform).m;
                 
                 Vertex_Buffer_Handle vertex_buffer = current->mesh->vertex_buffer;
                 Index_Buffer_Handle index_buffer   = current->mesh->index_buffer;

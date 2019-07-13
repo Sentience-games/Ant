@@ -191,8 +191,8 @@ struct Mesh_Rendering_Info
 {
     Camera_Filter camera_filter;
     Triangle_Mesh* mesh;
-    Transform* transform;
     // Skeleton* skeleton
+    Transform transform;
     Bounding_Sphere bounding_sphere;
 };
 
