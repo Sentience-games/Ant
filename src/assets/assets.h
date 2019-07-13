@@ -25,16 +25,6 @@ enum ASSET_STATE
     Asset_Loaded,
 };
 
-struct Asset_Tag
-{
-    U16 value;
-};
-
-struct Asset_ID
-{
-    U32 value;
-};
-
 struct Asset_Tag_Table_Entry
 {
     String name;

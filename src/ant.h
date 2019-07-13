@@ -12,6 +12,14 @@
 
 #include "utils/error_stream.h"
 
+#include "world/entity.h"
+
+enum GAME_MODE
+{
+    MAIN_MENU,
+    GAME,
+};
+
 struct Game_State
 {
     Memory_Arena persistent_memory;
@@ -20,5 +28,11 @@ struct Game_State
     
     Game_Assets assets;
     
+    Enum8(GAME_MODE) game_mode;
+    
     bool is_initialized;
+    bool is_paused;
 };
+
+// TODO(soimn): Investigate if this would cause any trouble or avoidable mistakes
+Platform_API_Functions* Platform;

@@ -790,11 +790,9 @@ Win32ProcessPendingMessages(HWND window_handle, Platform_Game_Input* old_input, 
 	}
 }
 
-Platform_API_Functions* Platform;
-
-///
+/// 
 /// Entry Point
-///
+/// 
 
 int CALLBACK WinMain(HINSTANCE instance,
 					 HINSTANCE prev_instance,

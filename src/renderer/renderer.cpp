@@ -16,130 +16,178 @@ typedef HMODULE Module;
 #include "renderer/opengl_loader.h"
 
 // NOTE(soimn): This is a read-only* global containing opengl function pointers.
-//              The only exceptions are when the context is created or recreated, however this
-//              does not interfere with the function invocations, as the context is allways created / recreated
-//              before any of the containing functions are invoked.
+//              * The only exceptions are when the context is created or recreated, however this
+//                does not interfere with the function invocations, as the context is always created / recreated
+//                before any of the containing functions are invoked.
 global OpenGL_Binding GLBinding = {};
 
-#include "renderer/opengl.h"
-
-RENDERER_PUSH_MESH_FUNCTION(RendererPushMesh)
+struct Indirect_Draw_Command
 {
-    Assert(camera->is_prepared);
-    Assert(camera->default_block_size && camera->fov && camera->aspect_ratio);
+    U32 vertex_count;
+    U32 instance_count;
+    U32 first_index;
+    I32 base_vertex;
+    U32 base_instance;
+};
+
+struct IDC_Sort_Entry
+{
+    U64 sort_key;
+    Indirect_Draw_Command command;
+};
+
+struct Draw_Param_Entry
+{
+    M4 mvp;
+    U32 material;
+};
+
+internal Render_Info
+RendererInitRenderInfo(Camera camera)
+{
+    Render_Info result = {};
     
-    Render_Batch* batch = camera->batch;
-    
-    if (!camera->is_prepared)
+    V3 right  = {1.0f, 0.0f, 0.0f};
+    V3 down   = {0.0f, 1.0f, 0.0f};
+    V3 bridge = {};
     {
-        // TODO(soimn): Push a job which subdivides the camera frustum into clusters and assigns a list of 
-        //              relavent lights to each.
+        F32 l  = camera.far - camera.near;
+        F32 dx = Tan(camera.fov / 2.0f) * l;
+        F32 dy = dx * (1.0f / camera.aspect_ratio);
         
-        { /// Construct culling vectors
-            // NOTE(soimn): This is a collection of vectors which start from the upper left corner of the cameras 
-            //              frustum, nearest to the near clip plane, and point towards the positive direction of 
-            //              each axis along the bounds of the frustum. The "bridge" points from the upper left 
-            //              corner nearest the near clip plane, to the upper left corner nearest the far clip 
-            //              plane.
-            
-            V3 right  = {1.0f, 0.0f, 0.0f};
-            V3 down   = {0.0f, 1.0f, 0.0f};
-            V3 bridge = {};
-            {
-                F32 l  = camera->far - camera->near;
-                F32 dx = Tan(camera->fov / 2.0f) * l;
-                F32 dy = dx * (1.0f / camera->aspect_ratio);
-                
-                bridge = Normalized(Vec3(-dx, -dy, 1.0f));
-            }
-            
-            V3 plane_up    = Cross(right, bridge);
-            V3 plane_down  = {-plane_up.x, -plane_up.y, plane_up.z};
-            V3 plane_left  = Cross(bridge, down);
-            V3 plane_right = {-plane_left.x, -plane_left.y, plane_left.z};
-            
-            camera->culling_vectors[0] = Normalized(plane_up);
-            camera->culling_vectors[1] = Normalized(plane_down);
-            camera->culling_vectors[2] = Normalized(plane_left);
-            camera->culling_vectors[3] = Normalized(plane_right);
-        }
-        
-        
-        { /// Create render batch
-            UMM batch_block_size = sizeof(Render_Batch_Block) + camera->default_block_size * sizeof(Render_Batch_Entry);
-            
-            StaticAssert(sizeof(Render_Batch_Block) % 8 == 0 && sizeof(Render_Batch_Block) % 8 == 0);
-            
-            camera->batch = BootstrapPushSize(Render_Batch, arena, batch_block_size);
-            camera->batch->current_block  = (Render_Batch_Block*) PushSize(camera->batch->arena, batch_block_size, 8);
-            *camera->batch->current_block = {0, 0, camera->default_block_size};
-        }
-        
-        camera->view_matrix      = ViewMatrix(camera->position, camera->rotation);
-        camera->projection_matrix = Perspective(camera->aspect_ratio, camera->fov, camera->near, camera->far);
-        
-        camera->view_projection_matrix = camera->projection_matrix.m * camera->view_matrix.m;
-        
-        camera->is_prepared = true;
+        bridge = Normalized(Vec3(-dx, -dy, 1.0f));
     }
     
-    V3 to_p = bounding_sphere.position - camera->position;
-    to_p = Rotate(to_p, Conjugate(camera->rotation));
+    V3 plane_up    = Cross(right, bridge);
+    V3 plane_down  = {-plane_up.x, -plane_up.y, plane_up.z};
+    V3 plane_left  = Cross(bridge, down);
+    V3 plane_right = {-plane_left.x, -plane_left.y, plane_left.z};
     
-    if (Inner(to_p, camera->culling_vectors[0]) - bounding_sphere.radius <= 0.0f && Inner(to_p, camera->culling_vectors[1]) - bounding_sphere.radius <= 0.0f && Inner(to_p, camera->culling_vectors[2]) - bounding_sphere.radius <= 0.0f && Inner(to_p, camera->culling_vectors[3]) - bounding_sphere.radius <= 0.0f &&
-        to_p.z >= camera->near && to_p.z <= camera->far)
+    result.culling_vectors[0] = Normalized(plane_up);
+    result.culling_vectors[1] = Normalized(plane_down);
+    result.culling_vectors[2] = Normalized(plane_left);
+    result.culling_vectors[3] = Normalized(plane_right);
+    
+    result.view_projection_matrix = Perspective(camera.aspect_ratio, camera.fov, camera.near, camera.far).m * ViewMatrix(camera.position, camera.rotation).m;
+    
+    return result;
+}
+
+// TODO(soimn): Extra draw params
+// TODO(soimn): Shader id
+// TODO(soimn): Vertex and index buffer location
+// TODO(soimn): Faster sorting
+internal void
+RendererCullAndSortRequests(Camera camera, Render_Info render_info, Mesh_Rendering_Info* infos, U32 info_count, IDC_Sort_Entry* command_buffer, Draw_Param_Entry* draw_param_buffer, U32 buffer_size)
+{
+    U32 current_command_count = 0;
+    
+    Mesh_Rendering_Info* end = infos + MAX(info_count, buffer_size);
+    for (Mesh_Rendering_Info* current = infos; current < end; ++current)
     {
-        M4 mvp = camera->view_projection_matrix * ModelMatrix(transform).m;
-        Vertex_Buffer vertex_buffer = mesh->vertex_buffer;
-        Index_Buffer index_buffer   = mesh->index_buffer;
-        
-        U32 lists_left = mesh->triangle_list_count;
-        while (lists_left)
+        if (current->mesh && (current->camera_filter & camera.filter) == camera.filter)
         {
-            for (U32 i = 0; i < MAX(lists_left, batch->current_block->size - batch->current_index); ++i)
+            V3 to_p      = current->bounding_sphere.position - camera.position;
+            to_p         = Rotate(to_p, Conjugate(camera.rotation));
+            F32 p_radius = current->bounding_sphere.radius;
+            
+            if (Inner(to_p, render_info.culling_vectors[0]) - p_radius <= 0.0f && Inner(to_p, render_info.culling_vectors[1]) - p_radius <= 0.0f && Inner(to_p, render_info.culling_vectors[2]) - p_radius <= 0.0f && Inner(to_p, render_info.culling_vectors[3]) - p_radius <= 0.0f &&
+                to_p.z >= camera.near && to_p.z <= camera.far)
             {
-                Triangle_List* current_list = &mesh->triangle_lists[i];
+                M4 mvp = render_info.view_projection_matrix * ModelMatrix(*current->transform).m;
                 
-                Render_Batch_Entry* entry = (Render_Batch_Entry*)(batch->current_block + 1) + batch->current_index;
+                Vertex_Buffer_Handle vertex_buffer = current->mesh->vertex_buffer;
+                Index_Buffer_Handle index_buffer   = current->mesh->index_buffer;
                 
-                entry->vertex_buffer = {vertex_buffer.handle, vertex_buffer.offset + current_list->offset};
-                entry->index_buffer  = {index_buffer.handle, index_buffer.offset + current_list->offset};
-                entry->material      = current_list->material;
-                entry->vertex_count  = current_list->vertex_count;
-                entry->mvp           = mvp;
+                // NOTE(soimn): This restricts the vertex and index buffers to the same gpu side memory buffer
+                // TODO(soimn): Consider relaxing this constraint
+                Assert(vertex_buffer.index == index_buffer.index);
                 
-                ++batch->current_index;
-                ++batch->entry_count;
+                U64 sort_key = 0;
+                {
+                    U16 buffer_id = (U16) vertex_buffer.index;
+                    
+                    // TODO(soimn): Find out where the shader should be specified
+                    Shader_ID shader = 0;
+                    
+                    U32 depth = MAX((U32) to_p.z, U32_MAX);
+                    
+                    sort_key = ((U64)buffer_id << 55) | ((U64)shader << 47) | (U64)depth;
+                }
                 
-                --lists_left;
+                Triangle_List* triangle_lists = current->mesh->triangle_lists;
+                U32 list_count = current->mesh->triangle_list_count;
+                
+                for (Triangle_List* list = triangle_lists; list < triangle_lists + list_count; ++list)
+                {
+                    IDC_Sort_Entry* new_command = &command_buffer[current_command_count];
+                    new_command->sort_key = sort_key;
+                    
+                    new_command->command.vertex_count = list->vertex_count;
+                    new_command->command.first_index  = list->offset + index_buffer.offset;;
+                    new_command->command.base_vertex  = vertex_buffer.offset;
+                    
+                    new_command->command.base_instance = current_command_count;
+                    
+                    Draw_Param_Entry* new_draw_param = &draw_param_buffer[current_command_count];
+                    
+                    new_draw_param->mvp      = mvp;
+                    new_draw_param->material = list->material;
+                    
+                    ++current_command_count;
+                }
+            }
+        }
+    }
+    
+    for (U32 i = 0; i < current_command_count - 1; ++i)
+    {
+        for (U32 j = i + 1; j < current_command_count; ++j)
+        {
+            bool should_swap = false;
+            
+            U16 buffer_i = (U16)(command_buffer[i].sort_key & ((U64)0xFFFF0000 << 32));
+            U16 buffer_j = (U16)(command_buffer[j].sort_key & ((U64)0xFFFF0000 << 32));
+            
+            if (buffer_i > buffer_j)
+            {
+                should_swap = true;
             }
             
-            if (batch->current_index == batch->current_block->size)
+            else if (buffer_i == buffer_j)
             {
-                batch->current_index = 0;
+                U16 shader_i = (U16)(command_buffer[i].sort_key & ((U64)0xFFFF << 32));
+                U16 shader_j = (U16)(command_buffer[j].sort_key & ((U64)0xFFFF << 32));
                 
-                if (batch->current_block->next)
+                if (shader_i > shader_j)
                 {
-                    batch->current_block = batch->current_block->next;
+                    should_swap = true;
                 }
                 
-                else
+                else if (shader_i == shader_j)
                 {
-                    UMM block_size = sizeof(Render_Batch_Block) + camera->default_block_size * sizeof(Render_Batch_Entry);
+                    U32 depth_i = (command_buffer[i].sort_key & 0xFFFFFFFF);
+                    U32 depth_j = (command_buffer[j].sort_key & 0xFFFFFFFF);
                     
-                    Render_Batch_Block* new_block = (Render_Batch_Block*) PushSize(batch->arena, block_size, alignof(Render_Batch_Block));
-                    
-                    *new_block = {0, 0, camera->default_block_size};
-                    
-                    batch->current_block->next = new_block;
-                    new_block->previous = batch->current_block;
-                    
-                    batch->current_block = new_block;
+                    if (depth_i > depth_j)
+                    {
+                        should_swap = true;
+                    }
                 }
+            }
+            
+            if (should_swap)
+            {
+                IDC_Sort_Entry temp = {};
+                CopyStruct(&command_buffer[i], &temp);
+                CopyStruct(&command_buffer[j], &command_buffer[i]);
+                CopyStruct(&temp, &command_buffer[j]);
             }
         }
     }
 }
+
+#include "renderer/opengl.h"
 
 inline bool
 InitRenderer (Platform_API_Functions* platform_api, Process_Handle process_handle, Window_Handle window_handle)
@@ -151,7 +199,7 @@ InitRenderer (Platform_API_Functions* platform_api, Process_Handle process_handl
         platform_api->PrepareFrame  = &GLPrepareFrame;
         platform_api->PresentFrame  = &GLPresentFrame;
         
-        platform_api->PushMesh      = &RendererPushMesh;
+        platform_api->PrepareRender = &GLPrepareRender;
         platform_api->Render        = &GLRender;
         
         succeeded = true;

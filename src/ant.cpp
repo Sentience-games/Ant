@@ -1,7 +1,5 @@
 #include "ant.h"
 
-Platform_API_Functions* Platform;
-
 extern "C"
 GAME_UPDATE_AND_RENDER_FUNCTION(GameUpdateAndRender)
 {
@@ -16,5 +14,24 @@ GAME_UPDATE_AND_RENDER_FUNCTION(GameUpdateAndRender)
         EndErrorStream(&error_stream);
         
         state->is_initialized = true;
+    }
+    
+    switch (state->game_mode)
+    {
+        case MAIN_MENU:
+        // TODO(soimn): Update and render main menu
+        break;
+        
+        case GAME:
+        if (state->is_paused)
+        {
+            // TODO(soimn): Update and render pause menu
+        }
+        
+        else
+        {
+            // TODO(soimn): Simulate game world
+        }
+        break;
     }
 }

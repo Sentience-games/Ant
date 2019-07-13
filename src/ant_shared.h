@@ -69,3 +69,13 @@ SwapEndianess(U64 num)
     
     return higher | lower;
 }
+
+struct Asset_Tag
+{
+    U16 value;
+};
+
+struct Asset_ID
+{
+    U32 value;
+};
