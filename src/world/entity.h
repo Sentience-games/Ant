@@ -1,10 +1,5 @@
 #pragma once
 
-enum ENTITY_TYPE
-{
-    Entity_NoType = 0,
-};
-
 enum ENTITY_FLAGS
 {
     
@@ -39,11 +34,15 @@ struct Entity_Proximity_Query_Info
     V4 position_mag;
 };
 
+// NOTE(soimn): Entities work like GameObjects in Unity, where an entity is just a set of properties and default 
+//              data. Prefabs in this engine are "blueprints" with a name attached, and will be loaded from a file 
+//              that describes them. These prefabs can then be used in the world chunk files and instantiated by a 
+//              spawners, events, triggers or anything else for that matter. Prefabs can also be modified, like 
+//              describing: Great_Lizalfos - burnable_component, will result in the entity consisting of all the 
+//              components that belong to a Great Lizalfos, excluding the burnable_component.
 struct Entity
 {
-    // TODO(soimn): See if there is a way to access all the components at the same time without much hassel, 
-    //              instead of accessing them sequentially.
-    U64 components;
+    // U64 components;
     Transform transform;
     Flag32(ENTITY_FLAGS) flags;
     U32 child_count;
@@ -56,3 +55,49 @@ struct Entity
     U64 persistent_id;
     Asset_Tag tags[ASSET_MAX_PER_ASSET_TAG_COUNT];
 };
+
+// IDEA(soimn): Accessing all components, even those that are not present
+// All component access is done through a get/set function that checks if the component is present by comparing 
+// the component type with the component flag. If the component is present, the real values present in the 
+// component is copied into memory, else the function zeroes memory.
+// GetComponentValues(component_flag, component_type, memory)
+// SetComponentValues(component_flag, component_type, memory)
+// Pro: increase in flexibilty, Con: overhead on component access
+
+/*
+enum COMPONENT_TYPE
+{
+
+};
+
+inline void
+GetComponent(Entity* entity, Enum8(COMPONENT_TYPE) type, void* result)
+{
+    U64 component_flag = entity->components;
+    
+    U64 type_bit = (1 << type);
+    
+    if (component_flag & type)
+    {
+        // TODO(soimn): Compute the offset to the right component and read the values into _result_
+    }
+    
+    else
+    {
+        ZeroSize(result, size);
+    }
+}
+
+inline void
+SetComponent(Entity* entity, Enum8(COMPONENT_TYPE) type, void* value)
+{
+    U64 component_flag = entity->components;
+    
+    U64 type_bit = (1 << type);
+    
+    if (component_flag & type)
+    {
+        // TODO(soimn): Compute the offset to the right component and write _value_ to the component
+    }
+}
+*/
