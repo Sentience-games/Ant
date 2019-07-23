@@ -1,481 +1,235 @@
-#pragma once 
-
-#include "ant_types.h"
-#include "ant_shared.h"
-
-#include "utils/cstring.h"
-#include "math/utils.h"
+#pragma once
 
 #include <stdarg.h>
 
-#define CONST_STRING(STR) { sizeof(STR) - 1, (U8*)(STR) }
-
-inline String
-WrapCString (const char* cstring)
-{
-	String result = {};
-    
-	result.size = StrLength(cstring);
-	result.data = (U8*) cstring;
-    
-	return result;
-}
-
-inline bool
-IsWhitespace (char c)
-{
-    return (   c == ' '
-            || c == '\t'
-            || c == '\v');
-}
-
-inline bool
-IsEndOfLine(char c)
-{
-    return (c == '\n' || c == '\r');
-}
-
-inline bool
-IsAlpha (char c)
-{
-    return (   (c >= 'A' && c <= 'Z') 
-            || (c >= 'a' && c <= 'z'));
-}
-
-inline bool
-IsNumeric (char c)
-{
-    return (c >= '0' && c <= '9');
-}
-
-inline bool
-IsHex(char c)
-{
-    return IsNumeric(c) || (c >= 'A' && c <= 'F') || (c >= 'a' && c <= 'f');
-}
-
-inline void
-Advance (char** dest, UMM* dest_capacity)
-{
-    Assert(dest && dest_capacity);
-    
-    if (*dest_capacity != 0)
-    {
-        ++(*dest);
-        --(*dest_capacity);
-    }
-}
-
-inline void
-Advance(String* string, UMM amount = 1)
-{
-    if (string->size > amount)
-    {
-        string->data += amount;
-        string->size -= amount;
-    }
-    
-    else
-    {
-        *string = {};
-    }
-}
-
-inline void
-Append (char** dest, UMM* dest_capacity, char data)
-{
-    Assert(dest && dest_capacity);
-    
-    if (dest_capacity != 0)
-    {
-        **dest = data;
-        Advance(dest, dest_capacity);
-    }
-}
-
-inline void
-AppendCString (char** dest, UMM* dest_capacity, const char* cstring)
-{
-    Assert(dest && dest_capacity && cstring);
-    
-    char* at = (char*) cstring;
-    
-    while (dest_capacity && *at)
-    {
-        Append(dest, dest_capacity, *(at++));
-    }
-}
-
-// TODO(soimn): UTF-8 unicode support
-// TODO(soimn): Ensure this works properly on 32-Bit systems, int literal size
-// TODO(soimn): Find a better way to report the required size than the if (dest_capacity) {} ++required_size
 inline UMM
-FormatString (char* dest, UMM dest_capacity, String format, va_list arg_list)
+CStringLength(const char* cstring)
 {
-    UMM required_size = 0;
+    UMM result = 0;
     
-    for (char* scan = (char*) format.data; scan < (char*) format.data + format.size; ++scan)
-    {
-        if (*scan == '%')
-        {
-            ++scan;
-            
-            if (*scan == 0)
-            {
-                Assert(!"Trailing percentage");
-            }
-            
-            else
-            {
-                switch(*scan)
-                {
-                    case '%':
-                    {
-                        if (dest_capacity)
-                        {
-                            Append(&dest, &dest_capacity, *scan);
-                        }
-                    } break;
-                    
-                    case 'S':
-                    {
-                        String string = va_arg(arg_list, String);
-                        char* string_scan = (char*) string.data;
-                        
-                        if (dest_capacity)
-                        {
-                            while (string_scan < (char*) string.data + string.size)
-                            {
-                                Append(&dest, &dest_capacity, *string_scan);
-                                ++string_scan;
-                            }
-                        }
-                        
-                        required_size += string.size;
-                    } break;
-                    
-                    case 's':
-                    {
-                        const char* cstring = va_arg(arg_list, const char*);
-                        
-                        // TODO(soimn): consider asserting cstring is not NULL instead of jumping over the string
-                        while(cstring && *cstring)
-                        {
-                            if (dest_capacity)
-                            {
-                                Append(&dest, &dest_capacity, *cstring);
-                            }
-                            
-                            ++cstring;
-                            ++required_size;
-                        }
-                    } break;
-                    
-                    case 'I':
-                    case 'U':
-                    {
-                        U32 num = va_arg(arg_list, U32);
-                        
-                        if (*scan == 'I' && (I32)num < 0)
-                        {
-                            if (dest_capacity)
-                            {
-                                Append(&dest, &dest_capacity, '-');
-                            }
-                            
-                            num = (U32)((I32) num * -1);
-                            ++required_size;
-                        }
-                        
-                        U32 largest_place = 1;
-                        U32 num_copy      = num / 10;
-                        while (num_copy)
-                        {
-                            num_copy      /= 10;
-                            largest_place *= 10;
-                        }
-                        
-                        do
-                        {
-                            U32 largest_place_num = num / largest_place;
-                            
-                            num -= largest_place_num * largest_place;
-                            largest_place /= 10;
-                            
-                            if (dest_capacity)
-                            {
-                                Append(&dest, &dest_capacity, (char)(largest_place_num + '0'));
-                            }
-                            
-                            ++required_size;
-                        } while (num != 0);
-                    } break;
-                    
-                    case 'B':
-                    case 'b':
-                    {
-                        bool boolean;
-                        
-                        if (*scan == 'b')
-                        {
-                            boolean = va_arg(arg_list, bool);
-                        }
-                        
-                        else
-                        {
-                            boolean = va_arg(arg_list, B32);
-                        }
-                        
-                        
-                        if (boolean)
-                        {
-                            if (dest_capacity)
-                            {
-                                AppendCString(&dest, &dest_capacity, "true");
-                            }
-                            
-                            required_size += 4;
-                        }
-                        
-                        else
-                        {
-                            if (dest_capacity)
-                            {
-                                AppendCString(&dest, &dest_capacity, "false");
-                            }
-                            
-                            required_size += 5;
-                        }
-                    } break;
-                    
-                    default:
-                    Assert(!"Invalid format specifier");
-                    break;
-                }
-            }
-        }
-        
-        else
-        {
-            if (dest_capacity)
-            {
-                Append(&dest, &dest_capacity,*scan);
-            }
-            
-            ++required_size;
-        }
-    }
+    char* scan = (char*) cstring;
     
-    return required_size;
-}
-
-inline UMM
-FormatString (char* dest, UMM dest_capacity, const char* format, ...)
-{
-    UMM format_length = StrLength(format);
-    String string_format = {format_length, (U8*) format};
-    
-    va_list arg_list;
-    va_start(arg_list, format);
-    UMM required_size = FormatString(dest, dest_capacity, string_format, arg_list);
-    va_end(arg_list);
-    
-    return required_size;
-}
-
-inline UMM
-FormatString (char* dest, UMM dest_capacity, const char* format, va_list arg_list)
-{
-    UMM format_length = StrLength(format);
-    String string_format = {format_length, (U8*) format};
-    
-    UMM required_size = FormatString(dest, dest_capacity, string_format, arg_list);
-    
-    return required_size;
-}
-
-inline UMM
-FormatString (char* dest, UMM dest_capacity, String format, ...)
-{
-    va_list arg_list;
-    va_start(arg_list, format);
-    UMM required_size = FormatString(dest, dest_capacity, format, arg_list);
-    va_end(arg_list);
-    
-    return required_size;
-}
-
-inline bool
-StringCompare(String string_0, String string_1)
-{
-    while ((string_0.size && string_1.size) && (string_0.data[0] == string_1.data[0]))
-    {
-        Advance(&string_0);
-        Advance(&string_1);
-    }
-    
-    return !string_0.size && string_0.size == string_1.size;
-}
-
-inline void
-EatAllWhitespace(String* input)
-{
-    while (input->size && IsWhitespace(input->data[0]))
-    {
-        Advance(input);
-    }
-}
-
-inline String
-GetWord(String* input)
-{
-    String result = {};
-    
-    EatAllWhitespace(input);
-    
-    result.data = input->data;
-    
-    while (input->size && !(IsWhitespace(input->data[0]) || IsEndOfLine(input->data[0])))
-    {
-        Advance(input);
-        ++result.size;
-    }
+    while (scan && *scan) ++scan, ++result;
     
     return result;
 }
 
-inline bool
-ParseInt(String input, U8 base, I64* result)
+inline String
+WrapCString(const char* cstring)
 {
-    bool is_erroneous = false;
+    String result = {};
     
-    Assert(base == 2 || base == 10 || base == 16);
+    result.data = (U8*) cstring;
+    result.size = CStringLength(cstring);
     
-    I64 acc = 0;
-    
-    U8 sign = 0;
-    if (input.size && input.data[0] == '-')
-    {
-        sign = 1;
-    }
-    
-    for (UMM i = sign; i < input.size; ++i)
-    {
-        if (!IsNumeric(input.data[i]) && !(base == 16 && IsHex(input.data[i])))
-        {
-            is_erroneous = true;
-        }
-        
-        I64 prev_acc = acc;
-        acc *= base;
-        acc += input.data[i] - (input.data[i] >= 'a' ? 'a' : (input.data[i] >= 'A' ? 'A' : '0'));
-        
-        if (prev_acc > acc)
-        {
-            is_erroneous = true;
-            break;
-        }
-    }
-    
-    if (!is_erroneous)
-    {
-        *result = acc * (sign ? -1 : 1);
-    }
-    
-    return !is_erroneous;
+    return result;
 }
 
-inline bool
-ParseFloat(String input, F32* result)
+#define CONST_STRING(cstring) {sizeof(cstring) - 1, (U8*) (cstring)}
+
+inline void
+Append(char c, U8** dest, UMM* dest_capacity)
 {
-    bool is_erroneous = false;
-    
-    U64 acc = 0;
-    
-    U8 sign = 0;
-    if (input.size && input.data[0] == '-')
+    // NOTE(soimn): The one off bias is due to null termination
+    if (*dest && *dest_capacity > 1)
     {
-        sign = 1;
+        **dest = c;
+        *dest          += 1;
+        *dest_capacity -= 1;
     }
+}
+
+inline void
+Append(const char* string, U8** dest, UMM* dest_capacity)
+{
+    UMM string_length = CStringLength(string);
     
-    bool encountered_point = false;
-    UMM point_place        = 0;
-    
-    for (UMM i = sign; i < input.size; ++i)
+    // NOTE(soimn): The one off bias is due to null termination
+    if (*dest && *dest_capacity >= string_length + 1)
     {
-        if (!IsNumeric(input.data[i]) && (encountered_point && input.data[i] == '.'))
+        Copy((void*) string, *dest, string_length);
+        *dest          += string_length;
+        *dest_capacity -= string_length;
+    }
+}
+
+inline UMM
+FormatString(char* dest, UMM dest_capacity, const char* format, UMM format_length, va_list arg_list)
+{
+    UMM length = 0;
+    U8* buffer = (U8*) dest;
+    UMM buffer_capacity = dest_capacity;
+    
+    char* scan = (char*) format;
+    
+    while (scan < (char*) format + format_length)
+    {
+        if (*scan == '%')
         {
-            is_erroneous = true;
-            break;
+            ++scan;
+            Assert(scan);
+            
+            switch (*scan)
+            {
+                case 's':
+                {
+                    char* string = va_arg(arg_list, char*);
+                    
+                    while (*string)
+                    {
+                        Append(*(string++), &buffer, &buffer_capacity);
+                        ++length;
+                    }
+                } break;
+                
+                case 'S':
+                {
+                    String string = va_arg(arg_list, String);
+                    
+                    for (UMM i = 0; i < string.size; ++i)
+                    {
+                        Append(string.data[0], &buffer, &buffer_capacity);
+                        ++length;
+                    }
+                } break;
+                
+                case 'u':
+                case 'i':
+                {
+                    U32 num = va_arg(arg_list, U32);
+                    
+                    if (*scan == 'i' && (I32) num < 0)
+                    {
+                        num = ~num + 1;
+                        Append('-', &buffer, &buffer_capacity);
+                        ++length;
+                    }
+                    
+                    U32 num_cpy    = num / 10;
+                    U32 multiplier = 1;
+                    
+                    while (num_cpy)
+                    {
+                        multiplier *= 10;
+                        num_cpy    /= 10;
+                    }
+                    
+                    while (multiplier)
+                    {
+                        U32 scaled_num = num / multiplier;
+                        multiplier /= 10;
+                        
+                        U8 digit = scaled_num % 10;
+                        
+                        char c = '0' + digit;
+                        
+                        Append(c, &buffer, &buffer_capacity);
+                        ++length;
+                    }
+                }break;
+                
+                case 'b':
+                {
+                    bool value = va_arg(arg_list, bool);
+                    
+                    if (value)
+                    {
+                        Append("true", &buffer, &buffer_capacity);
+                        length += 4;
+                    }
+                    
+                    else
+                    {
+                        Append("false", &buffer, &buffer_capacity);
+                        length += 5;
+                    }
+                } break;
+                
+                case '%':
+                {
+                    Append('%', &buffer, &buffer_capacity);
+                    ++length;
+                } break;
+                
+                INVALID_DEFAULT_CASE;
+            }
+            
+            ++scan;
         }
         
         else
         {
-            if (input.data[i] == '.')
-            {
-                point_place      = i;
-                encountered_point = true;
-                continue;
-            }
-            
-            else
-            {
-                U64 prev_acc = acc;
-                acc *= 10;
-                acc += input.data[i] - '0';
-                
-                if (prev_acc > acc)
-                {
-                    is_erroneous = true;
-                    break;
-                }
-            }
+            Append(*scan, &buffer, &buffer_capacity);
+            ++length;
+            ++scan;
         }
     }
     
-    if (!is_erroneous)
-    {
-        *result = (sign ? -1.0f : 1.0f) * (F32)acc;
-        
-        if (encountered_point)
-        {
-            *result = *result / (F32)(input.size - point_place);
-        }
-    }
-    
-    return !is_erroneous;
+    return length;
 }
 
-inline bool
-FindChar(String input, char c, UMM* result)
+inline UMM
+FormatString(char* dest, UMM dest_capacity, const char* format, UMM format_length, ...)
 {
-    bool found_char = false;
+    UMM result = 0;
     
-    for (UMM i = 0; i < input.size; ++i)
-    {
-        if (input.data[i] == c)
-        {
-            found_char = true;
-            *result = i;
-        }
-    }
+    va_list arg_list;
     
-    return found_char;
+    va_start(arg_list, &format_length);
+    result = FormatString(dest, dest_capacity, format, format_length, arg_list);
+    va_end(arg_list);
+    
+    return result;
 }
 
-inline void
-EnforceCase(String input, bool should_be_lowercase = 1)
+inline UMM
+FormatString(char* dest, UMM dest_capacity, const char* format, va_list arg_list)
 {
-    for (UMM i = 0; i < input.size; ++i)
-    {
-        if (input.data[i] >= 'A' && input.data[i] <= 'Z' && should_be_lowercase)
-        {
-            input.data[i] = (input.data[i] - 'A') + 'a';
-        }
-        
-        else if (input.data[i] >= 'a' && input.data[i] <= 'z' && !should_be_lowercase)
-        {
-            input.data[i] = (input.data[i] - 'a') + 'A';
-        }
-    }
+    UMM result = 0;
+    
+    UMM format_length = CStringLength(format);
+    
+    result = FormatString(dest, dest_capacity, format, format_length, arg_list);
+    
+    return result;
+}
+
+inline UMM
+FormatString(char* dest, UMM dest_capacity, const char* format, ...)
+{
+    UMM result = 0;
+    
+    va_list arg_list;
+    
+    UMM format_length = CStringLength(format);
+    
+    va_start(arg_list, &format);
+    result = FormatString(dest, dest_capacity, format, format_length, arg_list);
+    va_end(arg_list);
+    
+    return result;
+}
+
+inline UMM
+FormatString(char* dest, UMM dest_capacity, String format, va_list arg_list)
+{
+    UMM result = 0;
+    
+    result = FormatString(dest, dest_capacity, (const char*) format.data, format.size, arg_list);
+    
+    return result;
+}
+
+inline UMM
+FormatString(char* dest, UMM dest_capacity, String format, ...)
+{
+    UMM result = 0;
+    
+    va_list arg_list;
+    
+    va_start(arg_list, &format);
+    result = FormatString(dest, dest_capacity, (const char*) format.data, format.size, arg_list);
+    va_end(arg_list);
+    
+    return result;
 }

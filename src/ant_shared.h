@@ -2,7 +2,6 @@
 
 #define internal static
 #define global static
-#define global_variable static
 #define local_persist static
 
 #define UNUSED_PARAMETER(x) (void)(x)
@@ -14,26 +13,8 @@
 #define GIGABYTES(N) (MEGABYTES(N) * 1024ULL)
 #define TERRABYTES(N) (GIGABYTES(N) * 1024ULL)
 
-#define MAX(x, y) ((x) < (y) ? (y) : (x))
-#define MIN(x, y) ((x) > (y) ? (y) : (x))
-#define CLAMP(min, x, max) ((x) < min ? min : (max < (x) ? max : (x)))
-#define LARGE_INT_LOW(number) (((U64)(number)  >> 0)  & U32_MAX)
-#define LARGE_INT_HIGH(number) (((U64)(number) >> 32) & U32_MAX)
-#define ASSEMBLE_LARGE_INT(high, low) (U64)(((U64)(high) << 32) | ((U64)(low) << 0))
-#define U32_FROM_BYTES(a, b, c, d) (((U32)(a) << 24) | ((U32)(b) << 16) | ((U32)(c) << 8) | ((U32)(d) << 0))
-
-#define SERVER_ADDRESS(a, b, c, d) U32_FROM_BYTES(a, b, c, d)
-#define LOCAL_HOST SERVER_ADDRESS(127, 0, 0, 1)
-
-#define CONCAT_(x, y) x##y
-#define CONCAT(x, y) CONCAT_(x, y)
-#define STRINGIFY_(x) #x
-#define STRINGIFY(x) STRINGIFY_(x)
-
-#define BITS(num) (1ll << (num))
+#define BITS(num) ((U64)1 << (num))
 #define ISBITSET(flag, bit) (((flag) & (bit)) != 0)
-
-#define ROUNDTO(num_to_be_rounded, num) (((num_to_be_rounded) + ((num) - 1)) & ~((num) - 1))
 
 #define OFFSETOF(obj, var) (UMM) &(((obj*)0)->var)
 
@@ -41,10 +22,16 @@
 #define INVALID_DEFAULT_CASE default: INVALID_CODE_PATH; break
 #define NOT_IMPLEMENTED Assert(!"Not implemented");
 
-#define BREAK_ON_FALSE(boolean) if ((boolean)); else break
+#define CONCAT_(x, y) x##y
+#define CONCAT(x, y) CONCAT_(x, y)
+
+#ifdef ANT_DEBUG
+#define Assert(EX) if (EX); else *(volatile int*) 0 = 0
+#else
+#define Assert(EX)
+#endif
 
 #include "ant_types.h"
-#include "utils/assert.h"
 
 inline U16
 SwapEndianess(U16 num)
@@ -70,12 +57,26 @@ SwapEndianess(U64 num)
     return higher | lower;
 }
 
-struct Asset_Tag
+inline U8
+Max(U8 n0, U8 n1)
 {
-    U16 value;
-};
+    return (n0 > n1 ? n0 : n1);
+}
 
-struct Asset_ID
+inline U16
+Max(U16 n0, U16 n1)
 {
-    U32 value;
-};
+    return (n0 > n1 ? n0 : n1);
+}
+
+inline U32
+Max(U32 n0, U32 n1)
+{
+    return (n0 > n1 ? n0 : n1);
+}
+
+inline U64
+Max(U64 n0, U64 n1)
+{
+    return (n0 > n1 ? n0 : n1);
+}

@@ -1,7 +1,7 @@
 /build/
 /run_tree/win32_ant.exe
-/run_tree/ant.dll
-/run_tree/ant_loaded.dll
+/run_tree/game.dll
+/run_tree/game_loaded.dll
 /run_tree/.vs/
 /misc/remedybg.exe
 /misc/remedy_session.rdbg
