@@ -80,3 +80,27 @@ Max(U64 n0, U64 n1)
 {
     return (n0 > n1 ? n0 : n1);
 }
+
+inline U8
+Min(U8 n0, U8 n1)
+{
+    return (n0 < n1 ? n0 : n1);
+}
+
+inline U16
+Min(U16 n0, U16 n1)
+{
+    return (n0 < n1 ? n0 : n1);
+}
+
+inline U32
+Min(U32 n0, U32 n1)
+{
+    return (n0 < n1 ? n0 : n1);
+}
+
+inline U64
+Min(U64 n0, U64 n1)
+{
+    return (n0 < n1 ? n0 : n1);
+}

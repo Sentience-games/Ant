@@ -88,7 +88,7 @@ FormatString(char* dest, UMM dest_capacity, const char* format, UMM format_lengt
                     
                     for (UMM i = 0; i < string.size; ++i)
                     {
-                        Append(string.data[0], &buffer, &buffer_capacity);
+                        Append(string.data[i], &buffer, &buffer_capacity);
                         ++length;
                     }
                 } break;
@@ -232,4 +232,13 @@ FormatString(char* dest, UMM dest_capacity, String format, ...)
     va_end(arg_list);
     
     return result;
+}
+
+inline bool
+StringCompare(String s0, String s1)
+{
+    while (s0.size && s1.size && s0.data[0] == s1.data[0])
+        --s0.size, ++s0.data, --s1.size, ++s1.data;
+    
+    return s0.size == s1.size && !s0.size;
 }

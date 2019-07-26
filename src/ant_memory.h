@@ -118,7 +118,7 @@ PushSize(Memory_Arena* arena, UMM size, U8 alignment = 1)
     {
         bool should_not_allocate_next = false;
         
-        if (arena->current_block)
+        if (arena->current_block && arena->current_block->next)
         {
             if (arena->current_block->next->space >= size)
             {
