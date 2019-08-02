@@ -5,3 +5,7 @@ memory usage shadowing
 /// Figure out what to do with static objects and how they should interact with entities
 
 // Rewamp the asset system to support replacement tags and smart ordering, such that modifying the base content is smoother
+
+/// INPUT
+Mouse position, hot plugging devices, WM_*KEY* fallback, get key name, controller input
+//// device recognition, and controller assignment

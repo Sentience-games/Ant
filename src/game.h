@@ -10,6 +10,8 @@
 
 #include "utils/string.h"
 
+#include "ant_entity.h"
+
 struct Game_State
 {
     bool is_initialized;

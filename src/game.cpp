@@ -1,10 +1,11 @@
 #include "game.h"
 
-GAME_UPDATE_AND_RENDER_FUNCTION(GameUpdateAndRender)
+GAME_INIT_FUNCTION(GameInit)
 {
     Game_State* state = game_memory->state;
     Platform          = &game_memory->platform_api;
     
+    // NOTE(soimn): This handles initialization of persistent data
     if (!state->is_initialized)
     {
         { /// Init VFS
@@ -33,6 +34,45 @@ GAME_UPDATE_AND_RENDER_FUNCTION(GameUpdateAndRender)
             Platform->ReloadVFS(game_memory->vfs);
         }
         
+        { /// Load default keymap
+            // TODO(soimn): Possibly load keymaps from a file
+            
+            ZeroArray(game_memory->controller_infos, GAME_MAX_CONTROLLER_COUNT);
+            
+            // NOTE(soimn): Apply default keymaps
+            for (U32 i = 0; i < GAME_MAX_CONTROLLER_COUNT; ++i)
+            {
+                U64* keymap = &game_memory->controller_infos[i].keymap[0];
+                
+                keymap[0] = Key_A;
+                
+                game_memory->controller_infos[i].was_remapped = true;
+            }
+        }
+        
         state->is_initialized = true;
+    }
+}
+
+GAME_UPDATE_AND_RENDER_FUNCTION(GameUpdateAndRender)
+{
+    Game_State* state = game_memory->state;
+    Platform          = &game_memory->platform_api;
+    
+    Game_Controller_Input* controller = &input->controllers[0];
+    
+    if (WasPressed(controller->test_button))
+    {
+        LOG_INFO("Pressed!");
+    }
+    
+    if (WasHeld(controller->test_button))
+    {
+        LOG_INFO("Held!");
+    }
+    
+    if (IsHeld(controller->test_button))
+    {
+        LOG_INFO("Is held!");
     }
 }

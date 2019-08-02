@@ -96,17 +96,27 @@ FormatString(char* dest, UMM dest_capacity, const char* format, UMM format_lengt
                 case 'u':
                 case 'i':
                 {
-                    U32 num = va_arg(arg_list, U32);
+                    U64 num = 0;
                     
-                    if (*scan == 'i' && (I32) num < 0)
+                    if (scan + 2 < (char*) format + format_length && scan[1] == '6' && scan[2] == '4')
+                    {
+                        num = va_arg(arg_list, U64);
+                    }
+                    
+                    else
+                    {
+                        num = va_arg(arg_list, U32);
+                    }
+                    
+                    if (*scan == 'i' && (I64) num < 0)
                     {
                         num = ~num + 1;
                         Append('-', &buffer, &buffer_capacity);
                         ++length;
                     }
                     
-                    U32 num_cpy    = num / 10;
-                    U32 multiplier = 1;
+                    U64 num_cpy    = num / 10;
+                    U64 multiplier = 1;
                     
                     while (num_cpy)
                     {
@@ -116,7 +126,7 @@ FormatString(char* dest, UMM dest_capacity, const char* format, UMM format_lengt
                     
                     while (multiplier)
                     {
-                        U32 scaled_num = num / multiplier;
+                        U64 scaled_num = num / multiplier;
                         multiplier /= 10;
                         
                         U8 digit = scaled_num % 10;
@@ -126,7 +136,7 @@ FormatString(char* dest, UMM dest_capacity, const char* format, UMM format_lengt
                         Append(c, &buffer, &buffer_capacity);
                         ++length;
                     }
-                }break;
+                } break;
                 
                 case 'b':
                 {

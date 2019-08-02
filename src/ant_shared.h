@@ -1,5 +1,14 @@
 #pragma once
 
+/// 
+/// Shared definitions
+/// 
+
+#ifdef ANT_DEBUG
+#define ANT_ENABLE_ASSET
+#define ANT_ENABLE_HOT_RELOAD
+#endif
+
 #define internal static
 #define global static
 #define local_persist static
@@ -13,6 +22,8 @@
 #define GIGABYTES(N) (MEGABYTES(N) * 1024ULL)
 #define TERRABYTES(N) (GIGABYTES(N) * 1024ULL)
 
+#define MILLISECONDS(millis_to_be_converted_to_seconds) (((F32) (millis_to_be_converted_to_seconds)) / 1000.0f)
+
 #define BITS(num) ((U64)1 << (num))
 #define ISBITSET(flag, bit) (((flag) & (bit)) != 0)
 
@@ -25,13 +36,19 @@
 #define CONCAT_(x, y) x##y
 #define CONCAT(x, y) CONCAT_(x, y)
 
-#ifdef ANT_DEBUG
+#ifdef ANT_ENABLE_ASSERT
 #define Assert(EX) if (EX); else *(volatile int*) 0 = 0
 #else
 #define Assert(EX)
 #endif
 
+#define StaticAssert(EX, ...) static_assert(EX, ##__VA_ARGS__)
+
 #include "ant_types.h"
+
+/// 
+/// Shared utility functions
+/// 
 
 inline U16
 SwapEndianess(U16 num)
@@ -101,6 +118,18 @@ Min(U32 n0, U32 n1)
 
 inline U64
 Min(U64 n0, U64 n1)
+{
+    return (n0 < n1 ? n0 : n1);
+}
+
+inline F32
+Max(F32 n0, F32 n1)
+{
+    return (n0 > n1 ? n0 : n1);
+}
+
+inline F32
+Min(F32 n0, F32 n1)
 {
     return (n0 < n1 ? n0 : n1);
 }

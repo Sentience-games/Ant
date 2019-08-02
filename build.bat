@@ -18,7 +18,7 @@ del /Q "game.*"			   > nul 2>&1
 del /Q "game_******.pdb"	  > nul 2>&1
 del /Q "game_loaded.dll"	  > nul 2>&1
 del /Q "../run_tree/game.dll" > nul 2>&1
-cl %common_compiler_flags% %engine_compiler_flags% /Fmgame.map %src%\game.cpp /LD /link /DLL /PDB:game_%time:~3,2%%time:~6,2%%time:~9,2%.pdb %common_linker_flags% /EXPORT:GameUpdateAndRender /out:game.dll
+cl %common_compiler_flags% %engine_compiler_flags% /Fmgame.map %src%\game.cpp /LD /link /DLL /PDB:game_%time:~3,2%%time:~6,2%%time:~9,2%.pdb %common_linker_flags% /EXPORT:GameUpdateAndRender /EXPORT:GameInit /out:game.dll
 echo Build finished at %time%
 GOTO move_files_to_run_tree
 )
@@ -28,13 +28,13 @@ REM Building the engine and the game
 
 del /Q "game.*"					  > nul 2>&1
 del /Q "game_******.pdb"			 > nul 2>&1
-del /Q "win32_ant.*"				> nul 2>&1
+del /Q "win32_ant.*"				 > nul 2>&1
 del /Q "game_loaded.dll"			 > nul 2>&1
-del /Q "../run_tree/win32_ant.exe"  > nul 2>&1
+del /Q "../run_tree/win32_ant.exe"   > nul 2>&1
 del /Q "../run_tree/game.dll"		> nul 2>&1
 del /Q "../run_tree/game_loaded.dll" > nul 2>&1
 
-cl %common_compiler_flags% %engine_compiler_flags% /Fmgame.map %src%\game.cpp /LD /link /DLL /PDB:game.pdb %common_linker_flags% /EXPORT:GameUpdateAndRender /out:game.dll
+cl %common_compiler_flags% %engine_compiler_flags% /Fmgame.map %src%\game.cpp /LD /link /DLL /PDB:game.pdb %common_linker_flags% /EXPORT:GameUpdateAndRender /EXPORT:GameInit /out:game.dll
 
 IF NOT EXIST a:\build\game.dll GOTO failed
 

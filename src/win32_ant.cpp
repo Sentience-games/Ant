@@ -1,6 +1,7 @@
 #include "win32_ant.h"
 
 global bool Running;
+global I64 GlobalPerformanceCounterFreq;
 
 /// Logging
 
@@ -367,39 +368,46 @@ PLATFORM_RELOAD_VFS_FUNCTION(Win32ReloadVFS)
     
     // TODO(soimn): Loop over all essential files and add them at the appropriate places
     
-    vfs->directory_table = PushArray(vfs->arena, VFS_Directory, total_dir_count);
-    vfs->file_table      = PushArray(vfs->arena, VFS_File, total_file_count);
-    
-    vfs->file_count = total_file_count;
-    
-    U32 dir_index  = 0;
-    U32 file_index = 0;
-    
-    Win32FlatPackDirectories(vfs, root_dir, &dir_index);
-    
-    for (U32 i = 0; i < dir_index; ++i)
+    if (total_file_count)
     {
-        VFS_File* first_file = (vfs->directory_table[i].file_count ? vfs->file_table + file_index : 0);
-        
-        for (VFS_File* file_iter = vfs->directory_table[i].files; file_iter; file_iter = file_iter->next)
+        if (total_dir_count)
         {
-            VFS_File* file = &vfs->file_table[file_index++];
-            *file = *file_iter;
-            
-            file->base_name_with_ext.data = PushArray(vfs->arena, U8, file_iter->base_name_with_ext.size);
-            CopyArray(file_iter->base_name_with_ext.data, file->base_name_with_ext.data, file_iter->base_name_with_ext.size);
-            
-            file->base_name.data = file->base_name_with_ext.data;
-            
-            file->path.data = (U8*) PushArray(vfs->arena, wchar_t, file_iter->path.size + 1);
-            CopyArray((wchar_t*) file_iter->path.data, file->path.data, file_iter->path.size);
-            
-            ((wchar_t*) file->path.data)[file->path.size] = 0;
-            
-            file->next = (file_iter->next ? file + 1 : 0);
+            vfs->directory_table = PushArray(vfs->arena, VFS_Directory, total_dir_count);
         }
         
-        vfs->directory_table[i].files = first_file;
+        vfs->file_table = PushArray(vfs->arena, VFS_File, total_file_count);
+        
+        vfs->file_count = total_file_count;
+        
+        U32 dir_index  = 0;
+        U32 file_index = 0;
+        
+        Win32FlatPackDirectories(vfs, root_dir, &dir_index);
+        
+        for (U32 i = 0; i < dir_index; ++i)
+        {
+            VFS_File* first_file = (vfs->directory_table[i].file_count ? vfs->file_table + file_index : 0);
+            
+            for (VFS_File* file_iter = vfs->directory_table[i].files; file_iter; file_iter = file_iter->next)
+            {
+                VFS_File* file = &vfs->file_table[file_index++];
+                *file = *file_iter;
+                
+                file->base_name_with_ext.data = PushArray(vfs->arena, U8, file_iter->base_name_with_ext.size);
+                CopyArray(file_iter->base_name_with_ext.data, file->base_name_with_ext.data, file_iter->base_name_with_ext.size);
+                
+                file->base_name.data = file->base_name_with_ext.data;
+                
+                file->path.data = (U8*) PushArray(vfs->arena, wchar_t, file_iter->path.size + 1);
+                CopyArray((wchar_t*) file_iter->path.data, file->path.data, file_iter->path.size);
+                
+                ((wchar_t*) file->path.data)[file->path.size] = 0;
+                
+                file->next = (file_iter->next ? file + 1 : 0);
+            }
+            
+            vfs->directory_table[i].files = first_file;
+        }
     }
 }
 
@@ -631,12 +639,14 @@ Win32ReloadGameCodeIfNecessary(Win32_Game_Code* game_code)
             if (module_handle)
             {
                 game_update_and_render_function* GameUpdateAndRender = (game_update_and_render_function*) GetProcAddress(module_handle, "GameUpdateAndRender");
+                game_init_function* GameInit = (game_init_function*) GetProcAddress(module_handle, "GameInit");
                 
-                if (GameUpdateAndRender)
+                if (GameUpdateAndRender && GameInit)
                 {
                     game_code->timestamp           = new_timestamp;
                     game_code->module              = module_handle;
                     game_code->GameUpdateAndRender = GameUpdateAndRender;
+                    game_code->GameInit            = GameInit;
                     
                     game_code->is_valid = true;
                     succeeded           = true;
@@ -646,7 +656,7 @@ Win32ReloadGameCodeIfNecessary(Win32_Game_Code* game_code)
                 
                 else
                 {
-                    Win32Log(Log_Fatal | Log_MessagePrompt, "Failed to load game code entry point. Win32 error code %u", GetLastError());
+                    Win32Log(Log_Fatal | Log_MessagePrompt, "Failed to load game code entry points. Win32 error code %u", GetLastError());
                 }
             }
             
@@ -664,6 +674,22 @@ Win32ReloadGameCodeIfNecessary(Win32_Game_Code* game_code)
     }
     
     return succeeded;
+}
+
+/// Timing
+
+internal LARGE_INTEGER
+Win32GetTimestamp()
+{
+    LARGE_INTEGER result;
+    QueryPerformanceCounter(&result);
+    return result;
+}
+
+internal F32
+Win32GetSecondsElapsed(LARGE_INTEGER start, LARGE_INTEGER end)
+{
+    return ((F32) end.QuadPart - start.QuadPart) / ((F32) GlobalPerformanceCounterFreq);
 }
 
 /// Win32 Messaging
@@ -685,6 +711,14 @@ Win32MainWindowProc(HWND window_handle, UINT msg_code,
         Running = false;
         break;
         
+        case WM_KEYDOWN:
+        case WM_KEYUP:
+        case WM_SYSKEYDOWN:
+        case WM_SYSKEYUP:
+        case WM_INPUT:
+        INVALID_CODE_PATH;
+        break;
+        
         default:
         result = DefWindowProcW(window_handle, msg_code, w_param, l_param);
         break;
@@ -692,10 +726,192 @@ Win32MainWindowProc(HWND window_handle, UINT msg_code,
     
     return result;
 }
+
 internal void
-Win32ProcessPendingMessages(HWND window_handle)
+Win32ProcessButtonPress(Game_Button_State* button, bool is_down)
+{
+    if (button->hold_duration)
+    {
+        if (!is_down)
+        {
+            button->hold_duration *= -1.0f;
+        }
+    }
+    
+    // NOTE(soimn): This overrides the previous presses such that sub-frame button presses are ignored
+    button->ended_down = is_down;
+}
+
+// TODO(soimn): Investigate the performance expense of this function, as it is invoked per keypress
+// TODO(soimn): Maybe convert most of this to a table
+// NOTE(soimn): Based on https://blog.molecular-matters.com/2011/09/05/properly-handling-keyboard-input/
+internal U64
+Win32ProcessVirtualKeycodeAndScancode(U32 keycode, U32 scancode, U32 flags)
+{
+    U64 result = Key_Invalid;
+    
+    U32 mapped_keycode = MapVirtualKey(scancode, MAPVK_VSC_TO_VK_EX);
+    if (keycode == VK_SHIFT && !(mapped_keycode == VK_LSHIFT || mapped_keycode == VK_RSHIFT))
+    {
+        keycode = 255;
+    }
+    
+    if (keycode != 255)
+    {
+        if (keycode == VK_SHIFT)
+        {
+            keycode = MapVirtualKey(scancode, MAPVK_VSC_TO_VK_EX);
+        }
+        
+        else if (keycode == VK_NUMLOCK)
+        {
+            scancode = (MapVirtualKey(keycode, MAPVK_VK_TO_VSC) | 0x100);
+        }
+        
+        bool e0 = ((flags & RI_KEY_E0) != 0);
+        bool e1 = ((flags & RI_KEY_E1) != 0);
+        
+        if (e1)
+        {
+            if (keycode == VK_PAUSE)
+            {
+                scancode = 0x45;
+            }
+            
+            else
+            {
+                scancode = MapVirtualKey(keycode, MAPVK_VK_TO_VSC);
+            }
+        }
+        
+        if (keycode >= 0x41 && keycode <= 0x5A)
+        {
+            result = Key_A + (keycode - 0x41);
+        }
+        
+        else if (keycode >= 0x30 && keycode <= 0x39)
+        {
+            result = Key_0 + (keycode - 0x30);
+        }
+        
+        else
+        {
+            switch (keycode)
+            {
+                case VK_CANCEL:    result = Key_Break;       break;
+                case VK_BACK:      result = Key_Backspace;   break;
+                case VK_TAB:       result = Key_Tab;         break;
+                case VK_PAUSE:     result = Key_Pause;       break;
+                case VK_CAPITAL:   result = Key_CapsLock;    break;
+                case VK_ESCAPE:    result = Key_Escape;      break;
+                case VK_SPACE:     result = Key_Space;       break;
+                case VK_SNAPSHOT:  result = Key_PrintScreen; break;
+                case VK_LWIN:      result = Key_LSuper;      break;
+                case VK_RWIN:      result = Key_RSuper;      break;
+                case VK_NUMPAD0:   result = Key_NumP0;       break;
+                case VK_NUMPAD1:   result = Key_NumP1;       break;
+                case VK_NUMPAD2:   result = Key_NumP2;       break;
+                case VK_NUMPAD3:   result = Key_NumP3;       break;
+                case VK_NUMPAD4:   result = Key_NumP4;       break;
+                case VK_NUMPAD5:   result = Key_NumP5;       break;
+                case VK_NUMPAD6:   result = Key_NumP6;       break;
+                case VK_NUMPAD7:   result = Key_NumP7;       break;
+                case VK_NUMPAD8:   result = Key_NumP8;       break;
+                case VK_NUMPAD9:   result = Key_NumP9;       break;
+                case VK_MULTIPLY:  result = Key_NumPStar;    break;
+                case VK_ADD:       result = Key_NumPPlus;    break;
+                case VK_SUBTRACT:  result = Key_NumPMin;     break;
+                case VK_SEPARATOR: result = Key_NumPEnter;   break;
+                case VK_DECIMAL:   result = Key_NumPDec;     break;
+                case VK_DIVIDE:    result = Key_NumPDiv;     break;
+                case VK_F1:        result = Key_F1;          break;
+                case VK_F2:        result = Key_F2;          break;
+                case VK_F3:        result = Key_F3;          break;
+                case VK_F4:        result = Key_F4;          break;
+                case VK_F5:        result = Key_F5;          break;
+                case VK_F6:        result = Key_F6;          break;
+                case VK_F7:        result = Key_F7;          break;
+                case VK_F8:        result = Key_F8;          break;
+                case VK_F9:        result = Key_F9;          break;
+                case VK_F10:       result = Key_F10;         break;
+                case VK_F11:       result = Key_F11;         break;
+                case VK_F12:       result = Key_F12;         break;
+                case VK_NUMLOCK:   result = Key_NumLock;     break;
+                case VK_SCROLL:    result = Key_ScrLock;     break;
+                
+                case VK_CONTROL:
+                result = (e0 ? Key_RCtrl: Key_LCtrl);
+                break;
+                
+                case VK_MENU:
+                result = (e0 ? Key_RAlt : Key_LAlt);
+                break;
+                
+                case VK_RETURN:
+                result = (e0 ? Key_NumPEnter : Key_Enter);
+                break;
+                
+                case VK_INSERT:
+                result = (e0 ? Key_Insert : Key_NumP0);
+                break;
+                
+                case VK_DELETE:
+                result = (e0 ? Key_Delete : Key_NumPDec);
+                break;
+                
+                case VK_HOME:
+                result = (e0 ? Key_Home : Key_NumP7);
+                break;
+                
+                case VK_END:
+                result = (e0 ? Key_End : Key_NumP1);
+                break;
+                
+                case VK_PRIOR:
+                result = (e0 ? Key_PgUp : Key_NumP9);
+                break;
+                
+                case VK_NEXT:
+                result = (e0 ? Key_PgDn : Key_NumP3);
+                break;
+                
+                case VK_LEFT:
+                result = (e0 ? Key_Left : Key_NumP4);
+                break;
+                
+                case VK_RIGHT:
+                result = (e0 ? Key_Right : Key_NumP6);
+                break;
+                
+                case VK_UP:
+                result = (e0 ? Key_Up : Key_NumP8);
+                break;
+                
+                case VK_DOWN:
+                result = (e0 ? Key_Down : Key_NumP2);
+                break;
+                
+                case VK_CLEAR:
+                result = (e0 ? Key_Invalid : Key_NumP5);
+                break;
+                
+                default:
+                result = Key_Invalid;
+                break;
+            }
+        }
+    }
+    
+    return result;
+}
+
+internal void
+Win32ProcessPendingMessages(HWND window_handle, Platform_Game_Input* new_input, Game_Controller_Info* controller_infos, U32 active_controller_count, Memory_Arena* temp_memory)
 {
     MSG message = {};
+    
+    U8* raw_input_buffer      = 0;
+    UMM raw_input_buffer_size = 0;
     
     while (PeekMessageA(&message, window_handle, 0, 0, PM_REMOVE))
     {
@@ -703,6 +919,138 @@ Win32ProcessPendingMessages(HWND window_handle)
         {
             case WM_QUIT:
             Running = false;
+            break;
+            
+            case WM_INPUT:
+            {
+                if (GET_RAWINPUT_CODE_WPARAM(message.wParam) == RIM_INPUT)
+                {
+                    U32 data_block_size = 0;
+                    GetRawInputData((HRAWINPUT) message.lParam, RID_INPUT, 0, &data_block_size, sizeof(RAWINPUTHEADER));
+                    
+                    if (data_block_size)
+                    {
+                        if (data_block_size > raw_input_buffer_size)
+                        {
+                            raw_input_buffer = (U8*) PushSize(temp_memory, 2 * data_block_size, alignof(U64));
+                        }
+                        
+                        GetRawInputData((HRAWINPUT) message.lParam, RID_INPUT, raw_input_buffer, &data_block_size, sizeof(RAWINPUTHEADER));
+                        
+                        RAWINPUT* input = (RAWINPUT*) raw_input_buffer;
+                        U64 platform_keycode = Key_Invalid;
+                        bool is_down         = false;
+                        
+                        if (input->header.dwType == RIM_TYPEMOUSE)
+                        {
+                            RAWMOUSE mouse = input->data.mouse;
+                            Assert(!(mouse.usFlags & MOUSE_MOVE_ABSOLUTE && mouse.usFlags & MOUSE_VIRTUAL_DESKTOP));
+                            
+                            new_input->mouse_delta += Vec2((F32) mouse.lLastX, (F32) mouse.lLastY);
+                            
+                            U32 flags = mouse.usButtonFlags;
+                            
+                            switch (flags)
+                            {
+                                case RI_MOUSE_BUTTON_1_DOWN: platform_keycode = Key_Mouse1; is_down = true;  break;
+                                case RI_MOUSE_BUTTON_1_UP:   platform_keycode = Key_Mouse1; is_down = false; break;
+                                case RI_MOUSE_BUTTON_3_DOWN: platform_keycode = Key_Mouse3; is_down = true;  break;
+                                case RI_MOUSE_BUTTON_3_UP:   platform_keycode = Key_Mouse3; is_down = false; break;
+                                case RI_MOUSE_BUTTON_2_DOWN: platform_keycode = Key_Mouse2; is_down = true;  break;
+                                case RI_MOUSE_BUTTON_2_UP:   platform_keycode = Key_Mouse2; is_down = false; break;
+                                case RI_MOUSE_BUTTON_4_DOWN: platform_keycode = Key_Mouse4; is_down = true;  break;
+                                case RI_MOUSE_BUTTON_4_UP:   platform_keycode = Key_Mouse4; is_down = false; break;
+                                case RI_MOUSE_BUTTON_5_DOWN: platform_keycode = Key_Mouse5; is_down = true;  break;
+                                case RI_MOUSE_BUTTON_5_UP:   platform_keycode = Key_Mouse5; is_down = false; break;
+                                
+                                case RI_MOUSE_WHEEL:
+                                {
+                                    new_input->mouse_wheel_delta += mouse.usButtonData;
+                                    
+                                    platform_keycode = (mouse.usButtonData > 0 ? Key_MouseWheelUp : Key_MouseWheelDn);
+                                } break;
+                                
+                                default:
+                                platform_keycode = Key_Invalid;
+                                break;
+                            }
+                        }
+                        
+                        else if (input->header.dwType == RIM_TYPEKEYBOARD)
+                        {
+                            RAWKEYBOARD keyboard = input->data.keyboard;
+                            
+                            U32 keycode  = keyboard.VKey;
+                            U32 scancode = keyboard.MakeCode;
+                            U32 flags    = keyboard.Flags;
+                            
+                            platform_keycode = Win32ProcessVirtualKeycodeAndScancode(keycode, scancode, flags);
+                            is_down = !(flags & RI_KEY_BREAK);
+                        }
+                        
+                        if (platform_keycode != Key_Invalid)
+                        {
+                            U64 device = (U64) input->header.hDevice;
+                            
+                            StaticAssert(GAME_MAX_CONTROLLER_COUNT < U32_MAX);
+                            U32 controller = U32_MAX;
+                            
+                            for (U32 i = 0; i < active_controller_count; ++i)
+                            {
+                                if (controller_infos[i].device_handle == device)
+                                {
+                                    controller = i;
+                                    break;
+                                }
+                            }
+                            
+                            if (controller != U32_MAX)
+                            {
+                                if (platform_keycode != Key_MouseWheelUp && platform_keycode != Key_MouseWheelDn)
+                                {
+                                    for (U32 i = 0; i < GAME_BUTTON_COUNT; ++i)
+                                    {
+                                        if (platform_keycode == controller_infos[controller].keymap[i])
+                                        {
+                                            Win32ProcessButtonPress(&new_input->controllers[controller].buttons[i], is_down);
+                                        }
+                                    }
+                                }
+                                
+                                else
+                                {
+                                    /// HACK(soimn): This introduces some nuances that should not exist in a proper 
+                                    //               input system, e.g. If you bind MouseWheelUp to a button, that button 
+                                    //               cannot be held.
+                                    
+                                    for (U32 i = 0; i < GAME_BUTTON_COUNT; ++i)
+                                    {
+                                        if (platform_keycode == controller_infos[controller].keymap[i])
+                                        {
+                                            new_input->controllers[controller].buttons[i].hold_duration = -MILLISECONDS(160);
+                                            new_input->controllers[controller].buttons[i].ended_down    = false;
+                                        }
+                                    }
+                                }
+                            }
+                            
+                            else
+                            {
+                                Win32Log(Log_Warning, "Received unregistered input from device %u64", device);
+                            }
+                        }
+                    }
+                }
+                
+                // NOTE(soimn): GET_RAWINPUT_CODE_WPARAM docs:
+                //              "The application must call DefWindowProc so the system can perform cleanup."
+                DefWindowProcW(window_handle, message.message, message.wParam, message.lParam);
+            } break;
+            
+            case WM_KEYDOWN:
+            case WM_KEYUP:
+            case WM_SYSKEYDOWN:
+            case WM_SYSKEYUP:
             break;
             
             default:
@@ -745,8 +1093,6 @@ int CALLBACK WinMain(HINSTANCE instance,
         
         if (window_handle)
         {
-            bool encountered_errors = false;
-            
             Memory_Arena persistent_memory  = {};
             persistent_memory.block_size    = KILOBYTES(4);
             
@@ -775,6 +1121,8 @@ int CALLBACK WinMain(HINSTANCE instance,
             
             Win32_Game_Code game_code = {};
             
+            bool encountered_errors = false;
+            
             { /// Set current working directory to /data
                 wchar_t* buffer = (wchar_t*) PushSize(&frame_local_memory, MEGABYTES(4), alignof(wchar_t));
                 U32 buffer_size = MEGABYTES(4) / sizeof(wchar_t);
@@ -800,20 +1148,118 @@ int CALLBACK WinMain(HINSTANCE instance,
                 }
             }
             
-            if (!encountered_errors)
+            bool succeeded = false;
+            
+            /// Timing
+            LARGE_INTEGER performance_counter_freq;
+            QueryPerformanceFrequency(&performance_counter_freq);
+            GlobalPerformanceCounterFreq = performance_counter_freq.QuadPart;
+            
+            while (!encountered_errors && !succeeded)
+            {
+                /// Load Game Code
+                if (!Win32ReloadGameCodeIfNecessary(&game_code))
+                {
+                    Win32Log(Log_Fatal | Log_MessagePrompt, "Failed to load game code");
+                    break;
+                }
+                
+                game_code.GameInit(&game_memory);
+                
+                /// Register RawInput Devices
+                RAWINPUTDEVICE device[2] = {};
+                
+                // Keyboard
+                device[0].usUsagePage = 1;
+                device[0].usUsage     = 6;
+                device[0].dwFlags     = RIDEV_NOHOTKEYS | RIDEV_DEVNOTIFY;
+                
+                // Mouse
+                device[1].usUsagePage = 1;
+                device[1].usUsage     = 2;
+                device[1].dwFlags     = RIDEV_DEVNOTIFY;
+                
+                // TODO(soimn): Win32 message loop WM_*KEY* fallback
+                if (RegisterRawInputDevices(device, 2, sizeof(RAWINPUTDEVICE)) == FALSE)
+                {
+                    Win32Log(Log_Fatal | Log_MessagePrompt, "Failed to register RawInput devices. Win32 error code: %u", GetLastError());
+                    break;
+                }
+                
+                succeeded = true;
+            }
+            
+            if (succeeded)
             {
                 Running = true;
                 ShowWindow(window_handle, SW_SHOW);
                 
+                Platform_Game_Input input_buffer[2] = {};
+                Platform_Game_Input* new_input      = &input_buffer[0];
+                Platform_Game_Input* old_input      = &input_buffer[1];
+                
+                U32 monitor_refresh_rate        = 60;
+                U32 expected_frames_per_update = 1;
+                
+                F32 game_update_hz = (F32) expected_frames_per_update / (F32) monitor_refresh_rate;
+                
+                LARGE_INTEGER last_timestamp = Win32GetTimestamp();
+                F32 target_seconds_per_frame = game_update_hz;
+                
                 while (Running)
                 {
                     ResetArena(&frame_local_memory);
-                    Win32ProcessPendingMessages(window_handle);
                     
-                    if (Win32ReloadGameCodeIfNecessary(&game_code))
-                    {
-                        game_code.GameUpdateAndRender(&game_memory);
+#ifdef ANT_ENABLE_HOT_RELOAD
+                    while (!Win32ReloadGameCodeIfNecessary(&game_code));
+                    game_code.GameInit(&game_memory);
+#endif
+                    new_input->frame_dt = target_seconds_per_frame;
+                    
+                    { /// Update the hold duration for each active button
+                        for (U32 i = 0; i < GAME_MAX_CONTROLLER_COUNT; ++i)
+                        {
+                            Game_Controller_Input* new_controller = &new_input->controllers[i];
+                            Game_Controller_Input* old_controller = &old_input->controllers[i];
+                            
+                            // NOTE(soimn): Only use previous data if the buttons were not remapped
+                            if (!game_memory.controller_infos[i].was_remapped)
+                            {
+                                for (U32 j = 0; j < GAME_BUTTON_COUNT; ++j)
+                                {
+                                    new_controller->buttons[j].old_hold_duration = old_controller->buttons[j].old_hold_duration;
+                                    
+                                    // TODO(soimn): Make this more resitent to malfunctions on frame spikes
+                                    new_controller->buttons[j].hold_duration = Max(old_controller->buttons[j].hold_duration, 0.0f) + old_input->frame_dt * old_controller->buttons[j].ended_down;
+                                    
+                                    new_controller->buttons[j].ended_down = old_controller->buttons[j].ended_down;
+                                }
+                            }
+                            
+                            else
+                            {
+                                *new_controller = {};
+                                game_memory.controller_infos[i].was_remapped = false;
+                            }
+                        }
                     }
+                    
+                    Win32ProcessPendingMessages(window_handle, new_input, game_memory.controller_infos, game_memory.active_controller_count, &frame_local_memory);
+                    
+                    
+                    game_code.GameUpdateAndRender(&game_memory, new_input);
+                    
+                    
+                    ResetArena(&frame_local_memory);
+                    
+                    Platform_Game_Input temp_input = *new_input;
+                    *old_input = temp_input;
+                    *new_input = {};
+                    
+                    LARGE_INTEGER next_timestamp = Win32GetTimestamp();
+                    F32 seconds_elapsed = Win32GetSecondsElapsed(last_timestamp, next_timestamp);
+                    expected_frames_per_update = (I32)(seconds_elapsed * (F32)monitor_refresh_rate);
+                    last_timestamp = next_timestamp;
                 }
             }
         }
