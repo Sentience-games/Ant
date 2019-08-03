@@ -613,7 +613,7 @@ PLATFORM_GET_FILE_SIZE_FUNCTION(Win32GetFileSize)
 /// Game Loading
 
 internal bool
-Win32ReloadGameCodeIfNecessary(Win32_Game_Code* game_code)
+Win32ReloadGameCodeIfNecessary(Win32_Game_Code* game_code, bool* did_reload = 0)
 {
     const wchar_t* game_code_path        = L".\\" CONCAT(L, APPLICATION_NAME) L".dll";
     const wchar_t* loaded_game_code_path = L".\\" CONCAT(L, APPLICATION_NAME) L"_loaded.dll";
@@ -652,6 +652,11 @@ Win32ReloadGameCodeIfNecessary(Win32_Game_Code* game_code)
                     succeeded           = true;
                     
                     Win32Log(Log_Info, "Successfully loaded new game code");
+                    
+                    if (did_reload)
+                    {
+                        *did_reload = true;
+                    }
                 }
                 
                 else
@@ -692,6 +697,193 @@ Win32GetSecondsElapsed(LARGE_INTEGER start, LARGE_INTEGER end)
     return ((F32) end.QuadPart - start.QuadPart) / ((F32) GlobalPerformanceCounterFreq);
 }
 
+/// Input Processing
+
+internal void
+Win32ProcessDigitalButtonPress(Game_Button_State* button, bool is_down)
+{
+    if ((B16) is_down != button->ended_down)
+    {
+        if (button->hold_duration > 0.0f)
+        {
+            button->hold_duration *= -1.0f;
+        }
+        
+        ++button->transition_count;
+        button->ended_down = is_down;
+        
+        // TODO(soimn): Find out what the actuation amount should be. Average? last?
+        button->actuation_amount = (F32) is_down;
+    }
+}
+
+// TODO(soimn): Investigate the performance expense of this function
+// NOTE(soimn): Based on https://blog.molecular-matters.com/2011/09/05/properly-handling-keyboard-input/
+internal U64
+Win32ProcessVirtualKeycodeAndScancode(U32 keycode, U32 scancode, U32 flags)
+{
+    U64 result = Key_Invalid;
+    
+    // NOTE(soimn): Some keys send fake VK_SHIFT codes
+    U32 mapped_keycode = MapVirtualKey(scancode, MAPVK_VSC_TO_VK_EX);
+    if (keycode == VK_SHIFT && !(mapped_keycode == VK_LSHIFT || mapped_keycode == VK_RSHIFT))
+    {
+        keycode = 255;
+    }
+    
+    if (keycode != 255)
+    {
+        // NOTE(soimn): Right and left shift
+        if (keycode == VK_SHIFT)
+        {
+            keycode = MapVirtualKey(scancode, MAPVK_VSC_TO_VK_EX);
+        }
+        
+        // NOTE(soimn): Correcting esacped sequences
+        else if (keycode == VK_NUMLOCK)
+        {
+            scancode = (MapVirtualKey(keycode, MAPVK_VK_TO_VSC) | 0x100);
+        }
+        
+        bool e0 = ((flags & RI_KEY_E0) != 0);
+        bool e1 = ((flags & RI_KEY_E1) != 0);
+        
+        if (e1)
+        {
+            // NOTE(soimn): MapVirtualKey does not function correctly when passed VK_PAUSE
+            if (keycode == VK_PAUSE)
+            {
+                scancode = 0x45;
+            }
+            
+            else
+            {
+                scancode = MapVirtualKey(keycode, MAPVK_VK_TO_VSC);
+            }
+        }
+        
+        // NOTE(soimn): Alphanumerical characters are mapped to their ASCII equivalents
+        if (keycode >= 'A' && keycode <= 'Z')
+        {
+            result = Key_A + (keycode - 'A');
+        }
+        
+        else if (keycode >= '0' && keycode <= '9')
+        {
+            result = Key_0 + (keycode - '9');
+        }
+        
+        else
+        {
+            switch (keycode)
+            {
+                case VK_CANCEL:    result = Key_Break;       break;
+                case VK_BACK:      result = Key_Backspace;   break;
+                case VK_TAB:       result = Key_Tab;         break;
+                case VK_PAUSE:     result = Key_Pause;       break;
+                case VK_CAPITAL:   result = Key_CapsLock;    break;
+                case VK_ESCAPE:    result = Key_Escape;      break;
+                case VK_SPACE:     result = Key_Space;       break;
+                case VK_SNAPSHOT:  result = Key_PrintScreen; break;
+                case VK_LWIN:      result = Key_LSuper;      break;
+                case VK_RWIN:      result = Key_RSuper;      break;
+                case VK_NUMPAD0:   result = Key_KP0;         break;
+                case VK_NUMPAD1:   result = Key_KP1;         break;
+                case VK_NUMPAD2:   result = Key_KP2;         break;
+                case VK_NUMPAD3:   result = Key_KP3;         break;
+                case VK_NUMPAD4:   result = Key_KP4;         break;
+                case VK_NUMPAD5:   result = Key_KP5;         break;
+                case VK_NUMPAD6:   result = Key_KP6;         break;
+                case VK_NUMPAD7:   result = Key_KP7;         break;
+                case VK_NUMPAD8:   result = Key_KP8;         break;
+                case VK_NUMPAD9:   result = Key_KP9;         break;
+                case VK_MULTIPLY:  result = Key_KPMult;      break;
+                case VK_ADD:       result = Key_KPPlus;      break;
+                case VK_SUBTRACT:  result = Key_KPMinus;     break;
+                case VK_SEPARATOR: result = Key_KPEnter;     break;
+                case VK_DECIMAL:   result = Key_KPDecimal;   break;
+                case VK_DIVIDE:    result = Key_KPDiv;       break;
+                case VK_F1:        result = Key_F1;          break;
+                case VK_F2:        result = Key_F2;          break;
+                case VK_F3:        result = Key_F3;          break;
+                case VK_F4:        result = Key_F4;          break;
+                case VK_F5:        result = Key_F5;          break;
+                case VK_F6:        result = Key_F6;          break;
+                case VK_F7:        result = Key_F7;          break;
+                case VK_F8:        result = Key_F8;          break;
+                case VK_F9:        result = Key_F9;          break;
+                case VK_F10:       result = Key_F10;         break;
+                case VK_F11:       result = Key_F11;         break;
+                case VK_F12:       result = Key_F12;         break;
+                case VK_NUMLOCK:   result = Key_NumLock;     break;
+                case VK_SCROLL:    result = Key_ScrollLock;  break;
+                
+                case VK_CONTROL:
+                result = (e0 ? Key_RCtrl : Key_LCtrl);
+                break;
+                
+                case VK_MENU:
+                result = (e0 ? Key_RAlt : Key_LAlt);
+                break;
+                
+                case VK_RETURN:
+                result = (e0 ? Key_KPEnter : Key_Enter);
+                break;
+                
+                case VK_INSERT:
+                result = (e0 ? Key_Insert : Key_KP0);
+                break;
+                
+                case VK_DELETE:
+                result = (e0 ? Key_Delete : Key_KPDecimal);
+                break;
+                
+                case VK_HOME:
+                result = (e0 ? Key_Home : Key_KP7);
+                break;
+                
+                case VK_END:
+                result = (e0 ? Key_End : Key_KP1);
+                break;
+                
+                case VK_PRIOR:
+                result = (e0 ? Key_PgUp : Key_KP9);
+                break;
+                
+                case VK_NEXT:
+                result = (e0 ? Key_PgDn : Key_KP3);
+                break;
+                
+                case VK_LEFT:
+                result = (e0 ? Key_Left : Key_KP4);
+                break;
+                
+                case VK_RIGHT:
+                result = (e0 ? Key_Right : Key_KP6);
+                break;
+                
+                case VK_UP:
+                result = (e0 ? Key_Up : Key_KP8);
+                break;
+                
+                case VK_DOWN:
+                result = (e0 ? Key_Down : Key_KP2);
+                break;
+                
+                case VK_CLEAR:
+                result = (e0 ? Key_Invalid : Key_KP5);
+                break;
+                
+                default:
+                result = Key_Invalid;
+                break;
+            }
+        }
+    }
+    
+    return result;
+}
+
 /// Win32 Messaging
 
 LRESULT CALLBACK
@@ -711,12 +903,19 @@ Win32MainWindowProc(HWND window_handle, UINT msg_code,
         Running = false;
         break;
         
+        case WM_INPUT:
         case WM_KEYDOWN:
         case WM_KEYUP:
         case WM_SYSKEYDOWN:
         case WM_SYSKEYUP:
-        case WM_INPUT:
+        // IMPORTANT TODO(soimn): Find out why Win32MainWindowProc recieves WM_INPUT messages
+#if 0
+#ifdef ANT_DEBUG
         INVALID_CODE_PATH;
+#else
+        Win32Log(Log_Fatal | Log_MessagePrompt, "Input reached Win32MainWindowProc!");
+#endif
+#endif
         break;
         
         default:
@@ -728,190 +927,12 @@ Win32MainWindowProc(HWND window_handle, UINT msg_code,
 }
 
 internal void
-Win32ProcessButtonPress(Game_Button_State* button, bool is_down)
-{
-    if (button->hold_duration)
-    {
-        if (!is_down)
-        {
-            button->hold_duration *= -1.0f;
-        }
-    }
-    
-    // NOTE(soimn): This overrides the previous presses such that sub-frame button presses are ignored
-    button->ended_down = is_down;
-}
-
-// TODO(soimn): Investigate the performance expense of this function, as it is invoked per keypress
-// TODO(soimn): Maybe convert most of this to a table
-// NOTE(soimn): Based on https://blog.molecular-matters.com/2011/09/05/properly-handling-keyboard-input/
-internal U64
-Win32ProcessVirtualKeycodeAndScancode(U32 keycode, U32 scancode, U32 flags)
-{
-    U64 result = Key_Invalid;
-    
-    U32 mapped_keycode = MapVirtualKey(scancode, MAPVK_VSC_TO_VK_EX);
-    if (keycode == VK_SHIFT && !(mapped_keycode == VK_LSHIFT || mapped_keycode == VK_RSHIFT))
-    {
-        keycode = 255;
-    }
-    
-    if (keycode != 255)
-    {
-        if (keycode == VK_SHIFT)
-        {
-            keycode = MapVirtualKey(scancode, MAPVK_VSC_TO_VK_EX);
-        }
-        
-        else if (keycode == VK_NUMLOCK)
-        {
-            scancode = (MapVirtualKey(keycode, MAPVK_VK_TO_VSC) | 0x100);
-        }
-        
-        bool e0 = ((flags & RI_KEY_E0) != 0);
-        bool e1 = ((flags & RI_KEY_E1) != 0);
-        
-        if (e1)
-        {
-            if (keycode == VK_PAUSE)
-            {
-                scancode = 0x45;
-            }
-            
-            else
-            {
-                scancode = MapVirtualKey(keycode, MAPVK_VK_TO_VSC);
-            }
-        }
-        
-        if (keycode >= 0x41 && keycode <= 0x5A)
-        {
-            result = Key_A + (keycode - 0x41);
-        }
-        
-        else if (keycode >= 0x30 && keycode <= 0x39)
-        {
-            result = Key_0 + (keycode - 0x30);
-        }
-        
-        else
-        {
-            switch (keycode)
-            {
-                case VK_CANCEL:    result = Key_Break;       break;
-                case VK_BACK:      result = Key_Backspace;   break;
-                case VK_TAB:       result = Key_Tab;         break;
-                case VK_PAUSE:     result = Key_Pause;       break;
-                case VK_CAPITAL:   result = Key_CapsLock;    break;
-                case VK_ESCAPE:    result = Key_Escape;      break;
-                case VK_SPACE:     result = Key_Space;       break;
-                case VK_SNAPSHOT:  result = Key_PrintScreen; break;
-                case VK_LWIN:      result = Key_LSuper;      break;
-                case VK_RWIN:      result = Key_RSuper;      break;
-                case VK_NUMPAD0:   result = Key_NumP0;       break;
-                case VK_NUMPAD1:   result = Key_NumP1;       break;
-                case VK_NUMPAD2:   result = Key_NumP2;       break;
-                case VK_NUMPAD3:   result = Key_NumP3;       break;
-                case VK_NUMPAD4:   result = Key_NumP4;       break;
-                case VK_NUMPAD5:   result = Key_NumP5;       break;
-                case VK_NUMPAD6:   result = Key_NumP6;       break;
-                case VK_NUMPAD7:   result = Key_NumP7;       break;
-                case VK_NUMPAD8:   result = Key_NumP8;       break;
-                case VK_NUMPAD9:   result = Key_NumP9;       break;
-                case VK_MULTIPLY:  result = Key_NumPStar;    break;
-                case VK_ADD:       result = Key_NumPPlus;    break;
-                case VK_SUBTRACT:  result = Key_NumPMin;     break;
-                case VK_SEPARATOR: result = Key_NumPEnter;   break;
-                case VK_DECIMAL:   result = Key_NumPDec;     break;
-                case VK_DIVIDE:    result = Key_NumPDiv;     break;
-                case VK_F1:        result = Key_F1;          break;
-                case VK_F2:        result = Key_F2;          break;
-                case VK_F3:        result = Key_F3;          break;
-                case VK_F4:        result = Key_F4;          break;
-                case VK_F5:        result = Key_F5;          break;
-                case VK_F6:        result = Key_F6;          break;
-                case VK_F7:        result = Key_F7;          break;
-                case VK_F8:        result = Key_F8;          break;
-                case VK_F9:        result = Key_F9;          break;
-                case VK_F10:       result = Key_F10;         break;
-                case VK_F11:       result = Key_F11;         break;
-                case VK_F12:       result = Key_F12;         break;
-                case VK_NUMLOCK:   result = Key_NumLock;     break;
-                case VK_SCROLL:    result = Key_ScrLock;     break;
-                
-                case VK_CONTROL:
-                result = (e0 ? Key_RCtrl: Key_LCtrl);
-                break;
-                
-                case VK_MENU:
-                result = (e0 ? Key_RAlt : Key_LAlt);
-                break;
-                
-                case VK_RETURN:
-                result = (e0 ? Key_NumPEnter : Key_Enter);
-                break;
-                
-                case VK_INSERT:
-                result = (e0 ? Key_Insert : Key_NumP0);
-                break;
-                
-                case VK_DELETE:
-                result = (e0 ? Key_Delete : Key_NumPDec);
-                break;
-                
-                case VK_HOME:
-                result = (e0 ? Key_Home : Key_NumP7);
-                break;
-                
-                case VK_END:
-                result = (e0 ? Key_End : Key_NumP1);
-                break;
-                
-                case VK_PRIOR:
-                result = (e0 ? Key_PgUp : Key_NumP9);
-                break;
-                
-                case VK_NEXT:
-                result = (e0 ? Key_PgDn : Key_NumP3);
-                break;
-                
-                case VK_LEFT:
-                result = (e0 ? Key_Left : Key_NumP4);
-                break;
-                
-                case VK_RIGHT:
-                result = (e0 ? Key_Right : Key_NumP6);
-                break;
-                
-                case VK_UP:
-                result = (e0 ? Key_Up : Key_NumP8);
-                break;
-                
-                case VK_DOWN:
-                result = (e0 ? Key_Down : Key_NumP2);
-                break;
-                
-                case VK_CLEAR:
-                result = (e0 ? Key_Invalid : Key_NumP5);
-                break;
-                
-                default:
-                result = Key_Invalid;
-                break;
-            }
-        }
-    }
-    
-    return result;
-}
-
-internal void
-Win32ProcessPendingMessages(HWND window_handle, Platform_Game_Input* new_input, Game_Controller_Info* controller_infos, U32 active_controller_count, Memory_Arena* temp_memory)
+Win32ProcessPendingMessages(HWND window_handle, Platform_Game_Input* new_input, Game_Controller_Info* default_controller_info, Memory_Arena* temp_memory)
 {
     MSG message = {};
     
     U8* raw_input_buffer      = 0;
-    UMM raw_input_buffer_size = 0;
+    U32 raw_input_buffer_size = 0;
     
     while (PeekMessageA(&message, window_handle, 0, 0, PM_REMOVE))
     {
@@ -940,15 +961,16 @@ Win32ProcessPendingMessages(HWND window_handle, Platform_Game_Input* new_input, 
                         RAWINPUT* input = (RAWINPUT*) raw_input_buffer;
                         U64 platform_keycode = Key_Invalid;
                         bool is_down         = false;
+                        bool is_mouse_wheel  = false;
                         
                         if (input->header.dwType == RIM_TYPEMOUSE)
                         {
                             RAWMOUSE mouse = input->data.mouse;
                             Assert(!(mouse.usFlags & MOUSE_MOVE_ABSOLUTE && mouse.usFlags & MOUSE_VIRTUAL_DESKTOP));
                             
-                            new_input->mouse_delta += Vec2((F32) mouse.lLastX, (F32) mouse.lLastY);
-                            
                             U32 flags = mouse.usButtonFlags;
+                            
+                            new_input->mouse_delta += Vec2((F32) mouse.lLastX, (F32) mouse.lLastY);
                             
                             switch (flags)
                             {
@@ -965,9 +987,19 @@ Win32ProcessPendingMessages(HWND window_handle, Platform_Game_Input* new_input, 
                                 
                                 case RI_MOUSE_WHEEL:
                                 {
-                                    new_input->mouse_wheel_delta += mouse.usButtonData;
+                                    is_mouse_wheel = true;
                                     
-                                    platform_keycode = (mouse.usButtonData > 0 ? Key_MouseWheelUp : Key_MouseWheelDn);
+                                    if (mouse.usButtonData > 0)
+                                    {
+                                        platform_keycode = Key_MouseWheelUp;
+                                    }
+                                    
+                                    else
+                                    {
+                                        platform_keycode = Key_MouseWheelDn;
+                                    }
+                                    
+                                    new_input->wheel_delta += mouse.usButtonData;
                                 } break;
                                 
                                 default:
@@ -985,58 +1017,27 @@ Win32ProcessPendingMessages(HWND window_handle, Platform_Game_Input* new_input, 
                             U32 flags    = keyboard.Flags;
                             
                             platform_keycode = Win32ProcessVirtualKeycodeAndScancode(keycode, scancode, flags);
+                            
                             is_down = !(flags & RI_KEY_BREAK);
                         }
                         
                         if (platform_keycode != Key_Invalid)
                         {
-                            U64 device = (U64) input->header.hDevice;
-                            
-                            StaticAssert(GAME_MAX_CONTROLLER_COUNT < U32_MAX);
-                            U32 controller = U32_MAX;
-                            
-                            for (U32 i = 0; i < active_controller_count; ++i)
+                            for (U32 i = 0; i < GAME_BUTTON_COUNT; ++i)
                             {
-                                if (controller_infos[i].device_handle == device)
+                                if (platform_keycode == default_controller_info->keyboard_keymap[i])
                                 {
-                                    controller = i;
-                                    break;
-                                }
-                            }
-                            
-                            if (controller != U32_MAX)
-                            {
-                                if (platform_keycode != Key_MouseWheelUp && platform_keycode != Key_MouseWheelDn)
-                                {
-                                    for (U32 i = 0; i < GAME_BUTTON_COUNT; ++i)
+                                    if (is_mouse_wheel)
                                     {
-                                        if (platform_keycode == controller_infos[controller].keymap[i])
-                                        {
-                                            Win32ProcessButtonPress(&new_input->controllers[controller].buttons[i], is_down);
-                                        }
+                                        // TODO(soimn): Should this be calculated from the delta?
+                                        ++new_input->active_controllers[0].buttons[i].transition_count;
                                     }
-                                }
-                                
-                                else
-                                {
-                                    /// HACK(soimn): This introduces some nuances that should not exist in a proper 
-                                    //               input system, e.g. If you bind MouseWheelUp to a button, that button 
-                                    //               cannot be held.
                                     
-                                    for (U32 i = 0; i < GAME_BUTTON_COUNT; ++i)
+                                    else
                                     {
-                                        if (platform_keycode == controller_infos[controller].keymap[i])
-                                        {
-                                            new_input->controllers[controller].buttons[i].hold_duration = -MILLISECONDS(160);
-                                            new_input->controllers[controller].buttons[i].ended_down    = false;
-                                        }
+                                        Win32ProcessDigitalButtonPress(&new_input->active_controllers[0].buttons[i], is_down);
                                     }
                                 }
-                            }
-                            
-                            else
-                            {
-                                Win32Log(Log_Warning, "Received unregistered input from device %u64", device);
                             }
                         }
                     }
@@ -1051,7 +1052,9 @@ Win32ProcessPendingMessages(HWND window_handle, Platform_Game_Input* new_input, 
             case WM_KEYUP:
             case WM_SYSKEYDOWN:
             case WM_SYSKEYUP:
-            break;
+            {
+                // TODO(soimn): Implement fallback for RawInput
+            } break;
             
             default:
             Win32MainWindowProc(window_handle, message.message, message.wParam, message.lParam);
@@ -1172,7 +1175,7 @@ int CALLBACK WinMain(HINSTANCE instance,
                 // Keyboard
                 device[0].usUsagePage = 1;
                 device[0].usUsage     = 6;
-                device[0].dwFlags     = RIDEV_NOHOTKEYS | RIDEV_DEVNOTIFY;
+                device[0].dwFlags     = RIDEV_NOLEGACY | RIDEV_NOHOTKEYS | RIDEV_DEVNOTIFY;
                 
                 // Mouse
                 device[1].usUsagePage = 1;
@@ -1198,53 +1201,56 @@ int CALLBACK WinMain(HINSTANCE instance,
                 Platform_Game_Input* new_input      = &input_buffer[0];
                 Platform_Game_Input* old_input      = &input_buffer[1];
                 
-                U32 monitor_refresh_rate        = 60;
-                U32 expected_frames_per_update = 1;
-                
-                F32 game_update_hz = (F32) expected_frames_per_update / (F32) monitor_refresh_rate;
-                
-                LARGE_INTEGER last_timestamp = Win32GetTimestamp();
-                F32 target_seconds_per_frame = game_update_hz;
+                F32 frame_delta = 0.0f;
+                LARGE_INTEGER last_counter = Win32GetTimestamp();
                 
                 while (Running)
                 {
                     ResetArena(&frame_local_memory);
                     
 #ifdef ANT_ENABLE_HOT_RELOAD
-                    while (!Win32ReloadGameCodeIfNecessary(&game_code));
-                    game_code.GameInit(&game_memory);
-#endif
-                    new_input->frame_dt = target_seconds_per_frame;
+                    bool did_reload = false;
+                    while (!Win32ReloadGameCodeIfNecessary(&game_code, &did_reload));
                     
-                    { /// Update the hold duration for each active button
-                        for (U32 i = 0; i < GAME_MAX_CONTROLLER_COUNT; ++i)
+                    if (did_reload)
+                    {
+                        game_code.GameInit(&game_memory);
+                    }
+#endif
+                    { /// Prepare for input processing
+                        for (U32 i = 0; i < GAME_MAX_ACTIVE_CONTROLLER_COUNT + 1; ++i)
                         {
-                            Game_Controller_Input* new_controller = &new_input->controllers[i];
-                            Game_Controller_Input* old_controller = &old_input->controllers[i];
+                            Game_Controller_Input* new_controller = GetController(new_input, 0);
+                            Game_Controller_Input* old_controller = GetController(old_input, 0);
                             
-                            // NOTE(soimn): Only use previous data if the buttons were not remapped
-                            if (!game_memory.controller_infos[i].was_remapped)
+                            for (U32 j = 0; j < GAME_BUTTON_COUNT; ++j)
                             {
-                                for (U32 j = 0; j < GAME_BUTTON_COUNT; ++j)
+                                Game_Button_State* new_button = &new_controller->buttons[j];
+                                Game_Button_State* old_button = &old_controller->buttons[j];
+                                
+                                /// HACK IMPORTANT TODO(soimn): Figure out a stable way to provide this time
+                                F32 time_since_old = frame_delta;
+                                
+                                F32 duration_to_add = 0.0f;
+                                
+                                if (old_button->hold_duration > 0.0f)
                                 {
-                                    new_controller->buttons[j].old_hold_duration = old_controller->buttons[j].old_hold_duration;
-                                    
-                                    // TODO(soimn): Make this more resitent to malfunctions on frame spikes
-                                    new_controller->buttons[j].hold_duration = Max(old_controller->buttons[j].hold_duration, 0.0f) + old_input->frame_dt * old_controller->buttons[j].ended_down;
-                                    
-                                    new_controller->buttons[j].ended_down = old_controller->buttons[j].ended_down;
+                                    duration_to_add = time_since_old;
                                 }
-                            }
-                            
-                            else
-                            {
-                                *new_controller = {};
-                                game_memory.controller_infos[i].was_remapped = false;
+                                
+                                else if (old_button->hold_duration <= 0.0f && old_button->ended_down)
+                                {
+                                    duration_to_add = time_since_old / (old_button->transition_count + 1);
+                                }
+                                
+                                new_button->hold_duration = Max(old_button->hold_duration, 0.0f) + duration_to_add;
+                                
+                                new_button->ended_down = old_button->ended_down;
                             }
                         }
                     }
                     
-                    Win32ProcessPendingMessages(window_handle, new_input, game_memory.controller_infos, game_memory.active_controller_count, &frame_local_memory);
+                    Win32ProcessPendingMessages(window_handle, new_input, &game_memory.controller_infos[0], &frame_local_memory);
                     
                     
                     game_code.GameUpdateAndRender(&game_memory, new_input);
@@ -1252,14 +1258,12 @@ int CALLBACK WinMain(HINSTANCE instance,
                     
                     ResetArena(&frame_local_memory);
                     
-                    Platform_Game_Input temp_input = *new_input;
-                    *old_input = temp_input;
-                    *new_input = {};
+                    CopyStruct(new_input, old_input);
+                    ZeroStruct(new_input);
                     
-                    LARGE_INTEGER next_timestamp = Win32GetTimestamp();
-                    F32 seconds_elapsed = Win32GetSecondsElapsed(last_timestamp, next_timestamp);
-                    expected_frames_per_update = (I32)(seconds_elapsed * (F32)monitor_refresh_rate);
-                    last_timestamp = next_timestamp;
+                    LARGE_INTEGER new_counter = Win32GetTimestamp();
+                    frame_delta = Win32GetSecondsElapsed(last_counter, new_counter);
+                    last_counter = new_counter;
                 }
             }
         }

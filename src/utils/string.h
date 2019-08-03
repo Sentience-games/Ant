@@ -101,6 +101,13 @@ FormatString(char* dest, UMM dest_capacity, const char* format, UMM format_lengt
                     if (scan + 2 < (char*) format + format_length && scan[1] == '6' && scan[2] == '4')
                     {
                         num = va_arg(arg_list, U64);
+                        scan += 2;
+                    }
+                    
+                    else if (scan + 2 < (char*) format + format_length && scan[1] == '1' && scan[2] == '6')
+                    {
+                        num = va_arg(arg_list, U16);
+                        scan += 2;
                     }
                     
                     else

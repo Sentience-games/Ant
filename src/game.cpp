@@ -34,20 +34,17 @@ GAME_INIT_FUNCTION(GameInit)
             Platform->ReloadVFS(game_memory->vfs);
         }
         
-        { /// Load default keymap
-            // TODO(soimn): Possibly load keymaps from a file
+        { /// Load Default Keymap
+            Enum16(KEYCODE) default_keyboard_keymap[] = {
+                /* Button_Test */ Key_A,
+            };
             
-            ZeroArray(game_memory->controller_infos, GAME_MAX_CONTROLLER_COUNT);
-            
-            // NOTE(soimn): Apply default keymaps
-            for (U32 i = 0; i < GAME_MAX_CONTROLLER_COUNT; ++i)
+            for (U32 i = 0; i < GAME_MAX_ACTIVE_CONTROLLER_COUNT + 1; ++i)
             {
-                U64* keymap = &game_memory->controller_infos[i].keymap[0];
-                
-                keymap[0] = Key_A;
-                
-                game_memory->controller_infos[i].was_remapped = true;
+                CopyArray(default_keyboard_keymap, game_memory->controller_infos[i].keyboard_keymap, GAME_BUTTON_COUNT);
             }
+            
+            game_memory->active_controller_count = 0;
         }
         
         state->is_initialized = true;
@@ -59,20 +56,17 @@ GAME_UPDATE_AND_RENDER_FUNCTION(GameUpdateAndRender)
     Game_State* state = game_memory->state;
     Platform          = &game_memory->platform_api;
     
-    Game_Controller_Input* controller = &input->controllers[0];
+    Game_Controller_Input* controller = GetController(input, 0);
     
-    if (WasPressed(controller->test_button))
+    U32 count = 0;
+    if (WasPressed(controller, Button_Test, &count))
     {
-        LOG_INFO("Pressed!");
+        Platform->Log(Log_Info, "Button pressed %u time(s)", count);
     }
     
-    if (WasHeld(controller->test_button))
+    F32 duration = 0;
+    if (WasHeld(controller, Button_Test, &duration))
     {
-        LOG_INFO("Held!");
-    }
-    
-    if (IsHeld(controller->test_button))
-    {
-        LOG_INFO("Is held!");
+        Platform->Log(Log_Info, "Button held for %ums", (U32)(duration * 1000.0f));
     }
 }

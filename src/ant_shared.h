@@ -5,7 +5,7 @@
 /// 
 
 #ifdef ANT_DEBUG
-#define ANT_ENABLE_ASSET
+#define ANT_ENABLE_ASSERT
 #define ANT_ENABLE_HOT_RELOAD
 #endif
 

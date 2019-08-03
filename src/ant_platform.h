@@ -61,142 +61,122 @@ typedef PLATFORM_WRITE_TO_FILE_FUNCTION(platform_write_to_file_function);
 typedef PLATFORM_GET_FILE_SIZE_FUNCTION(platform_get_file_size_function);
 
 /// Input
-#include "ant_keys.h"
+#include "ant_keycodes.h"
 
-struct Game_Button_State
+enum GAME_BUTTONS
 {
-    // NOTE(soimn): This signifies the amount of time which has passed since the button was pressed down and is 
-    //              positive as long as the button is pressed, and turns negative when released. This is done to 
-    //              destinguish between a previous hold/press and a newly detected one.
-    F32 hold_duration;
-    F32 last_hold_duration;
+    Button_Test,
     
-    // NOTE(soimn): This signifies whether or not the button was down when the input recording for that frame 
-    //              ended
-    B32 ended_down;
+    GAME_BUTTON_COUNT
 };
 
-#define GAME_MAX_CONTROLLER_COUNT 1
-#define GAME_BUTTON_COUNT 1
+StaticAssert(GAME_BUTTON_COUNT <= U32_MAX);
 
-StaticAssert(GAME_MAX_CONTROLLER_COUNT < U32_MAX);
+#define GAME_BUTTON_HOLD_THRESHOLD MILLISECONDS(520)
+struct Game_Button_State
+{
+    // NOTE(soimn): Normalized float depicting how pressed down the button is. Only relevant when dealing with 
+    //              pressure sensitive input, like throttling and braking. If the button is digital, the value is 
+    //              either 0.0 or 1.0.
+    F32 actuation_amount;
+    
+    F32 hold_duration;
+    U16 transition_count;
+    B16 ended_down;
+};
 
 struct Game_Controller_Input
 {
-    union
-    {
-        Game_Button_State buttons[GAME_BUTTON_COUNT];
-        
-        struct
-        {
-            Game_Button_State test_button;
-        };
-    };
-    
-    union
-    {
-        V2 stick_delta;
-        V2 mouse_delta
-    };
-    
-    V2 normalized_mouse_p;
-    I32 mouse_wheel_delta;
-    
-    bool is_analog;
+    Game_Button_State buttons[GAME_BUTTON_COUNT];
+    B32 is_gamepad;
+    V2 stick_delta[2];
 };
 
 struct Game_Controller_Info
 {
-    U64 keymap[GAME_BUTTON_COUNT];
     U64 device_handle;
-    U64 additional_device_handle;
-    bool was_remapped;
+    Enum32(KEYCODE) gamepad_keymap[GAME_BUTTON_COUNT];
+    Enum32(KEYCODE) keyboard_keymap[GAME_BUTTON_COUNT];
 };
 
+// NOTE(soimn): GAME_MAX_ACTIVE_CONTROLLER_COUNT does not include the default keyboard and mouse, keyboards and 
+//              mice are not differentiated and are all mapped to the default controller (controller 0). If 
+//              GAME_MAX_ACTIVE_CONTROLLER_COUNT is 0, 
+//              GAME_SHOULD_PIPE_CONTROLLER_INPUT_AS_KEYBOARD_WHEN_NECESSARY is 1 and controller input is 
+//              detected, the controller input will be piped through the default controller (controller 0) and 
+//              mapped to the gamepad_keymap of the default controller.
+#define GAME_MAX_ACTIVE_CONTROLLER_COUNT 0
+#define GAME_SHOULD_PIPE_CONTROLLER_INPUT_AS_KEYBOARD_WHEN_NECESSARY 1
 struct Platform_Game_Input
 {
     F32 frame_dt;
     
-    Game_Controller_Input controllers[GAME_MAX_CONTROLLER_COUNT];
+    Game_Controller_Input active_controllers[GAME_MAX_ACTIVE_CONTROLLER_COUNT + 1];
+    U32 active_controller_count;
+    
+    V2 mouse_delta;
+    V2 mouse_p;
+    V2 normalized_mouse_p;
+    I32 wheel_delta;
+    
+    B32 quit_requested;
 };
 
-// TODO(soimn): Move these to shared globals
-// NOTE(soimn): These values are based on limited testing and should be adjusted further
-#define GAME_BUTTON_HOLD_THRESHOLD MILLISECONDS(520)
-
-// TODO(soimn): Should input responsiveness be sacrificed in order to allow double-tapping?
-// #define GAME_BUTTON_DOUBLE_TAP_THRESHOLD MILLISECONDS(160)
-
-// IMPORTANT
-// NOTE(soimn): The current system discards all sub-frame keypresses, this means the shortest keypress possible is 
-//              one where the press starts at the frame boundary of the last frame and ends at the beginning of 
-//              the next. This might change in the future, however in the current state, it seems as if there 
-//              is no sane explanation for supporting sub-frame keypresses, since a 40ms keypress (sub-frame 
-//              at 10 FPS) requires a person to mash one key nearly as fast as the fastest recorded typing speed, 
-//              as of 2019, at 216 WPM, or 18 characters per second, which amounts to ~2 chars in one 10 FPS 
-//              frame. At 10 FPS the game is nowhere near playable, so this granularity of input seems ridiculous.
-//              However, a case could be made that this statement only limits the functionality of the engine and 
-//              rythm games, like Osu!, would strongly benefit from a more accurate and robust system, however the 
-//              granularity and reliability expected from such a game's input requires a system tailored to that 
-//              specific game and it's limits. Therefore, it seems, as of now, that sub-frame keypress detection 
-//              is overkill and completely unnecessary.
-
-// IsDown - Checks if the button is down
-inline bool
-IsDown(Game_Button_State button)
+inline Game_Controller_Input*
+GetController(Platform_Game_Input* input, U32 controller_id)
 {
-    return (button.ended_down);
+    Assert(!controller_id || controller_id < input->active_controller_count);
+    return &input->active_controllers[controller_id];
 }
 
-// IsReleased - checks if the button was released this frame
-inline bool
-IsReleased(Game_Button_State button)
+inline Game_Button_State*
+GetButton(Game_Controller_Input* controller, Enum32(GAME_BUTTONS) button_id)
 {
-    return (button.hold_duration < 0.0f);
+    Assert(button_id < GAME_BUTTON_COUNT);
+    return &controller->buttons[button_id];
 }
 
-// IsHeld - checks if the button is currently held
 inline bool
-IsHeld(Game_Button_State button)
+IsDown(Game_Controller_Input* controller, Enum32(GAME_BUTTONS) button_id)
 {
-    return (button.hold_duration >= GAME_BUTTON_HOLD_THRESHOLD);
+    Game_Button_State* button = GetButton(controller, button_id);
+    return (button->ended_down);
 }
 
-// WasDown - Reports whether or not the button was down last frame
 inline bool
-WasDown(Game_Button_State button)
+WasDown(Game_Controller_Input* controller, Enum32(GAME_BUTTONS) button_id)
 {
-    return (button.hold_duration != 0.0f);
+    Game_Button_State* button = GetButton(controller, button_id);
+    return (button->hold_duration != 0.0f);
 }
 
-// WasReleased - reports whether or not the button was released last frame
 inline bool
-WasReleased(Game_Button_State button)
+WasPressed(Game_Controller_Input* controller, Enum32(GAME_BUTTONS) button_id, U32* count = 0)
 {
-    return (button.old_hold_duration < 0.0f);
+    Game_Button_State* button = GetButton(controller, button_id);
+    
+    U32 half_press  = (button->hold_duration < 0.0f && button->hold_duration > -GAME_BUTTON_HOLD_THRESHOLD);
+    U32 press_count = (button->transition_count + half_press) / 2;
+    
+    if (count)
+    {
+        *count = press_count;
+    }
+    
+    return (press_count != 0);
 }
 
-// WasHeld - Reports whether or not the button was held the previous frame
 inline bool
-WasHeld(Game_Button_State button)
+WasHeld(Game_Controller_Input* controller, Enum32(GAME_BUTTONS) button_id, float* duration = 0)
 {
-    return (button.old_hold_duration >= GAME_BUTTON_HOLD_THRESHOLD);
-}
-
-// PressedAndReleased - Checks if the button has been released and the hold duration is shorter than the hold 
-//                      threshold
-inline bool
-PressedAndReleased(Game_Button_State button)
-{
-    return (IsReleased(button) && button.hold_duration * -1.0f < GAME_BUTTON_HOLD_THRESHOLD);
-}
-
-// HeldAndReleased - Checks if the button has been released and the hold duration is longer than the hold 
-//                   threshold
-inline bool
-HeldAndReleased(Game_Button_State button)
-{
-    return (IsReleased(button) && button.hold_duration * -1.0f >= GAME_BUTTON_HOLD_THRESHOLD);
+    Game_Button_State* button = GetButton(controller, button_id);
+    
+    if (duration)
+    {
+        *duration = Abs(button->hold_duration);
+    }
+    
+    return (button->hold_duration < 0.0f && button->hold_duration <= -GAME_BUTTON_HOLD_THRESHOLD);
 }
 
 struct Platform_API
@@ -226,7 +206,7 @@ struct Game_Memory
     
     VFS* vfs;
     
-    Game_Controller_Info controller_infos[GAME_MAX_CONTROLLER_COUNT];
+    Game_Controller_Info controller_infos[GAME_MAX_ACTIVE_CONTROLLER_COUNT + 1];
     U32 active_controller_count;
     
     Platform_API platform_api;

@@ -66,7 +66,6 @@ enum KEYCODE
     Key_X,
     Key_Y,
     Key_Z,
-    Key_0,
     
     // NOTE(soimn):
     // US: '[', ']', '\', ';', '''
@@ -143,4 +142,8 @@ enum KEYCODE
     
     Key_MouseWheelUp,
     Key_MouseWheelDn,
+    
+    KEYCODE_KEY_COUNT
 };
+
+StaticAssert(KEYCODE_KEY_COUNT <= U32_MAX);
