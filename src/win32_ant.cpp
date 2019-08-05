@@ -1,6 +1,7 @@
 #include "win32_ant.h"
 
-global bool Running;
+global bool QuitRequested;
+global bool Pause;
 global I64 GlobalPerformanceCounterFreq;
 
 /// Logging
@@ -700,6 +701,30 @@ Win32GetSecondsElapsed(LARGE_INTEGER start, LARGE_INTEGER end)
 /// Input Processing
 
 internal void
+Win32PrepareButtonForProcessing(Game_Button_State* old_button, Game_Button_State* new_button, F32 frame_delta)
+{
+    /// HACK IMPORTANT TODO(soimn): Figure out a stable way to provide this time
+    F32 time_since_old = frame_delta;
+    
+    F32 duration_to_add = 0.0f;
+    
+    if (old_button->hold_duration > 0.0f)
+    {
+        duration_to_add = time_since_old;
+    }
+    
+    else if (old_button->hold_duration <= 0.0f && old_button->ended_down)
+    {
+        duration_to_add = time_since_old / (old_button->transition_count + 1);
+    }
+    
+    new_button->hold_duration = Max(old_button->hold_duration, 0.0f) + duration_to_add;
+    
+    new_button->did_cross_hold_threshold = (old_button->hold_duration < GAME_BUTTON_HOLD_THRESHOLD && new_button->hold_duration >= GAME_BUTTON_HOLD_THRESHOLD);
+    new_button->ended_down = old_button->ended_down;
+}
+
+internal void
 Win32ProcessDigitalButtonPress(Game_Button_State* button, bool is_down)
 {
     if ((B16) is_down != button->ended_down)
@@ -896,11 +921,11 @@ Win32MainWindowProc(HWND window_handle, UINT msg_code,
     {
         // TODO(soimn): call games' exit handler instead of closing immediately
         case WM_CLOSE:
-        Running = false;
+        QuitRequested = true;
         break;
         
         case WM_QUIT:
-        Running = false;
+        QuitRequested = true;
         break;
         
         case WM_INPUT:
@@ -927,19 +952,26 @@ Win32MainWindowProc(HWND window_handle, UINT msg_code,
 }
 
 internal void
-Win32ProcessPendingMessages(HWND window_handle, Platform_Game_Input* new_input, Game_Controller_Info* default_controller_info, Memory_Arena* temp_memory)
+Win32ProcessPendingMessages(HWND window_handle, Platform_Game_Input* new_input, Enum32(KEYCODE)* game_keymap, Enum32(KEYCODE)* editor_keymap, Memory_Arena* temp_memory)
 {
     MSG message = {};
     
     U8* raw_input_buffer      = 0;
     U32 raw_input_buffer_size = 0;
     
+    U8 keyboard_state[256] = {};
+    bool keyboard_state_valid = GetKeyboardState((PBYTE) keyboard_state);
+    
+    bool alt_down   = (keyboard_state_valid && (keyboard_state[VK_MENU]    & 0x80) != 0);
+    bool shift_down = (keyboard_state_valid && (keyboard_state[VK_SHIFT]   & 0x80) != 0);
+    bool ctrl_down  = (keyboard_state_valid && (keyboard_state[VK_CONTROL] & 0x80) != 0);
+    
     while (PeekMessageA(&message, window_handle, 0, 0, PM_REMOVE))
     {
         switch(message.message)
         {
             case WM_QUIT:
-            Running = false;
+            QuitRequested = true;
             break;
             
             case WM_INPUT:
@@ -1017,25 +1049,85 @@ Win32ProcessPendingMessages(HWND window_handle, Platform_Game_Input* new_input, 
                             U32 flags    = keyboard.Flags;
                             
                             platform_keycode = Win32ProcessVirtualKeycodeAndScancode(keycode, scancode, flags);
-                            
                             is_down = !(flags & RI_KEY_BREAK);
+                            
+                            alt_down = (platform_keycode == Key_LAlt || platform_keycode == Key_RAlt ? is_down : alt_down);
+                            shift_down = (platform_keycode == Key_LShift || platform_keycode == Key_RShift ? is_down : shift_down);
+                            ctrl_down = (platform_keycode == Key_LCtrl || platform_keycode == Key_RCtrl ? is_down : ctrl_down);
                         }
                         
                         if (platform_keycode != Key_Invalid)
                         {
-                            for (U32 i = 0; i < GAME_BUTTON_COUNT; ++i)
+                            if (new_input->editor_mode)
                             {
-                                if (platform_keycode == default_controller_info->keyboard_keymap[i])
+                                if (alt_down && platform_keycode == Key_E && !is_down)
                                 {
-                                    if (is_mouse_wheel)
+                                    Win32Log(Log_Info | Log_Verbose, "Exited editor");
+                                    new_input->editor_mode = false;
+                                }
+                                
+                                else
+                                {
+                                    for (U32 i = 0; i < EDITOR_BUTTON_COUNT; ++i)
                                     {
-                                        // TODO(soimn): Should this be calculated from the delta?
-                                        ++new_input->active_controllers[0].buttons[i].transition_count;
+                                        if (platform_keycode == editor_keymap[i])
+                                        {
+                                            if (is_mouse_wheel)
+                                            {
+                                                // TODO(soimn): Should this be calculated from the delta?
+                                                new_input->editor_buttons[i].transition_count += 2;
+                                            }
+                                            
+                                            else
+                                            {
+                                                Win32ProcessDigitalButtonPress(&new_input->editor_buttons[i], is_down);
+                                            }
+                                        }
                                     }
+                                }
+                            }
+                            
+                            else if (alt_down && !(platform_keycode == Key_LAlt || platform_keycode == Key_RAlt))
+                            {
+                                if (platform_keycode == Key_F4)
+                                {
+                                    new_input->quit_requested = true;
+                                }
+                                
+                                else if (platform_keycode == Key_P && !is_down)
+                                {
+                                    Win32Log(Log_Info | Log_Verbose, "The game loop was %spaused", (Pause ? "un" : ""));
+                                    Pause = !Pause;
+                                }
+                                
+                                else if (platform_keycode >= Key_F1 && platform_keycode <= Key_F12)
+                                {
                                     
-                                    else
+                                }
+                                
+                                else if (platform_keycode == Key_E && !is_down)
+                                {
+                                    Win32Log(Log_Info | Log_Verbose, "Entered editor");
+                                    new_input->editor_mode = true;
+                                }
+                            }
+                            
+                            else
+                            {
+                                for (U32 i = 0; i < GAME_BUTTON_COUNT; ++i)
+                                {
+                                    if (platform_keycode == game_keymap[i])
                                     {
-                                        Win32ProcessDigitalButtonPress(&new_input->active_controllers[0].buttons[i], is_down);
+                                        if (is_mouse_wheel)
+                                        {
+                                            // TODO(soimn): Should this be calculated from the delta?
+                                            new_input->active_controllers[0].buttons[i].transition_count += 2;
+                                        }
+                                        
+                                        else
+                                        {
+                                            Win32ProcessDigitalButtonPress(&new_input->active_controllers[0].buttons[i], is_down);
+                                        }
                                     }
                                 }
                             }
@@ -1172,10 +1264,11 @@ int CALLBACK WinMain(HINSTANCE instance,
                 /// Register RawInput Devices
                 RAWINPUTDEVICE device[2] = {};
                 
+                // TODO(soimn): Find out if RIDEV_NOLEGACY is worth specifying in release mode
                 // Keyboard
                 device[0].usUsagePage = 1;
                 device[0].usUsage     = 6;
-                device[0].dwFlags     = RIDEV_NOLEGACY | RIDEV_NOHOTKEYS | RIDEV_DEVNOTIFY;
+                device[0].dwFlags     = /*RIDEV_NOLEGACY | */RIDEV_NOHOTKEYS | RIDEV_DEVNOTIFY;
                 
                 // Mouse
                 device[1].usUsagePage = 1;
@@ -1194,7 +1287,8 @@ int CALLBACK WinMain(HINSTANCE instance,
             
             if (succeeded)
             {
-                Running = true;
+                bool running = true;
+                Pause        = false;
                 ShowWindow(window_handle, SW_SHOW);
                 
                 Platform_Game_Input input_buffer[2] = {};
@@ -1204,7 +1298,7 @@ int CALLBACK WinMain(HINSTANCE instance,
                 F32 frame_delta = 0.0f;
                 LARGE_INTEGER last_counter = Win32GetTimestamp();
                 
-                while (Running)
+                while (running)
                 {
                     ResetArena(&frame_local_memory);
                     
@@ -1220,40 +1314,41 @@ int CALLBACK WinMain(HINSTANCE instance,
                     { /// Prepare for input processing
                         for (U32 i = 0; i < GAME_MAX_ACTIVE_CONTROLLER_COUNT + 1; ++i)
                         {
-                            Game_Controller_Input* new_controller = GetController(new_input, 0);
-                            Game_Controller_Input* old_controller = GetController(old_input, 0);
+                            Game_Controller_Input* new_controller = &new_input->active_controllers[i];
+                            Game_Controller_Input* old_controller = &old_input->active_controllers[i];
                             
                             for (U32 j = 0; j < GAME_BUTTON_COUNT; ++j)
                             {
                                 Game_Button_State* new_button = &new_controller->buttons[j];
                                 Game_Button_State* old_button = &old_controller->buttons[j];
                                 
-                                /// HACK IMPORTANT TODO(soimn): Figure out a stable way to provide this time
-                                F32 time_since_old = frame_delta;
-                                
-                                F32 duration_to_add = 0.0f;
-                                
-                                if (old_button->hold_duration > 0.0f)
-                                {
-                                    duration_to_add = time_since_old;
-                                }
-                                
-                                else if (old_button->hold_duration <= 0.0f && old_button->ended_down)
-                                {
-                                    duration_to_add = time_since_old / (old_button->transition_count + 1);
-                                }
-                                
-                                new_button->hold_duration = Max(old_button->hold_duration, 0.0f) + duration_to_add;
-                                
-                                new_button->ended_down = old_button->ended_down;
+                                Win32PrepareButtonForProcessing(old_button, new_button, frame_delta);
                             }
                         }
+                        
+                        for (U32 i = 0; i < EDITOR_BUTTON_COUNT; ++i)
+                        {
+                            Game_Button_State* new_button = &new_input->editor_buttons[i];
+                            Game_Button_State* old_button = &old_input->editor_buttons[i];
+                            
+                            Win32PrepareButtonForProcessing(old_button, new_button, frame_delta);
+                        }
+                        
+                        new_input->editor_mode = old_input->editor_mode;
                     }
                     
-                    Win32ProcessPendingMessages(window_handle, new_input, &game_memory.controller_infos[0], &frame_local_memory);
+                    Win32ProcessPendingMessages(window_handle, new_input, game_memory.keyboard_game_keymap, game_memory.keyboard_editor_keymap, &frame_local_memory);
                     
-                    
-                    game_code.GameUpdateAndRender(&game_memory, new_input);
+                    if (!Pause)
+                    {
+                        new_input->quit_requested = new_input->quit_requested || QuitRequested;
+                        game_code.GameUpdateAndRender(&game_memory, new_input);
+                        
+                        if (new_input->quit_requested)
+                        {
+                            running = false;
+                        }
+                    }
                     
                     
                     ResetArena(&frame_local_memory);

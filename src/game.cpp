@@ -35,16 +35,11 @@ GAME_INIT_FUNCTION(GameInit)
         }
         
         { /// Load Default Keymap
-            Enum16(KEYCODE) default_keyboard_keymap[] = {
-                /* Button_Test */ Key_A,
-            };
+            Enum32(KEYCODE)* game_keymap   = game_memory->keyboard_game_keymap;
+            Enum32(KEYCODE)* editor_keymap = game_memory->keyboard_editor_keymap;
             
-            for (U32 i = 0; i < GAME_MAX_ACTIVE_CONTROLLER_COUNT + 1; ++i)
-            {
-                CopyArray(default_keyboard_keymap, game_memory->controller_infos[i].keyboard_keymap, GAME_BUTTON_COUNT);
-            }
-            
-            game_memory->active_controller_count = 0;
+            game_keymap[Button_Test]         = Key_A;
+            editor_keymap[EditorButton_Test] = Key_T;
         }
         
         state->is_initialized = true;
@@ -56,17 +51,8 @@ GAME_UPDATE_AND_RENDER_FUNCTION(GameUpdateAndRender)
     Game_State* state = game_memory->state;
     Platform          = &game_memory->platform_api;
     
-    Game_Controller_Input* controller = GetController(input, 0);
+    Game_Controller_Input controller = GetController(input, 0);
     
-    U32 count = 0;
-    if (WasPressed(controller, Button_Test, &count))
-    {
-        Platform->Log(Log_Info, "Button pressed %u time(s)", count);
-    }
-    
-    F32 duration = 0;
-    if (WasHeld(controller, Button_Test, &duration))
-    {
-        Platform->Log(Log_Info, "Button held for %ums", (U32)(duration * 1000.0f));
-    }
+    if (WasPressed(controller, Button_Test)) Platform->Log(Log_Info | Log_Verbose, "Game button pressed");
+    if (WasPressed(input->editor_buttons[EditorButton_Test])) Platform->Log(Log_Info | Log_Verbose, "Editor button pressed");
 }

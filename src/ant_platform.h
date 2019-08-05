@@ -15,6 +15,7 @@ enum LOG_OPTIONS
     Log_Fatal   = 0x8,
     
     Log_MessagePrompt = 0x20,
+    Log_Verbose       = 0x40,
 };
 
 #define PLATFORM_LOG_FUNCTION(name) void name (U8 log_options, const char* message, ...)
@@ -70,6 +71,13 @@ enum GAME_BUTTONS
     GAME_BUTTON_COUNT
 };
 
+enum EDITOR_BUTTONS
+{
+    EditorButton_Test,
+    
+    EDITOR_BUTTON_COUNT
+};
+
 StaticAssert(GAME_BUTTON_COUNT <= U32_MAX);
 
 #define GAME_BUTTON_HOLD_THRESHOLD MILLISECONDS(520)
@@ -82,7 +90,8 @@ struct Game_Button_State
     
     F32 hold_duration;
     U16 transition_count;
-    B16 ended_down;
+    B8 ended_down;
+    B8 did_cross_hold_threshold;
 };
 
 struct Game_Controller_Input
@@ -96,7 +105,6 @@ struct Game_Controller_Info
 {
     U64 device_handle;
     Enum32(KEYCODE) gamepad_keymap[GAME_BUTTON_COUNT];
-    Enum32(KEYCODE) keyboard_keymap[GAME_BUTTON_COUNT];
 };
 
 // NOTE(soimn): GAME_MAX_ACTIVE_CONTROLLER_COUNT does not include the default keyboard and mouse, keyboards and 
@@ -114,69 +122,143 @@ struct Platform_Game_Input
     Game_Controller_Input active_controllers[GAME_MAX_ACTIVE_CONTROLLER_COUNT + 1];
     U32 active_controller_count;
     
+    // TODO(soimn): Should this be integrated with the button states? It would be benefitial for expressiveness 
+    //              and clarity when dealing with alternating input from a keyboard/mouse and a gamepad. However, 
+    //              the value would then have to be somehow mapped to a normalized actuation amount. 
     V2 mouse_delta;
+    
     V2 mouse_p;
     V2 normalized_mouse_p;
     I32 wheel_delta;
     
+    
     B32 quit_requested;
+    B32 editor_mode;
+    
+    Game_Button_State editor_buttons[EDITOR_BUTTON_COUNT];
 };
 
-inline Game_Controller_Input*
+inline U16
+GetPressCount(Game_Button_State button)
+{
+    U16 half_press  = (button.hold_duration < 0.0f && button.hold_duration > -GAME_BUTTON_HOLD_THRESHOLD);
+    U16 press_count = (button.transition_count + half_press) / 2;
+    
+    return press_count;
+}
+
+inline F32
+GetHoldDuration(Game_Button_State button)
+{
+    return Abs(button.hold_duration);
+}
+
+inline bool
+IsDown(Game_Button_State button)
+{
+    return (button.ended_down);
+}
+
+inline bool
+IsHeld(Game_Button_State button)
+{
+    return (button.hold_duration >= GAME_BUTTON_HOLD_THRESHOLD);
+}
+
+inline bool
+WasDown(Game_Button_State button)
+{
+    return (button.hold_duration != 0.0f);
+}
+
+inline bool
+WasPressed(Game_Button_State button)
+{
+    return (GetPressCount(button) != 0);
+}
+
+inline bool
+WasHeld(Game_Button_State button)
+{
+    return (button.hold_duration < 0.0f && button.hold_duration <= -GAME_BUTTON_HOLD_THRESHOLD);
+}
+
+
+inline bool
+WasHeldLastFrame(Game_Button_State button)
+{
+    return (button.hold_duration >= GAME_BUTTON_HOLD_THRESHOLD && !button.did_cross_hold_threshold);
+}
+
+inline Game_Controller_Input
 GetController(Platform_Game_Input* input, U32 controller_id)
 {
     Assert(!controller_id || controller_id < input->active_controller_count);
-    return &input->active_controllers[controller_id];
+    return input->active_controllers[controller_id];
 }
 
-inline Game_Button_State*
-GetButton(Game_Controller_Input* controller, Enum32(GAME_BUTTONS) button_id)
+inline Game_Button_State
+GetButtonState(Game_Controller_Input controller, Enum32(GAME_BUTTONS) button_id)
 {
     Assert(button_id < GAME_BUTTON_COUNT);
-    return &controller->buttons[button_id];
+    return controller.buttons[button_id];
+}
+
+inline U16
+GetPressCount(Game_Controller_Input controller, Enum32(GAME_BUTTONS) button_id)
+{
+    Game_Button_State button = GetButtonState(controller, button_id);
+    return GetPressCount(button);
+}
+
+inline F32
+GetHoldDuration(Game_Controller_Input controller, Enum32(GAME_BUTTONS) button_id)
+{
+    Game_Button_State button = GetButtonState(controller, button_id);
+    return GetHoldDuration(button);
 }
 
 inline bool
-IsDown(Game_Controller_Input* controller, Enum32(GAME_BUTTONS) button_id)
+IsDown(Game_Controller_Input controller, Enum32(GAME_BUTTONS) button_id)
 {
-    Game_Button_State* button = GetButton(controller, button_id);
-    return (button->ended_down);
+    Game_Button_State button = GetButtonState(controller, button_id);
+    return IsDown(button);
 }
 
 inline bool
-WasDown(Game_Controller_Input* controller, Enum32(GAME_BUTTONS) button_id)
+IsHeld(Game_Controller_Input controller, Enum32(GAME_BUTTONS) button_id)
 {
-    Game_Button_State* button = GetButton(controller, button_id);
-    return (button->hold_duration != 0.0f);
+    Game_Button_State button = GetButtonState(controller, button_id);
+    return IsHeld(button);
 }
 
 inline bool
-WasPressed(Game_Controller_Input* controller, Enum32(GAME_BUTTONS) button_id, U32* count = 0)
+WasDown(Game_Controller_Input controller, Enum32(GAME_BUTTONS) button_id)
 {
-    Game_Button_State* button = GetButton(controller, button_id);
-    
-    U32 half_press  = (button->hold_duration < 0.0f && button->hold_duration > -GAME_BUTTON_HOLD_THRESHOLD);
-    U32 press_count = (button->transition_count + half_press) / 2;
-    
-    if (count)
-    {
-        *count = press_count;
-    }
-    
-    return (press_count != 0);
+    Game_Button_State button = GetButtonState(controller, button_id);
+    return WasDown(button);
 }
 
 inline bool
-WasHeld(Game_Controller_Input* controller, Enum32(GAME_BUTTONS) button_id, float* duration = 0)
+WasPressed(Game_Controller_Input controller, Enum32(GAME_BUTTONS) button_id)
 {
-    Game_Button_State* button = GetButton(controller, button_id);
-    
-    if (duration)
-    {
-        *duration = Abs(button->hold_duration);
-    }
-    
-    return (button->hold_duration < 0.0f && button->hold_duration <= -GAME_BUTTON_HOLD_THRESHOLD);
+    Game_Button_State button = GetButtonState(controller, button_id);
+    return (GetPressCount(button) != 0);
+}
+
+inline bool
+WasHeld(Game_Controller_Input controller, Enum32(GAME_BUTTONS) button_id)
+{
+    Game_Button_State button = GetButtonState(controller, button_id);
+    return WasHeld(button);
+}
+
+
+inline bool
+WasHeldLastFrame(Game_Controller_Input controller, Enum32(GAME_BUTTONS) button_id)
+{
+    Game_Button_State button = GetButtonState(controller, button_id);
+    return WasHeldLastFrame(button);
 }
 
 struct Platform_API
@@ -208,6 +290,9 @@ struct Game_Memory
     
     Game_Controller_Info controller_infos[GAME_MAX_ACTIVE_CONTROLLER_COUNT + 1];
     U32 active_controller_count;
+    
+    Enum32(KEYCODE) keyboard_game_keymap[GAME_BUTTON_COUNT];
+    Enum32(KEYCODE) keyboard_editor_keymap[EDITOR_BUTTON_COUNT];
     
     Platform_API platform_api;
 };

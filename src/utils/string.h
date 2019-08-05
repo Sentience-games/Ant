@@ -110,6 +110,12 @@ FormatString(char* dest, UMM dest_capacity, const char* format, UMM format_lengt
                         scan += 2;
                     }
                     
+                    else if (scan + 1 < (char*) format + format_length && scan[1] == '8')
+                    {
+                        num = va_arg(arg_list, U8);
+                        scan += 1;
+                    }
+                    
                     else
                     {
                         num = va_arg(arg_list, U32);
