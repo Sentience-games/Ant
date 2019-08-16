@@ -3,52 +3,44 @@
 #include "ant_shared.h"
 
 #include "math/vector.h"
+#include "math/trigonometry.h"
 
-struct M2
+union M2
 {
-    union
+    F32 e[4];
+    F32 ed[2][2];
+    
+    struct
     {
-        F32 e[4];
-        F32 ed[2][2];
-        
-        struct
-        {
-            V2 i;
-            V2 j;
-        };
+        V2 i;
+        V2 j;
     };
 };
 
-struct M3
+union M3
 {
-    union
+    F32 e[9];
+    F32 ed[3][3];
+    
+    struct
     {
-        F32 e[9];
-        F32 ed[3][3];
-        
-        struct
-        {
-            V3 i;
-            V3 j;
-            V3 k;
-        };
+        V3 i;
+        V3 j;
+        V3 k;
     };
 };
 
-struct M4
+union M4
 {
-    union
+    F32 e[16];
+    F32 ed[4][4];
+    
+    struct
     {
-        F32 e[16];
-        F32 ed[4][4];
-        
-        struct
-        {
-            V4 i;
-            V4 j;
-            V4 k;
-            V4 w;
-        };
+        V4 i;
+        V4 j;
+        V4 k;
+        V4 w;
     };
 };
 
@@ -354,6 +346,92 @@ Transpose(const M4& m)
     result.j = {m.i.y, m.j.y, m.k.y, m.w.y};
     result.k = {m.i.z, m.j.z, m.k.z, m.w.z};
     result.w = {m.i.w, m.j.w, m.k.w, m.w.w};
+    
+    return result;
+}
+
+inline M4_Inv
+ModelMatrix(Transform transform)
+{
+    M4_Inv result = {};
+    
+    Assert(transform.rotation.x || transform.rotation.y || transform.rotation.z || transform.rotation.w);
+    
+    M4 rotation_matrix = Rotation(transform.rotation);
+    
+    result.m   = Translation(transform.position) * rotation_matrix * Scale(transform.scale);
+    result.inv = Translation(-transform.position) * Transpose(rotation_matrix) * Scale(1 / transform.scale);
+    
+    return result;
+}
+
+// TODO(soimn): Verify this
+inline M4_Inv
+ViewMatrix(V3 position, Quat rotation)
+{
+    M4_Inv result = {};
+    
+    Assert(rotation.x || rotation.y || rotation.z || rotation.w);
+    
+    M4 rotation_matrix = Rotation(rotation);
+    
+    result.m   = Translation(-position) * Transpose(rotation_matrix);
+    result.inv = Translation(position) * rotation_matrix;
+    
+    return result;
+}
+
+// NOTE(soimn): This expects z-out, y-up
+inline M4_Inv
+PerspectiveMatrix(F32 aspect_ratio, F32 fov, F32 near, F32 far)
+{
+    M4_Inv result = {};
+    
+    F32 tan_fov = Tan(fov / 2.0f);
+    
+    // x, y remapping to -1 - 1
+    result.m.i.x = 1.0f / tan_fov;
+    result.m.j.y = aspect_ratio / tan_fov;
+    
+    // Z remapping to 0 - 1
+    result.m.k.z = far / (near - far);
+    result.m.k.w = -1.0f;
+    result.m.w.z = (near * far) / (near - far);
+    
+    // NOTE(soimn): Inverse - computed by Wolfram
+    result.inv.i.x = tan_fov;
+    result.inv.j.y = tan_fov / aspect_ratio;
+    
+    result.inv.k.w = 1.0f / far - 1.0f / near;
+    result.inv.w.z = -1.0f;
+    result.inv.w.w = 1.0f / near;
+    
+    return result;
+}
+
+// TODO(soimn): Consider changing fov to width
+inline M4_Inv
+OrthographicMatrix(F32 aspect_ratio, F32 fov, F32 near, F32 far)
+{
+    M4_Inv result = {};
+    
+    F32 tan_fov = Tan(fov / 2.0f) * far;
+    
+    // x, y remapping to -1 - 1
+    result.m.i.x = 1.0f / tan_fov;
+    result.m.j.y = aspect_ratio / tan_fov;
+    
+    result.m.k.z = 1.0f / (near - far);
+    result.m.w.z = near / (near - far);
+    result.m.w.w = 1.0f;
+    
+    // NOTE(soimn): Inverse - computed by Wolfram
+    result.inv.i.x = tan_fov;
+    result.inv.j.y = tan_fov / aspect_ratio;
+    
+    result.inv.k.z = near - far;
+    result.inv.w.z = -near;
+    result.inv.w.w = 1.0f;
     
     return result;
 }

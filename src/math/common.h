@@ -1,27 +1,9 @@
 #pragma once
 
-inline I8
-Abs(I8 num)
-{
-    return (num < 0 ? -num : num);
-}
-
-inline I16
-Abs(I16 num)
-{
-    return (num < 0 ? -num : num);
-}
-
-inline I32
-Abs(I32 num)
-{
-    return (num < 0 ? -num : num);
-}
-
 inline I64
 Abs(I64 num)
 {
-    return (num < 0 ? -num : num);
+    return num & ~(1ULL << 63);
 }
 
 // TODO(soimn): Verify this
@@ -36,14 +18,14 @@ Abs(F32 num)
 inline I64
 Sign(I64 num)
 {
-    return (num < 0 ? -1 : 1);
+    return (num & (1ULL << 63)) * -1;
 }
 
 // TODO(soimn): Verify this
 inline F32
 Sign(F32 num)
 {
-    return !!(*(U32*)&num & (1 << 31)) * -1.0f;
+    return (*(U32*)&num & (1 << 31)) * -1.0f;
 }
 
 // TODO(soimn): replace this with an intrinsic

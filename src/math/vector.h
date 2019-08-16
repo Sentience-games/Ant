@@ -9,62 +9,56 @@ struct V2
     F32 x, y;
 };
 
-struct V3
+union V3
 {
-    union
+    struct
     {
-        struct
-        {
-            F32 x, y, z;
-        };
-        
-        struct
-        {
-            V2 xy;
-            F32 _ignored0;
-        };
-        
-        struct
-        {
-            F32 _ignored1;
-            V2 yz;
-        };
+        F32 x, y, z;
+    };
+    
+    struct
+    {
+        V2 xy;
+        F32 _ignored0;
+    };
+    
+    struct
+    {
+        F32 _ignored1;
+        V2 yz;
     };
 };
 
-struct V4
+union V4
 {
-    union
+    struct
     {
-        struct
-        {
-            F32 x, y, z, w;
-        };
-        
-        struct
-        {
-            V2 xy;
-            V2 zw;
-        };
-        
-        struct
-        {
-            F32 _ignored0;
-            V2 yz;
-            F32 _ignored1;
-        };
-        
-        struct
-        {
-            V3 xyz;
-            F32 _ignored2;
-        };
-        
-        struct
-        {
-            F32 _ignored3;
-            V3 yzw;
-        };
+        F32 x, y, z, w;
+    };
+    
+    struct
+    {
+        V2 xy;
+        V2 zw;
+    };
+    
+    struct
+    {
+        F32 _ignored0;
+        V2 yz;
+        F32 _ignored1;
+    };
+    
+    struct
+    {
+        V3 xyz;
+        F32 _ignored2;
+    };
+    
+    struct
+    {
+        F32 _ignored3;
+        V3 yzw;
     };
 };
 
@@ -76,12 +70,6 @@ inline V2
 Vec2(F32 x, F32 y)
 {
 	return {x, y};
-}
-
-inline bool
-operator == (const V2& v_1, const V2& v_2)
-{
-	return (v_1.x == v_2.x && v_1.y == v_2.y);
 }
 
 inline V2

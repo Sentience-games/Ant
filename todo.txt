@@ -1,11 +1,6 @@
 TODO
 
 Set viewport dimensions and implement restricted resizing of the window. This seems to be problematic on windows
-memory usage shadowing
-/// Figure out what to do with static objects and how they should interact with entities
-
-// Rewamp the asset system to support replacement tags and smart ordering, such that modifying the base content is smoother
 
 /// INPUT
-Mouse position, hot plugging devices, WM_*KEY* fallback, get key name, controller input, device recognition, and controller assignment
-//// proper input timing
+Mouse position, hot plugging devices, WM_*KEY* fallback, get key name, controller input, device recognition, controller assignment and proper input timing

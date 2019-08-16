@@ -1,5 +1,8 @@
 #include "win32_ant.h"
 
+#include "renderer/ant_renderer.h"
+#include "renderer/ant_renderer.cpp"
+
 global bool QuitRequested;
 global bool Pause;
 global I64 GlobalPerformanceCounterFreq;

@@ -51,6 +51,8 @@ GAME_UPDATE_AND_RENDER_FUNCTION(GameUpdateAndRender)
     Game_State* state = game_memory->state;
     Platform          = &game_memory->platform_api;
     
+    UNUSED_PARAMETER(state);
+    
     Game_Controller_Input controller = GetController(input, 0);
     
     if (WasPressed(controller, Button_Test)) Platform->Log(Log_Info | Log_Verbose, "Game button pressed");
