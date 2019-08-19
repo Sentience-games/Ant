@@ -8,16 +8,8 @@
 
 // IMPORTANT NOTE(soimn): Goal: a framework to build upon
 
-// TODO(soimn): Change this to a double indirection to enable more efficient memory management and limit the size 
-//              of the buffer handle
-struct GPU_Buffer
-{
-    U64 handle;
-    U32 offset;
-};
-
-typedef GPU_Buffer Vertex_Buffer;
-typedef GPU_Buffer Index_Buffer;
+typedef U32 Vertex_Buffer;
+typedef U32 Index_Buffer;
 
 struct Sub_Mesh
 {
@@ -84,18 +76,16 @@ struct Texture_View
     Flag8(TEXTURE_USAGE) usage;
 };
 
-typedef U32 Shader_ID;
-
 struct Material
 {
     void* data;
     U32 size;
     B32 is_dirty;
     
-    Shader_ID shader;
+    U32 shader;
     
     U32 texture_count;
-    Asset_ID* textures;
+    Texture_View* textures;
 };
 
 enum RENDERER_LIGHT_TYPE
@@ -106,6 +96,7 @@ enum RENDERER_LIGHT_TYPE
     Light_Area,
 };
 
+// TODO(soimn): Figure out how area lights should function
 struct Light
 {
     V3 position;
@@ -113,6 +104,10 @@ struct Light
     B8 casts_shadows;
     
     Enum8(RENDERER_LIGHT_TYPE) type;
+    
+    V3 ambient_color;
+    V3 diffuse_color;
+    V3 specular_color;
     
     union
     {
@@ -143,7 +138,7 @@ struct Render_Request
     Bounding_Sphere bounding_sphere;
     Transform transform;
     
-    Asset_ID asset;
+    Mesh* mesh;
     
     void* dynamic_material_data;
     UMM dynamic_material_data_size;
@@ -187,3 +182,15 @@ typedef RENDERER_RENDER_FUNCTION(renderer_render_function);
 
 #define RENDERER_CLEAN_BATCH_FUNCTION(name) void name (Render_Batch* batch)
 typedef RENDERER_CLEAN_BATCH_FUNCTION(renderer_clean_batch_function);
+
+// TODO(soimn):
+// Flush all allocations and objects
+// Create / destroy framebuffer
+// Flush materials, add material, remove material(?)
+// GetShader, add shader, remove shader (?), update shader
+// Add / remove mesh, update mesh
+// Add / remove texture, update texture
+// Apply post processing step
+// Copy, clear and fill framebuffers
+
+// TODO(soimn): Render commands / stages

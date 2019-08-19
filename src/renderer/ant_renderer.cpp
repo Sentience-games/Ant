@@ -9,6 +9,8 @@ enum RENDERER_API
     RendererAPI_DirectX,
 };
 
+// TODO(soimn): Memory management abstraction
+
 struct Camera_Render_Info
 {
     Camera_Filter filter;
