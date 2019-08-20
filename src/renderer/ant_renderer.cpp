@@ -78,20 +78,3 @@ RendererGetCameraRenderInfo(Camera camera)
     
     return result;
 };
-
-internal bool
-RendererInit(Platform_API* platform_api, Enum8(RENDERER_API) preferred_api)
-{
-    bool succeeded = false;
-    
-    Enum8(RENDERER_API) selected_api = RendererAPI_None;
-    
-    // TODO(soimn): Init Vulkan/OpenGL/DX/Metal
-    
-    if (selected_api != RendererAPI_None)
-    {
-        succeeded = true;
-    }
-    
-    return succeeded;
-}

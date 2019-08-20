@@ -1,7 +1,6 @@
 #include "win32_ant.h"
 
-#include "renderer/ant_renderer.h"
-#include "renderer/ant_renderer.cpp"
+#include "renderer/win32_renderer.cpp"
 
 global bool QuitRequested;
 global bool Pause;
