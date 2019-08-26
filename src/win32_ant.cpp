@@ -75,6 +75,8 @@ PLATFORM_FREE_MEMORY_BLOCK_FUNCTION(Win32FreeMemoryBlock)
 
 /// File System Interaction
 
+#define FILE_HANDLE_IS_VALID(vfs, handle) (handle && handle  - 1 < vfs->file_count)
+
 // TODO(soimn): Handle file and directory names with 0 size
 internal void
 Win32AddAllFilesAndDirectories(HANDLE search_handle, WIN32_FIND_DATAW* find_data, wchar_t* current_dir_path, VFS_Directory* current_dir, Memory_Arena* temp_memory, U32* total_dir_count, U32* total_file_count)
@@ -507,7 +509,7 @@ PLATFORM_OPEN_FILE_FUNCTION(Win32OpenFile)
 		creation_mode	   = OPEN_ALWAYS;
 	}
     
-    Assert(file_handle.value && file_handle.value < vfs->file_count);
+    Assert(FILE_HANDLE_IS_VALID(vfs, file_handle.value));
     VFS_File* file = &vfs->file_table[file_handle.value - 1];
     
     if (!file->is_open)
@@ -533,7 +535,7 @@ PLATFORM_OPEN_FILE_FUNCTION(Win32OpenFile)
 
 PLATFORM_CLOSE_FILE_FUNCTION(Win32CloseFile)
 {
-    Assert(file_handle.value && file_handle.value < vfs->file_count);
+    Assert(FILE_HANDLE_IS_VALID(vfs, file_handle.value));
     VFS_File* file = &vfs->file_table[file_handle.value - 1];
     
     if (file->is_open)
@@ -550,7 +552,7 @@ PLATFORM_READ_FROM_FILE_FUNCTION(Win32ReadFromFile)
 {
     bool succeeded = false;
     
-    Assert(file_handle.value && file_handle.value < vfs->file_count);
+    Assert(FILE_HANDLE_IS_VALID(vfs, file_handle.value));
     VFS_File* file = &vfs->file_table[file_handle.value - 1];
     
     Assert(size);
@@ -579,7 +581,7 @@ PLATFORM_WRITE_TO_FILE_FUNCTION(Win32WriteToFile)
 {
     bool succeeded = false;
     
-    Assert(file_handle.value && file_handle.value < vfs->file_count);
+    Assert(FILE_HANDLE_IS_VALID(vfs, file_handle.value));
     VFS_File* file = &vfs->file_table[file_handle.value - 1];
     
     Assert(size);
@@ -605,7 +607,7 @@ PLATFORM_GET_FILE_SIZE_FUNCTION(Win32GetFileSize)
 {
     U32 result = 0;
     
-    Assert(file_handle.value && file_handle.value < vfs->file_count);
+    Assert(FILE_HANDLE_IS_VALID(vfs, file_handle.value));
     VFS_File* file = &vfs->file_table[file_handle.value - 1];
     
     result = file->size;
