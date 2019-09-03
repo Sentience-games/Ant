@@ -12,6 +12,7 @@ Win32InitRenderer(Platform_API* platform_api, Enum8(RENDERER_API) preferred_api)
     
     if (selected_api != RendererAPI_None)
     {
+        // TODO(soimn): Setup platform_api function calls and Renderer_API_Function_Table
         succeeded = true;
     }
     

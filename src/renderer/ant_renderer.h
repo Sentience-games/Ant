@@ -6,8 +6,6 @@
 #include "math/vector.h"
 #include "math/matrix.h"
 
-// IMPORTANT NOTE(soimn): Goal: a framework to build upon
-
 typedef U32 Vertex_Buffer;
 typedef U32 Index_Buffer;
 
@@ -20,14 +18,14 @@ struct Sub_Mesh
 
 struct Mesh
 {
-    Vertex_Buffer vertex_buffer;
-    Index_Buffer index_buffer;
-    
     Sub_Mesh* submeshes;
     U32 submesh_count;
     
     U32 material_count;
     U32* materials;
+    
+    Vertex_Buffer vertex_buffer;
+    Index_Buffer index_buffer;
 };
 
 enum TEXTURE_TYPE
@@ -130,6 +128,9 @@ struct Framebuffer
     Texture_View util_attachments[RENDERER_MAX_FRAMEBUFFER_UTIL_ATTACHMENTS];
 };
 
+// NOTE(soimn): Batching
+////////////////////////////////
+
 typedef U64 Camera_Filter;
 
 struct Render_Request
@@ -168,7 +169,7 @@ struct Camera
 
 struct Render_Batch;
 
-#define RENDERER_PUSH_BATCH_FUNCTION(name) Render_Batch*name (Camera camera, Light* lights, U32 light_count, U32 expected_max_request_count)
+#define RENDERER_PUSH_BATCH_FUNCTION(name) Render_Batch* name (Camera camera, Light* lights, U32 light_count, U32 expected_max_request_count)
 typedef RENDERER_PUSH_BATCH_FUNCTION(renderer_push_batch_function);
 
 #define RENDERER_PUSH_MESHES_FUNCTION(name) void name (Render_Batch* batch, Render_Request* requests, U32 request_count)
@@ -177,20 +178,60 @@ typedef RENDERER_PUSH_MESHES_FUNCTION(renderer_push_meshes_function);
 #define RENDERER_SORT_BATCH_FUNCTION(name) void name (Render_Batch* batch)
 typedef RENDERER_SORT_BATCH_FUNCTION(renderer_sort_batch_function);
 
-#define RENDERER_RENDER_FUNCTION(name) void name (Render_Batch* batch, Framebuffer* framebuffer, struct GBuffer* gbuffer)
-typedef RENDERER_RENDER_FUNCTION(renderer_render_function);
-
 #define RENDERER_CLEAN_BATCH_FUNCTION(name) void name (Render_Batch* batch)
 typedef RENDERER_CLEAN_BATCH_FUNCTION(renderer_clean_batch_function);
 
-// TODO(soimn):
+// NOTE(soimn): Commands and queues
+///////////////////////////////////
+
+enum RENDER_COMMAND_TYPE
+{
+    RC_WaitOnObj, // NOTE(soimn): Stalls util the objects status meets the requirements
+    RC_WaitOnSeq, // NOTE(soimn): Stalls util the sequences status meets the requirements
+    
+    RC_CopyFramebuffer,  // NOTE(soimn): Copy contents of source framebuffer to dest framebuffer
+    RC_ClearFramebuffer, // NOTE(soimn): Clear framebuffer contents with clear value
+    
+    RC_RenderBatch, // NOTE(soimn): Render the passed render batch with the passed light batch
+    
+    RC_PostProcess, // NOTE(soimn): Apply a shader on one or more framebuffers
+    
+    // TODO(soimn): RC_Override* override materials, shaders, lights, cast shadow, etc.
+};
+
+#define RENDERER_MAX_COMMAND_PARAM_COUNT 8
+
+struct Render_Command
+{
+    Enum32(RENDER_COMMAND_TYPE) type;
+    U64 params[RENDERER_MAX_COMMAND_PARAM_COUNT];
+};
+
+struct Render_Command_Sequence
+{
+    Render_Command* commands;
+    U32 command_count;
+    U32 command_capacity;
+};
+
+struct Render_Command_Buffer
+{
+    Render_Command_Sequence* sequences;
+    U32 sequence_count;
+};
+
+// TODO(soimn): Functions available before command buffer submission
 // Flush all allocations and objects
 // Create / destroy framebuffer
 // Flush materials, add material, remove material(?)
 // GetShader, add shader, remove shader (?), update shader
 // Add / remove mesh, update mesh
 // Add / remove texture, update texture
-// Apply post processing step
-// Copy, clear and fill framebuffers
 
-// TODO(soimn): Render commands / stages
+// TODO(soimn): Commands available during command buffer submission
+// Apply post processing step
+// Copy and clear framebuffers
+
+// TODO(soimn): Render commands
+// Manage batches whenever, submit commands in a queue, execute commands in order
+// Submit several queues when necessary

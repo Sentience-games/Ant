@@ -1,5 +1,10 @@
 #include "ant_renderer.h"
 
+global struct Renderer_API_Function_Table
+{
+    
+};
+
 enum RENDERER_API
 {
     RendererAPI_None,
@@ -24,8 +29,6 @@ struct Render_Batch_Block
     Render_Batch_Block* next;
     U32 size;
     U32 capacity;
-    
-    // TODO(soimn): Lights and what to do about them
 };
 
 struct Render_Batch
@@ -33,7 +36,11 @@ struct Render_Batch
     Render_Batch_Block* first;
     U32 block_count;
     U32 total_request_count;
+    
     Camera_Render_Info camera;
+    
+    // TODO(soimn): Consider adding guards to ensure a batch is properly used
+    // TODO(soimn): Lights and what to do about them
 };
 
 // TODO(soimn): Correction for Vulkan/OpenGL/DirectX/Metal coords crazyness
