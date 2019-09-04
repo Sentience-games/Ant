@@ -165,6 +165,11 @@ struct Camera
     F32 near;
     F32 far;
     F32 aspect_ratio;
+    
+    V3 culling_vectors[3];
+    M4_Inv view_matrix;
+    M4_Inv projection_matrix;
+    M4 view_projection_matrix;
 };
 
 struct Render_Batch;
@@ -181,26 +186,65 @@ typedef RENDERER_SORT_BATCH_FUNCTION(renderer_sort_batch_function);
 #define RENDERER_CLEAN_BATCH_FUNCTION(name) void name (Render_Batch* batch)
 typedef RENDERER_CLEAN_BATCH_FUNCTION(renderer_clean_batch_function);
 
+// TODO(soimn): Correction for Vulkan/OpenGL/DirectX/Metal coords crazyness
+void
+UpdateCameraRenderInfo(Camera* camera)
+{
+    Assert(camera->fov && camera->fov <= RENDERER_MAX_CAMERA_FOV);
+    Assert(camera->near && camera->far > camera->near);
+    Assert(camera->rotation.x || camera->rotation.y || camera->rotation.z || camera->rotation.w);
+    Assert(camera->aspect_ratio);
+    
+    camera->view_matrix = ViewMatrix(camera->position, camera->rotation);
+    
+    if (camera->projection_mode == Camera_Perspective)
+    {
+        F32 half_width = Tan(camera->fov / 2.0f) * camera->near;
+        
+        camera->projection_matrix = PerspectiveMatrix(camera->aspect_ratio, camera->fov, camera->near, camera->far);
+        
+        V3 upper_near_to_far = Vec3(-half_width, half_width / camera->aspect_ratio, -1.0f);
+        
+        camera->culling_vectors[0] = Normalized(Cross(Vec3(1, 0, 0), upper_near_to_far));
+        camera->culling_vectors[2] = Normalized(Cross(upper_near_to_far, Vec3(0, -1, 0)));
+        
+        // NOTE(soimn): Rotate the previous vectors to produce the remaining ones
+        camera->culling_vectors[1] = -camera->culling_vectors[0];
+        camera->culling_vectors[3] = -camera->culling_vectors[2];
+        
+        camera->culling_vectors[1].z *= -1.0f;
+        camera->culling_vectors[3].z *= -1.0f;
+    }
+    
+    else
+    {
+        camera->projection_matrix  = OrthographicMatrix(camera->aspect_ratio, camera->fov, camera->near, camera->far);
+        camera->culling_vectors[0] = Vec3(1, 0, 0);
+        camera->culling_vectors[1] = Vec3(0, 1, 0);
+    }
+    
+    camera->view_projection_matrix = camera->projection_matrix.m * camera->view_matrix.m;
+};
+
 // NOTE(soimn): Commands and queues
 ///////////////////////////////////
 
 enum RENDER_COMMAND_TYPE
 {
+    // TODO(soimn): Find out how to represent an object such that WaitOnObj functions intuitively 
     RC_WaitOnObj, // NOTE(soimn): Stalls util the objects status meets the requirements
     RC_WaitOnSeq, // NOTE(soimn): Stalls util the sequences status meets the requirements
     
     RC_CopyFramebuffer,  // NOTE(soimn): Copy contents of source framebuffer to dest framebuffer
     RC_ClearFramebuffer, // NOTE(soimn): Clear framebuffer contents with clear value
     
-    RC_RenderBatch, // NOTE(soimn): Render the passed render batch with the passed light batch
-    
+    RC_RenderBatch, // NOTE(soimn): Render the passed render batch with the passed light batch and conditionally overriding draw parameters
     RC_PostProcess, // NOTE(soimn): Apply a shader on one or more framebuffers
     
-    // TODO(soimn): RC_Override* override materials, shaders, lights, cast shadow, etc.
+    // TODO(soimn): Consider RC_SubmitComputeJob, // NOTE(soimn): Submits a job on the gpu with a compute shader and passed params
 };
 
 #define RENDERER_MAX_COMMAND_PARAM_COUNT 8
-
 struct Render_Command
 {
     Enum32(RENDER_COMMAND_TYPE) type;
