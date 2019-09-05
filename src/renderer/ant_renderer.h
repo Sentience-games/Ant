@@ -173,8 +173,9 @@ struct Camera
 };
 
 struct Render_Batch;
+struct Light_Batch;
 
-#define RENDERER_PUSH_BATCH_FUNCTION(name) Render_Batch* name (Camera camera, Light* lights, U32 light_count, U32 expected_max_request_count)
+#define RENDERER_PUSH_BATCH_FUNCTION(name) Render_Batch* name (Camera camera, U32 expected_max_request_count)
 typedef RENDERER_PUSH_BATCH_FUNCTION(renderer_push_batch_function);
 
 #define RENDERER_PUSH_MESHES_FUNCTION(name) void name (Render_Batch* batch, Render_Request* requests, U32 request_count)
@@ -226,56 +227,89 @@ UpdateCameraRenderInfo(Camera* camera)
     camera->view_projection_matrix = camera->projection_matrix.m * camera->view_matrix.m;
 };
 
-// NOTE(soimn): Commands and queues
-///////////////////////////////////
+// NOTE(soimn): Render Commands
+///////////////////////////////
+
+// TODO(soimn): Figure out if it is possible to conditionally wait on 
+//              render texture operations to finish before using them 
+//              by not stalling but rather complete all independent ops 
+//              in a batch before conditionally stalling instead.
+
+// TODO(soimn): Figure out where compute shaders fit into all of this
 
 enum RENDER_COMMAND_TYPE
 {
-    // TODO(soimn): Find out how to represent an object such that WaitOnObj functions intuitively 
-    RC_WaitOnObj, // NOTE(soimn): Stalls util the objects status meets the requirements
-    RC_WaitOnSeq, // NOTE(soimn): Stalls util the sequences status meets the requirements
+    RC_RenderBatch,
+    RC_CopyFramebuffer,
+    RC_ClearFramebuffer,
+    RC_ApplyShader,
     
-    RC_CopyFramebuffer,  // NOTE(soimn): Copy contents of source framebuffer to dest framebuffer
-    RC_ClearFramebuffer, // NOTE(soimn): Clear framebuffer contents with clear value
-    
-    RC_RenderBatch, // NOTE(soimn): Render the passed render batch with the passed light batch and conditionally overriding draw parameters
-    RC_PostProcess, // NOTE(soimn): Apply a shader on one or more framebuffers
-    
-    // TODO(soimn): Consider RC_SubmitComputeJob, // NOTE(soimn): Submits a job on the gpu with a compute shader and passed params
+    // TODO(soimn): Immediate mode rendering with commands
 };
 
-#define RENDERER_MAX_COMMAND_PARAM_COUNT 8
+#define RENDERER_MAX_COMMAND_PARAM_BUFFER_SIZE BYTES(64)
 struct Render_Command
 {
-    Enum32(RENDER_COMMAND_TYPE) type;
-    U64 params[RENDERER_MAX_COMMAND_PARAM_COUNT];
-};
-
-struct Render_Command_Sequence
-{
-    Render_Command* commands;
-    U32 command_count;
-    U32 command_capacity;
+    Enum64(RENDER_COMMAND_TYPE) type;
+    U8 param_buffer[RENDERER_MAX_COMMAND_PARAM_BUFFER_SIZE];
 };
 
 struct Render_Command_Buffer
 {
-    Render_Command_Sequence* sequences;
-    U32 sequence_count;
+    Render_Command* first;
+    Render_Command* last;
+    UMM capacity;
 };
 
-// TODO(soimn): Functions available before command buffer submission
+inline Render_Command
+RCRenderBatch(Render_Batch* batch, Light_Batch* light_batch)
+{
+    Render_Command command = {RC_RenderBatch};
+    
+    Copy(&batch, &command.param_buffer[0], sizeof(Render_Batch*));
+    Copy(&light_batch, &command.param_buffer[sizeof(Render_Batch*)], sizeof(Light_Batch*));
+    
+    return command;
+}
+
+inline Render_Command
+RCCopyFramebuffer(Framebuffer* source, Framebuffer* dest, Enum8(RENDERER_COLOR_CHANNEL) channels)
+{
+    Render_Command command = {RC_CopyFramebuffer};
+    
+    Copy(&source, &command.param_buffer[0], sizeof(Framebuffer*));
+    Copy(&dest, &command.param_buffer[sizeof(Framebuffer*)], sizeof(Framebuffer*));
+    
+    Copy(&channels, &command.param_buffer[2 * sizeof(Framebuffer*)], sizeof(Enum32));
+    
+    return command;
+}
+
+inline Render_Command
+RCClearFramebuffer(Framebuffer* framebuffer, Enum8(RENDERER_COLOR_CHANNEL) channels, U32 clear_value)
+{
+    Render_Command command = {RC_CopyFramebuffer};
+    
+    Copy(&framebuffer, &command.param_buffer[0], sizeof(Framebuffer*));
+    Copy(&channels, &command.param_buffer[sizeof(Framebuffer*)], sizeof(Enum32));
+    Copy(&clear_value, &command.param_buffer[sizeof(Framebuffer*) + sizeof(Enum32)], sizeof(U32));
+    
+    return command;
+}
+
+// TODO(soimn):
+
+// TODO(soimn): Figure out how to pass the shader
+// inline Render_Command
+// RCApplyShader(Framebuffer* framebuffer, Shader shader);
+
 // Flush all allocations and objects
 // Create / destroy framebuffer
+
+// TODO(soimn): All of these functions relate to managing which assets 
+//              are located in gpu memory. Should these be render 
+//              commands or regular functions?
 // Flush materials, add material, remove material(?)
 // GetShader, add shader, remove shader (?), update shader
 // Add / remove mesh, update mesh
 // Add / remove texture, update texture
-
-// TODO(soimn): Commands available during command buffer submission
-// Apply post processing step
-// Copy and clear framebuffers
-
-// TODO(soimn): Render commands
-// Manage batches whenever, submit commands in a queue, execute commands in order
-// Submit several queues when necessary
