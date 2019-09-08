@@ -170,7 +170,7 @@ struct Camera
 struct Render_Batch;
 struct Light_Batch;
 
-#define RENDERER_PUSH_BATCH_FUNCTION(name) Render_Batch* name (Camera camera, U32 expected_max_request_count)
+#define RENDERER_PUSH_BATCH_FUNCTION(name) Render_Batch* name (Camera camera, Light* lights, U32 light_count, U32 expected_max_request_count)
 typedef RENDERER_PUSH_BATCH_FUNCTION(renderer_push_batch_function);
 
 #define RENDERER_PUSH_RENDER_REQUEST_FUNCTION(name) void name (Render_Batch* batch, Render_Request* requests, U32 request_count)
@@ -190,45 +190,42 @@ typedef RENDERER_CLEAN_BATCH_FUNCTION(renderer_clean_batch_function);
 //              by not stalling but rather complete all independent ops 
 //              in a batch before conditionally stalling instead.
 
-// TODO(soimn): Figure out where compute shaders fit into all of this
-
-// TODO(soimn): Is light batches a good idea? In order to allow clustered forward rendering the light batch needs 
-//              to be prepared for a specific camera, which means the only benefit of a separate light batch is 
-//              the ability to render a render batch under different lighting conditions with the same camera
-
-enum RENDER_COMMAND_TYPE
-{
-    RC_RenderBatch,
-    RC_CopyFramebuffer,
-    RC_ClearFramebuffer,
-    RC_ApplyShader,
-    
-    // TODO(soimn): Immediate mode rendering with commands
-};
-
-#define RENDERER_MAX_COMMAND_PARAM_BUFFER_SIZE BYTES(64)
-struct Render_Command
-{
-    Enum64(RENDER_COMMAND_TYPE) type;
-    U8 param_buffer[RENDERER_MAX_COMMAND_PARAM_BUFFER_SIZE];
-};
-
-struct Render_Command_Buffer
-{
-    Render_Command* first;
-    Render_Command* last;
-    UMM capacity;
-};
+// TODO(soimn): Render commands a submitted by calling a "start recording" function, calling the respective 
+//              command functions and ending the recording with a call to a "end recording" function.
+#define RENDERER_BEGIN_FRAME_FUNCTION(name) void name (void)
+typedef RENDERER_BEGIN_FRAME_FUNCTION(renderer_begin_frame_function);
 
 // TODO(soimn):
-
+// RenderBatch
+// CopyFramebuffer
+// ClearFramebuffer
+// ApplyShader
+// Immediate drawing
+// Compute shader management
 // Flush all allocations and objects
 // Create / destroy framebuffer
-
-// TODO(soimn): All of these functions relate to managing which assets 
-//              are located in gpu memory. Should these be render 
-//              commands or regular functions?
 // Flush materials, add material, remove material(?)
 // GetShader, add shader, remove shader (?), update shader
 // Add / remove mesh, update mesh
 // Add / remove texture, update texture
+
+#define RENDERER_END_FRAME_FUNCTION(name) void name (void)
+typedef RENDERER_END_FRAME_FUNCTION(renderer_end_frame_function);
+
+//// DRAFT
+// 0. The renderer allocates a fixed chunk (could be several pools) of memory on the gpu side and suballocates 
+//    every time a resource is uploaded
+// 1. The renderer does *not* care about which mesh/texture/material is where or if it is resident at all,
+//    is views all objects as generic blocks of data and only "converts" the data to the required format when it
+//    is used. This is done to enable defragmenting of the gpu memory and easy handling of resources.
+// 2. Either the renderer, or the game, asks the asset system for the mesh/texture/material to be used and the 
+//    asset system then decides what to do. (e.g. queue an asset for loading and returning the default data for 
+//    that asset, or returning visually similar assets or lower quality versions when the asset is not present)
+// 3. Requests for allocations or transfer of data from cpu side to gpu side are accumulated and executed once 
+//    rendering work is done. This also gives the renderer a chance to batch allocations and reduce fragmentations
+// 4. Commands are recorded between BeginFrame and EndFrame. These commands are pooled and sorted for future 
+//    issuing. Commands related to resource management are batched and executed when the time is right. Commands 
+//    related to drwaing are sorted and split into several sequences of serialized commands which are synchronized 
+//    when needed. This is done to enable drawing of independent objects while waiting on dependent objects (e.g. 
+//    Drawing the enitre scene and drawing the scene from a mirrors perspective at the same time, and then waiting 
+//    on both operations to finish before applying the mirrors reflection in the main image).

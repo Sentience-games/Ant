@@ -1,10 +1,5 @@
 #include "ant_renderer.h"
 
-global struct Renderer_API_Function_Table
-{
-    
-};
-
 enum RENDERER_API
 {
     RendererAPI_None,
@@ -13,6 +8,18 @@ enum RENDERER_API
     RendererAPI_Vulkan,
     RendererAPI_DirectX,
 };
+
+// TODO(soimn): How much global data is acceptable?
+global struct
+{
+    Enum8(RENDERER_API) api;
+    
+    // Functions
+    
+} RendererGlobals;
+
+// TODO(soimn): Store commands somehow
+// TODO(soimn): Keep track of memory blocks in gpu memory
 
 struct Camera_Render_Info
 {
@@ -35,21 +42,13 @@ struct Render_Batch
     U32 total_request_count;
     
     Camera_Render_Info camera_info;
+    
+    void* light_data;
+    UMM light_data_size;
 };
 
-// TODO(soimn): Should all light batches be resident in gpu memory or 
-//              should the current batch be uploaded before it is used, 
-//              and freed afterwards (before the next one is uploaded)?
-struct Light_Batch
-{
-    void* binned_light_data;
-    U32 binned_light_data_size;
-    U32 directional_light_count;
-    Light* directional_lights;
-};
-
-inline void
-GetCullingVectors(Camera camera, V3* result)
+internal inline void
+GetFrustumVectors(Camera camera, V3* result)
 {
     if (camera.projection_mode == Camera_Perspective)
     {
@@ -75,8 +74,7 @@ GetCullingVectors(Camera camera, V3* result)
     }
 }
 
-// TODO(soimn): Correction for Vulkan/OpenGL/DirectX/Metal coords crazyness
-inline Camera_Render_Info
+internal inline Camera_Render_Info
 GetCameraRenderInfo(Camera camera)
 {
     Assert(camera.fov && camera.fov <= RENDERER_MAX_CAMERA_FOV);
@@ -100,46 +98,24 @@ GetCameraRenderInfo(Camera camera)
     }
     
     result.view_projection_matrix = projection_matrix * view_matrix;
-    GetCullingVectors(camera, result.culling_vectors);
+    GetFrustumVectors(camera, result.culling_vectors);
+    
+    // NOTE(soimn): Correction for Vulkan/OpenGL/DirectX/Metal clip space coords crazyness
+    switch (RendererGlobals.api)
+    {
+        case RendererAPI_OpenGL:
+        {
+            // NOTE(soimn): Remapping Z from [0, 1] -> [-1, 1]
+            result.view_projection_matrix.k.z = (camera.far - camera.near) / (camera.near - camera.far);
+            result.view_projection_matrix.w.z = (2 * camera.far * camera.near) / (camera.near - camera.far);
+        } break;
+        
+        case RendererAPI_Vulkan:
+        {
+            // NOTE(soimn): Flipping the y-axis
+            result.view_projection_matrix.j.y *= -1;
+        } break;
+    }
     
     return result;
 };
-
-
-// NOTE(soimn): Utility functions for RC construction
-// 
-// inline Render_Command
-// RCRenderBatch(Render_Batch* batch, Light_Batch* light_batch)
-// {
-//     Render_Command command = {RC_RenderBatch};
-//     
-//     Copy(&batch, &command.param_buffer[0], sizeof(Render_Batch*));
-//     Copy(&light_batch, &command.param_buffer[sizeof(Render_Batch*)], sizeof(Light_Batch*));
-//     
-//     return command;
-// }
-// 
-// inline Render_Command
-// RCCopyFramebuffer(Framebuffer* source, Framebuffer* dest, Enum8(RENDERER_COLOR_CHANNEL) channels)
-// {
-//     Render_Command command = {RC_CopyFramebuffer};
-//     
-//     Copy(&source, &command.param_buffer[0], sizeof(Framebuffer*));
-//     Copy(&dest, &command.param_buffer[sizeof(Framebuffer*)], sizeof(Framebuffer*));
-//     
-//     Copy(&channels, &command.param_buffer[2 * sizeof(Framebuffer*)], sizeof(U32));
-//     
-//     return command;
-// }
-// 
-// inline Render_Command
-// RCClearFramebuffer(Framebuffer* framebuffer, Enum8(RENDERER_COLOR_CHANNEL) channels, U32 clear_value)
-// {
-//     Render_Command command = {RC_CopyFramebuffer};
-//     
-//     Copy(&framebuffer, &command.param_buffer[0], sizeof(Framebuffer*));
-//     Copy(&channels, &command.param_buffer[sizeof(Framebuffer*)], sizeof(U32));
-//     Copy(&clear_value, &command.param_buffer[sizeof(Framebuffer*) + sizeof(U32)], sizeof(U32));
-//     
-//     return command;
-// }

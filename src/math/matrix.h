@@ -395,8 +395,9 @@ PerspectiveMatrix(F32 aspect_ratio, F32 fov, F32 near, F32 far)
     
     // Z remapping to 0 - 1
     result.m.k.z = far / (near - far);
-    result.m.k.w = -1.0f;
     result.m.w.z = (near * far) / (near - far);
+    
+    result.m.k.w = -1.0f;
     
     // NOTE(soimn): Inverse - computed by Wolfram
     result.inv.i.x = tan_fov;
