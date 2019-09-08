@@ -1,5 +1,10 @@
 #pragma once
 
+#define PI32  3.1415926535f
+#define TAU32 6.2831853071f
+
+#define DEGREES(X) (((F32)(X) * PI32) / 180.0f)
+
 inline I64
 Abs(I64 num)
 {
