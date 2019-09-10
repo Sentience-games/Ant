@@ -176,6 +176,9 @@ typedef RENDERER_PUSH_BATCH_FUNCTION(renderer_push_batch_function);
 #define RENDERER_PUSH_RENDER_REQUEST_FUNCTION(name) void name (Render_Batch* batch, Render_Request* requests, U32 request_count)
 typedef RENDERER_PUSH_RENDER_REQUEST_FUNCTION(renderer_push_render_request_function);
 
+// TODO(soimn): This step may need to happen during the "RenderBatch" 
+//              function to enable synchronization between the 
+//              rendering of separate batches.
 #define RENDERER_SORT_BATCH_FUNCTION(name) void name (Render_Batch* batch)
 typedef RENDERER_SORT_BATCH_FUNCTION(renderer_sort_batch_function);
 
@@ -184,11 +187,6 @@ typedef RENDERER_CLEAN_BATCH_FUNCTION(renderer_clean_batch_function);
 
 // NOTE(soimn): Render Commands
 ///////////////////////////////
-
-// TODO(soimn): Figure out if it is possible to conditionally wait on 
-//              render texture operations to finish before using them 
-//              by not stalling but rather complete all independent ops 
-//              in a batch before conditionally stalling instead.
 
 // TODO(soimn): Render commands a submitted by calling a "start recording" function, calling the respective 
 //              command functions and ending the recording with a call to a "end recording" function.
@@ -211,6 +209,16 @@ typedef RENDERER_BEGIN_FRAME_FUNCTION(renderer_begin_frame_function);
 
 #define RENDERER_END_FRAME_FUNCTION(name) void name (void)
 typedef RENDERER_END_FRAME_FUNCTION(renderer_end_frame_function);
+
+// IMPORTANT NOTE(soimn):
+// Solution to synchronization problems regariding render textures:
+// Split render batches up into normal texture/material calls and 
+// requests that use render textures during render batch sorting. Then 
+// check if the given render texture is renderered to earlier in the 
+// pipeline, if so: move the request to the end of the command sequence 
+// and insert a semaphore that waits on the render texture to be 
+// renderered properly before using it for sampling, else: move the 
+// request back into the normal batch.
 
 //// DRAFT
 // 0. The renderer allocates a fixed chunk (could be several pools) of memory on the gpu side and suballocates 
