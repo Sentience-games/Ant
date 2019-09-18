@@ -615,13 +615,15 @@ PLATFORM_GET_FILE_SIZE_FUNCTION(Win32GetFileSize)
     return result;
 }
 
+
+
 /// Game Loading
 
 internal bool
-Win32ReloadGameCodeIfNecessary(Win32_Game_Code* game_code, bool* did_reload = 0)
+Win32ReloadGameCode(Win32_Game_Code* game_code)
 {
-    const wchar_t* game_code_path        = L".\\" CONCAT(L, APPLICATION_NAME) L".dll";
-    const wchar_t* loaded_game_code_path = L".\\" CONCAT(L, APPLICATION_NAME) L"_loaded.dll";
+    const wchar_t* game_code_path        = L"..\\" CONCAT(L, APPLICATION_NAME) L".dll";
+    const wchar_t* loaded_game_code_path = L"..\\" CONCAT(L, APPLICATION_NAME) L"_loaded.dll";
     
     bool succeeded = false;
     
@@ -657,11 +659,6 @@ Win32ReloadGameCodeIfNecessary(Win32_Game_Code* game_code, bool* did_reload = 0)
                     succeeded           = true;
                     
                     Win32Log(Log_Info, "Successfully loaded new game code");
-                    
-                    if (did_reload)
-                    {
-                        *did_reload = true;
-                    }
                 }
                 
                 else
@@ -686,6 +683,17 @@ Win32ReloadGameCodeIfNecessary(Win32_Game_Code* game_code, bool* did_reload = 0)
     return succeeded;
 }
 
+internal void
+Win32ReloadGameCodeIfNecessary(Win32_Game_Code* game_code, Game_Memory* game_memory)
+{
+#ifdef ANT_ENABLE_HOT_RELOAD
+    while (!Win32ReloadGameCode(game_code));
+    game_code->GameInit(game_memory);
+#endif
+}
+
+
+
 /// Timing
 
 internal LARGE_INTEGER
@@ -701,6 +709,8 @@ Win32GetSecondsElapsed(LARGE_INTEGER start, LARGE_INTEGER end)
 {
     return ((F32) end.QuadPart - start.QuadPart) / ((F32) GlobalPerformanceCounterFreq);
 }
+
+
 
 /// Input Processing
 
@@ -1055,9 +1065,9 @@ Win32ProcessPendingMessages(HWND window_handle, Platform_Game_Input* new_input, 
                             platform_keycode = Win32ProcessVirtualKeycodeAndScancode(keycode, scancode, flags);
                             is_down = !(flags & RI_KEY_BREAK);
                             
-                            alt_down = (platform_keycode == Key_LAlt || platform_keycode == Key_RAlt ? is_down : alt_down);
+                            alt_down   = (platform_keycode == Key_LAlt   || platform_keycode == Key_RAlt   ? is_down : alt_down);
                             shift_down = (platform_keycode == Key_LShift || platform_keycode == Key_RShift ? is_down : shift_down);
-                            ctrl_down = (platform_keycode == Key_LCtrl || platform_keycode == Key_RCtrl ? is_down : ctrl_down);
+                            ctrl_down  = (platform_keycode == Key_LCtrl  || platform_keycode == Key_RCtrl  ? is_down : ctrl_down);
                         }
                         
                         if (platform_keycode != Key_Invalid)
@@ -1159,10 +1169,9 @@ Win32ProcessPendingMessages(HWND window_handle, Platform_Game_Input* new_input, 
     }
 }
 
-int CALLBACK WinMain(HINSTANCE instance,
-					 HINSTANCE prev_instance,
-					 LPSTR command_line,
-					 int window_show_mode)
+int CALLBACK
+WinMain(HINSTANCE instance, HINSTANCE prev_instance,
+        LPSTR command_line, int window_show_mode)
 {
     UNUSED_PARAMETER(prev_instance);
     UNUSED_PARAMETER(command_line);
@@ -1220,46 +1229,48 @@ int CALLBACK WinMain(HINSTANCE instance,
             
             Win32_Game_Code game_code = {};
             
-            bool encountered_errors = false;
-            
-            { /// Set current working directory to /data
-                wchar_t* buffer = (wchar_t*) PushSize(&frame_local_memory, MEGABYTES(4), alignof(wchar_t));
-                U32 buffer_size = MEGABYTES(4) / sizeof(wchar_t);
-                
-                U32 result = GetModuleFileNameW(0, buffer, buffer_size);
-                
-                U32 last_slash = 0;
-                for (wchar_t* scan = buffer; *scan; ++scan)
-                {
-                    if (*scan == '\\' || *scan == '/')
-                    {
-                        last_slash = (U32)(scan - buffer);
-                    }
-                }
-                
-                buffer[last_slash] = 0;
-                
-                U32 error_code = GetLastError();
-                if (!(result && error_code != ERROR_INSUFFICIENT_BUFFER && SetCurrentDirectoryW(buffer)))
-                {
-                    encountered_errors = true;
-                    Win32Log(Log_Fatal | Log_MessagePrompt, "Failed to set current working directory");
-                }
-            }
-            
-            bool succeeded = false;
-            
             /// Timing
             LARGE_INTEGER performance_counter_freq;
             QueryPerformanceFrequency(&performance_counter_freq);
             GlobalPerformanceCounterFreq = performance_counter_freq.QuadPart;
             
-            while (!encountered_errors && !succeeded)
+            bool encountered_errors = false;
+            
+            do
             {
-                /// Load Game Code
-                if (!Win32ReloadGameCodeIfNecessary(&game_code))
+                /// Set current working directory to /data
+                wchar_t* buffer = (wchar_t*) PushSize(&frame_local_memory, MEGABYTES(4), alignof(wchar_t));
+                U32 buffer_size = MEGABYTES(4) / sizeof(wchar_t);
+                
+                U32 result = GetModuleFileNameW(0, buffer, buffer_size - 5);
+                
+                encountered_errors = !result;
+                if (result)
                 {
-                    Win32Log(Log_Fatal | Log_MessagePrompt, "Failed to load game code");
+                    wchar_t* last_slash = buffer;
+                    for (wchar_t* scan = buffer; *scan; ++scan)
+                    {
+                        if (*scan == '\\' || *scan == '/')
+                        {
+                            last_slash = scan;
+                        }
+                    }
+                    
+                    Copy(L"data\0", last_slash + 1, sizeof(L"data\0"));
+                    
+                    encountered_errors = !SetCurrentDirectoryW(buffer);
+                }
+                
+                if (encountered_errors)
+                {
+                    Win32Log(Log_Fatal | Log_MessagePrompt, "Failed to set current working directory. Win32 error code: %u", GetLastError());
+                    break;
+                }
+                
+                /// Load Game Code
+                if (!Win32ReloadGameCode(&game_code))
+                {
+                    encountered_errors = true;
                     break;
                 }
                 
@@ -1283,13 +1294,12 @@ int CALLBACK WinMain(HINSTANCE instance,
                 if (RegisterRawInputDevices(device, 2, sizeof(RAWINPUTDEVICE)) == FALSE)
                 {
                     Win32Log(Log_Fatal | Log_MessagePrompt, "Failed to register RawInput devices. Win32 error code: %u", GetLastError());
+                    encountered_errors = true;
                     break;
                 }
-                
-                succeeded = true;
-            }
+            } while (0);
             
-            if (succeeded)
+            if (!encountered_errors)
             {
                 bool running = true;
                 Pause        = false;
@@ -1306,15 +1316,8 @@ int CALLBACK WinMain(HINSTANCE instance,
                 {
                     ResetArena(&frame_local_memory);
                     
-#ifdef ANT_ENABLE_HOT_RELOAD
-                    bool did_reload = false;
-                    while (!Win32ReloadGameCodeIfNecessary(&game_code, &did_reload));
+                    Win32ReloadGameCodeIfNecessary(&game_code, &game_memory);
                     
-                    if (did_reload)
-                    {
-                        game_code.GameInit(&game_memory);
-                    }
-#endif
                     { /// Prepare for input processing
                         for (U32 i = 0; i < GAME_MAX_ACTIVE_CONTROLLER_COUNT + 1; ++i)
                         {
