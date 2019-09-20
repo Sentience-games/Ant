@@ -34,10 +34,10 @@ typedef PLATFORM_ALLOCATE_MEMORY_BLOCK_FUNCTION(platform_allocate_memory_block_f
 typedef PLATFORM_FREE_MEMORY_BLOCK_FUNCTION(platform_free_memory_block_function);
 
 /// VFS
-#define PLATFORM_RELOAD_VFS_FUNCTION(name) void name (VFS* vfs)
+#define PLATFORM_RELOAD_VFS_FUNCTION(name) void name (struct VFS* vfs)
 typedef PLATFORM_RELOAD_VFS_FUNCTION(platform_reload_vfs_function);
 
-#define PLATFORM_GET_FILE_FUNCTION(name) File_Handle name (VFS* vfs, String path)
+#define PLATFORM_GET_FILE_FUNCTION(name) File_Handle name (struct VFS* vfs, String path)
 typedef PLATFORM_GET_FILE_FUNCTION(platform_get_file_function);
 
 enum FILE_OPEN_FLAG
@@ -46,19 +46,19 @@ enum FILE_OPEN_FLAG
     File_OpenWrite = 0x2,
 };
 
-#define PLATFORM_OPEN_FILE_FUNCTION(name) bool name (VFS* vfs, File_Handle file_handle, Enum8(FILE_OPEN_FLAG) flags)
+#define PLATFORM_OPEN_FILE_FUNCTION(name) bool name (struct VFS* vfs, File_Handle file_handle, Enum8(FILE_OPEN_FLAG) flags)
 typedef PLATFORM_OPEN_FILE_FUNCTION(platform_open_file_function);
 
-#define PLATFORM_CLOSE_FILE_FUNCTION(name) void name (VFS* vfs, File_Handle file_handle)
+#define PLATFORM_CLOSE_FILE_FUNCTION(name) void name (struct VFS* vfs, File_Handle file_handle)
 typedef PLATFORM_CLOSE_FILE_FUNCTION(platform_close_file_function);
 
-#define PLATFORM_READ_FROM_FILE_FUNCTION(name) bool name (VFS* vfs, File_Handle file_handle, U32 offset, U32 size, void* memory, U32* bytes_read)
+#define PLATFORM_READ_FROM_FILE_FUNCTION(name) bool name (struct VFS* vfs, File_Handle file_handle, U32 offset, U32 size, void* memory, U32* bytes_read)
 typedef PLATFORM_READ_FROM_FILE_FUNCTION(platform_read_from_file_function);
 
-#define PLATFORM_WRITE_TO_FILE_FUNCTION(name) bool name (VFS* vfs, File_Handle file_handle, U32 offset, void* memory, U32 size, U32* bytes_written)
+#define PLATFORM_WRITE_TO_FILE_FUNCTION(name) bool name (struct VFS* vfs, File_Handle file_handle, U32 offset, void* memory, U32 size, U32* bytes_written)
 typedef PLATFORM_WRITE_TO_FILE_FUNCTION(platform_write_to_file_function);
 
-#define PLATFORM_GET_FILE_SIZE_FUNCTION(name) U32 name (VFS* vfs, File_Handle file_handle)
+#define PLATFORM_GET_FILE_SIZE_FUNCTION(name) U32 name (struct VFS* vfs, File_Handle file_handle)
 typedef PLATFORM_GET_FILE_SIZE_FUNCTION(platform_get_file_size_function);
 
 /// Input
@@ -109,12 +109,11 @@ struct Game_Controller_Info
 
 // NOTE(soimn): GAME_MAX_ACTIVE_CONTROLLER_COUNT does not include the default keyboard and mouse, keyboards and 
 //              mice are not differentiated and are all mapped to the default controller (controller 0). If 
-//              GAME_MAX_ACTIVE_CONTROLLER_COUNT is 0, 
-//              GAME_SHOULD_PIPE_CONTROLLER_INPUT_AS_KEYBOARD_WHEN_NECESSARY is 1 and controller input is 
-//              detected, the controller input will be piped through the default controller (controller 0) and 
-//              mapped to the gamepad_keymap of the default controller.
+//              GAME_MAX_ACTIVE_CONTROLLER_COUNT is 0, GAME_SHOULD_PIPE_CONTROLLER_INPUT is 1 and controller
+//              input is detected, the controller input will be piped through the default controller (controller 0)
+//              and mapped to the gamepad_keymap of the default controller.
 #define GAME_MAX_ACTIVE_CONTROLLER_COUNT 0
-#define GAME_SHOULD_PIPE_CONTROLLER_INPUT_AS_KEYBOARD_WHEN_NECESSARY 1
+#define GAME_SHOULD_PIPE_CONTROLLER_INPUT 1
 struct Platform_Game_Input
 {
     F32 frame_dt;
@@ -126,11 +125,8 @@ struct Platform_Game_Input
     //              and clarity when dealing with alternating input from a keyboard/mouse and a gamepad. However, 
     //              the value would then have to be somehow mapped to a normalized actuation amount. 
     V2 mouse_delta;
-    
     V2 mouse_p;
-    V2 normalized_mouse_p;
     I32 wheel_delta;
-    
     
     B32 quit_requested;
     B32 editor_mode;
@@ -286,7 +282,7 @@ struct Game_Memory
     struct Memory_Arena* persistent_arena;
     struct Memory_Arena* frame_arena;
     
-    VFS* vfs;
+    struct VFS* vfs;
     
     Game_Controller_Info controller_infos[GAME_MAX_ACTIVE_CONTROLLER_COUNT + 1];
     U32 active_controller_count;
@@ -297,8 +293,21 @@ struct Game_Memory
     Platform_API platform_api;
 };
 
-#define GAME_INIT_FUNCTION(name) void name (Game_Memory* game_memory)
-typedef GAME_INIT_FUNCTION(game_init_function);
-
 #define GAME_UPDATE_AND_RENDER_FUNCTION(name) void name (Game_Memory* game_memory, Platform_Game_Input* input)
 typedef GAME_UPDATE_AND_RENDER_FUNCTION(game_update_and_render_function);
+
+#include "ant_memory.h"
+
+struct VFS
+{
+    Memory_Arena arena;
+    Memory_Arena name_arena;
+    Memory_Arena path_arena;
+    VFS_Directory* root;
+    VFS_File_Name* file_names;
+    VFS_File* files;
+    U32 file_count;
+    
+    U32 mounting_point_count;
+    VFS_Mounting_Point* mounting_points;
+};

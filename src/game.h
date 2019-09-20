@@ -5,11 +5,7 @@
 
 #include "ant_shared.h"
 #include "ant_platform.h"
-
-#include "ant_memory.h"
-
 #include "utils/string.h"
-
 #include "ant_entity.h"
 
 struct Game_State

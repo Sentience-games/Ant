@@ -41,23 +41,36 @@ struct Texture
 
 enum TEXTURE_FORMAT
 {
-    TEXTURE_FORMAT_COUNT
+    TextureFormat_1D,
+    TextureFormat_2D,
+    TextureFormat_3D,
 };
 
 enum TEXTURE_FILTER
 {
-    TEXTURE_FILTER_COUNT
+    TextureFilter_Nearest,
+    TextureFilter_Linear,
+    TextureFilter_Cubic,
+};
+
+enum TEXTURE_MIP_MAP_MODE
+{
+    TextureMipMapMode_Nearest,
+    TextureMipMapMode_Linear,
 };
 
 enum TEXTURE_WRAP
 {
-    TEXTURE_WRAP_COUNT
+    TextureWrap_u,
+    TextureWrap_v,
+    TextureWrap_uv,
 };
 
 enum TEXTURE_USAGE
 {
     TextureUsage_Read,
     TextureUsage_Write,
+    TextureUsage_ReadWrite,
 };
 
 struct Texture_View
@@ -67,9 +80,10 @@ struct Texture_View
     Enum8(TEXTURE_FORMAT) format;
     Enum8(TEXTURE_FILTER) min_filter;
     Enum8(TEXTURE_FILTER) mag_filter;
+    Enum8(TEXTURE_MIP_MAP_MODE) mip_map_mode;
     Enum8(TEXTURE_WRAP) u_wrap;
     Enum8(TEXTURE_WRAP) v_wrap;
-    Flag8(TEXTURE_USAGE) usage;
+    Enum8(TEXTURE_USAGE) usage;
 };
 
 // TODO(soimn): This needs to be revised
@@ -120,13 +134,15 @@ struct Light
     };
 };
 
+typedef U64 Framebuffer;
+/*
 #define RENDERER_MAX_FRAMEBUFFER_COLOR_ATTACHMENTS 8
 #define RENDERER_MAX_FRAMEBUFFER_UTIL_ATTACHMENTS 2
 struct Framebuffer
 {
     Texture_View color_attachments[RENDERER_MAX_FRAMEBUFFER_COLOR_ATTACHMENTS];
     Texture_View util_attachments[RENDERER_MAX_FRAMEBUFFER_UTIL_ATTACHMENTS];
-};
+};*/
 
 // NOTE(soimn): Batching
 ////////////////////////////////

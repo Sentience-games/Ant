@@ -17,6 +17,5 @@ struct Win32_Game_Code
 	HMODULE module;
 	bool is_valid;
     
-    game_init_function* GameInit;
 	game_update_and_render_function* GameUpdateAndRender;
 };

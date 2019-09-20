@@ -60,7 +60,7 @@ ZeroSize(void* ptr, UMM size)
 	while (bptr < (U8*) ptr + size) *(bptr++) = 0;
 }
 
-#define ZeroStruct(type) ZeroSize(type, sizeof((type)[0]))
+#define ZeroStruct(type) (*(type) = {})
 #define ZeroArray(type, count) ZeroSize(type, sizeof((type)[0]) * (count))
 
 inline void
