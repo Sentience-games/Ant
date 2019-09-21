@@ -21,6 +21,7 @@ global struct
 // TODO(soimn): Store commands somehow
 // TODO(soimn): Keep track of memory blocks in gpu memory
 
+/// Render commands and batches
 struct Camera_Render_Info
 {
     V3 culling_vectors[3];
@@ -46,6 +47,35 @@ struct Render_Batch
     void* light_data;
     UMM light_data_size;
 };
+
+/// Memory management structures
+struct Texture
+{
+    U64 handle;
+    V2 dimensions;
+    Enum8(TEXTURE_TYPE) type;
+    U8 mip_count;
+};
+
+
+// TODO(soimn): This needs to be revised
+struct Material
+{
+    void* data;
+    U32 size;
+    B32 is_dirty;
+    
+    U32 shader;
+    
+    U32 texture_count;
+    Texture_View* textures;
+};
+
+struct Framebuffer
+{
+    // TODO(soimn): Figure out what data should, and how it could be, stored.
+};
+
 
 internal inline void
 GetFrustumVectors(Camera camera, V3* result)
