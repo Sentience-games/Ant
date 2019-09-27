@@ -114,6 +114,13 @@ struct Light
 };
 
 typedef U64 Framebuffer_ID;
+typedef U64 Shader_ID;
+
+#define RENDERER_MAX_GBUFFER_ATTACHMENTS 4
+struct GBuffer
+{
+    Framebuffer_ID attachments[RENDERER_MAX_GBUFFER_ATTACHMENTS];
+};
 
 // NOTE(soimn): Batching
 ////////////////////////////////
@@ -173,7 +180,7 @@ typedef RENDERER_GET_LIGHT_BATCH_FUNCTION(renderer_get_light_batch_function);
 #define RENDERER_PUSH_LIGHT_FUNCTION(name) U8 name (Light_Batch* batch, Light* lights, U32 light_count)
 typedef RENDERER_PUSH_LIGHT_FUNCTION(renderer_push_light_function);
 
-#define RENDERER_RENDER_BATCH_FUNCTION(name) void name (Render_Batch* render_batch, Light_Batch* light_batch /*OVERRIDE SHADER*/ /*TARGET FRAMEBUFFER/GBUFFER*/)
+#define RENDERER_RENDER_BATCH_FUNCTION(name) void name (Render_Batch* render_batch, Light_Batch* light_batch, Shader_ID override_shader, GBuffer gbuffer)
 typedef RENDERER_RENDER_BATCH_FUNCTION(renderer_render_batch_function);
 
 /// Framebuffer operations
@@ -199,9 +206,10 @@ typedef RENDERER_COPY_FRAMEBUFFER_CONTENT_FUNCTION(renderer_copy_framebuffer_con
 #define RENDERER_CLEAR_FRAMEBUFFER_CONTENT_FUNCTION(name) void name (Framebuffer_ID source, Flag8(CHANNEL_MASK) channel_mask, U32 clear_value)
 typedef RENDERER_CLEAR_FRAMEBUFFER_CONTENT_FUNCTION(renderer_clear_framebuffer_content_function);
 
-// TODO(soimn): ApplyShader
-// TODO(soimn): Compute and immediate mode
+#define RENDERER_APPLY_SHADER_FUNCTION(name) void name (Shader_ID shader, GBuffer source, GBuffer dest)
+typedef RENDERER_APPLY_SHADER_FUNCTION(renderer_apply_shader_function);
 
+// TODO(soimn): Compute and immediate mode
 
 /// Object management
 #define RENDERER_FLUSH_ALL_OBJECTS_FUNCTION(name) void name (void)

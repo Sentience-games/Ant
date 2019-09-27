@@ -16,10 +16,11 @@ global struct
     
     // Functions
     
+    struct GPU_Memory_Block* memory_blocks;
+    UMM memory_block_count;
 } RendererGlobals;
 
 // TODO(soimn): Store commands somehow
-// TODO(soimn): Keep track of memory blocks in gpu memory
 
 /// Render commands and batches
 struct Camera_Render_Info
@@ -49,6 +50,32 @@ struct Render_Batch
 };
 
 /// Memory management structures
+
+struct GPU_Memory_Free_List_Entry
+{
+    GPU_Memory_Free_List_Entry* next;
+    U32 offset;
+    U32 size;
+};
+
+#define RENDERER_GPU_MEMORY_BLOCK_SIZE MEGABYTES(256)
+#define RENDERER_MIN_ALLOCATION_SIZE KILOBYTES(16)
+struct GPU_Memory_Block
+{
+    U64 handle;
+    
+    // TODO(soimn): How should the free list be stored
+    // NOTE(soimn): When the free list is empty there are no gaps between allocations, and the leading edge should 
+    //              be consolted when allocating.
+    GPU_Memory_Free_List_Entry* free_list;
+    U32 leading_edge;
+    
+    // NOTE(soimn): This is referenced when searching for a suitable memory block
+    U32 largest_free;
+    U32 smallest_free;
+};
+
+
 struct Texture
 {
     U64 handle;
@@ -71,12 +98,31 @@ struct Material
     Texture_View* textures;
 };
 
+// TODO(soimn): Should framebuffer be nuked and raw textures be used instead?
 struct Framebuffer
 {
-    // TODO(soimn): Figure out what data should, and how it could be, stored.
+    Texture_View texture;
 };
 
+internal U64
+RendererAllocateMemory(U32 size, U8 alignment)
+{
+    U64 result = 0;
+    
+    // TODO(soimn): Check all memory blocks
+    // TODO(soimn): if none exist, or there is no suitable space for allocation, allocate new block
+    // TODO(soimn): If the memory block limit has been reached, return a special value
+    
+    return result;
+}
 
+internal void
+RendererFreeMemory(U64 handle)
+{
+    // TODO(soimn): Free the passed memory and defragmen the block, if possible
+}
+
+/// Camera related utility functions
 internal inline void
 GetFrustumVectors(Camera camera, V3* result)
 {
