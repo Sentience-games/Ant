@@ -21,6 +21,9 @@ global struct
 } RendererGlobals;
 
 // TODO(soimn): Store commands somehow
+// OPTIMIZATION TODO(soimn): Store and reuse framebuffer objects
+
+// TODO(soimn): Store a catalog of texture and mesh bindings indexed by IDs
 
 /// Render commands and batches
 struct Camera_Render_Info
@@ -75,6 +78,24 @@ struct GPU_Memory_Block
     U32 smallest_free;
 };
 
+typedef U32 Vertex_Buffer;
+typedef U32 Index_Buffer;
+
+struct Sub_Mesh
+{
+    U32 first_vertex;
+    U32 first_index;
+    U32 index_count;
+};
+
+struct Mesh
+{
+    Sub_Mesh* submeshes;
+    U32 submesh_count;
+    
+    Vertex_Buffer vertex_buffer;
+    Index_Buffer index_buffer;
+};
 
 struct Texture
 {
@@ -84,24 +105,9 @@ struct Texture
     U8 mip_count;
 };
 
-
-// TODO(soimn): This needs to be revised
+// TODO(soimn): Fill this
 struct Material
 {
-    void* data;
-    U32 size;
-    B32 is_dirty;
-    
-    U32 shader;
-    
-    U32 texture_count;
-    Texture_View* textures;
-};
-
-// TODO(soimn): Should framebuffer be nuked and raw textures be used instead?
-struct Framebuffer
-{
-    Texture_View texture;
 };
 
 internal U64

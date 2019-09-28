@@ -7,23 +7,39 @@
 #include "math/vector.h"
 #include "math/matrix.h"
 
-typedef U32 Vertex_Buffer;
-typedef U32 Index_Buffer;
+struct Render_Batch;
+struct Light_Batch;
+typedef U64 Mesh_ID;
+typedef U64 Texture_ID;
+typedef U64 Material_ID;
+typedef U64 Shader_ID;
+typedef U64 Camera_Filter;
 
-struct Sub_Mesh
+/// Meshes
+struct Mesh_Info
 {
-    U32 first_vertex;
-    U32 first_index;
-    U32 index_count;
+    UMM total_memory_footprint;
+    Asset_ID asset;
+    
+    struct
+    {
+        U32 first_vertex;
+        U32 vertex_count;
+        U32 first_index;
+        U32 index_count;
+    }* submeshes;
+    U32 submesh_count;
 };
 
-struct Mesh
+/// Textures
+enum CHANNEL_MASK
 {
-    Sub_Mesh* submeshes;
-    U32 submesh_count;
-    
-    Vertex_Buffer vertex_buffer;
-    Index_Buffer index_buffer;
+    Channel_R    = 0x1,
+    Channel_G    = 0x2,
+    Channel_B    = 0x4,
+    Channel_A    = 0x8,
+    Channel_RGB  = 0x7,
+    Channel_RGBA = 0xF,
 };
 
 enum TEXTURE_TYPE
@@ -65,10 +81,13 @@ enum TEXTURE_USAGE
     TextureUsage_ReadWrite,
 };
 
-struct Texture_View
+struct Texture_Info
 {
-    U64 handle;
-    Rect view;
+    UMM total_memory_footprint;
+    Asset_ID asset;
+    
+    U32 width;
+    U32 height;
     Enum8(TEXTURE_FORMAT) format;
     Enum8(TEXTURE_FILTER) min_filter;
     Enum8(TEXTURE_FILTER) mag_filter;
@@ -76,8 +95,48 @@ struct Texture_View
     Enum8(TEXTURE_WRAP) u_wrap;
     Enum8(TEXTURE_WRAP) v_wrap;
     Enum8(TEXTURE_USAGE) usage;
+    U8 mip_levels;
 };
 
+/// Materials
+struct Material_Info
+{
+    Buffer data;
+    Buffer default_dynamic_data;
+    Texture_ID* textures;
+    U32 texture_count;
+};
+
+struct Material_Palette
+{
+    Material_ID* materials;
+    U32 material_count;
+};
+
+/// Shaders
+
+enum RENDERER_SHADER_STAGE
+{
+    ShaderStage_Vertex,
+    ShaderStage_Geometry,
+    ShaderStage_Fragment,
+};
+
+struct Shader_Info
+{
+    struct
+    {
+        Buffer binary;
+        Enum32(RENDERER_SHADER_STAGE) stage;
+    }* shader_stages;
+    
+    U32 shader_stage_count;
+    
+    // TODO(soimn): Input requirements
+    // TODO(soimn): Output requirements
+};
+
+/// Lighting
 enum RENDERER_LIGHT_TYPE
 {
     Light_Point,
@@ -113,30 +172,7 @@ struct Light
     };
 };
 
-typedef U64 Framebuffer_ID;
-typedef U64 Shader_ID;
-
-#define RENDERER_MAX_GBUFFER_ATTACHMENTS 4
-struct GBuffer
-{
-    Framebuffer_ID attachments[RENDERER_MAX_GBUFFER_ATTACHMENTS];
-};
-
-// NOTE(soimn): Batching
-////////////////////////////////
-
-typedef U64 Camera_Filter;
-
-// TODO(soimn): Pass wanted materials somehow
-struct Render_Request
-{
-    Camera_Filter filter;
-    Bounding_Sphere bounding_sphere;
-    Transform transform;
-    
-    Mesh* mesh;
-};
-
+/// Camera 
 enum RENDERER_CAMERA_PROJECTION_MODE
 {
     Camera_Perspective,
@@ -159,10 +195,25 @@ struct Camera
     F32 aspect_ratio;
 };
 
-//// COMMANDS START
+/// Texture handling for rendering
+#define RENDERER_MAX_TEXTURE_BUNDLE_TEXTURE_COUNT 4
+struct Texture_Bundle
+{
+    Texture_ID attachments[RENDERER_MAX_TEXTURE_BUNDLE_TEXTURE_COUNT];
+};
 
-struct Render_Batch;
-struct Light_Batch;
+/// Render request data
+struct Render_Request
+{
+    Camera_Filter filter;
+    Bounding_Sphere bounding_sphere;
+    Transform transform;
+    
+    Mesh_ID mesh;
+    Material_Palette* materials;
+};
+
+//// COMMANDS START
 
 #define RENDERER_BEGIN_FRAME_FUNCTION(name) void name (void)
 typedef RENDERER_BEGIN_FRAME_FUNCTION(renderer_begin_frame_function);
@@ -180,58 +231,48 @@ typedef RENDERER_GET_LIGHT_BATCH_FUNCTION(renderer_get_light_batch_function);
 #define RENDERER_PUSH_LIGHT_FUNCTION(name) U8 name (Light_Batch* batch, Light* lights, U32 light_count)
 typedef RENDERER_PUSH_LIGHT_FUNCTION(renderer_push_light_function);
 
-#define RENDERER_RENDER_BATCH_FUNCTION(name) void name (Render_Batch* render_batch, Light_Batch* light_batch, Shader_ID override_shader, GBuffer gbuffer)
+#define RENDERER_RENDER_BATCH_FUNCTION(name) void name (Render_Batch* render_batch, Light_Batch* light_batch, Material_ID override_material, Texture_Bundle gbuffer)
 typedef RENDERER_RENDER_BATCH_FUNCTION(renderer_render_batch_function);
 
-/// Framebuffer operations
+/// Render texture management
+#define RENDERER_COPY_TEXTURE_CONTENT_FUNCTION(name) void name (Texture_ID source_texture, Texture_ID dest_texture, Flag8(CHANNEL_MASK) channel_mask)
+typedef RENDERER_COPY_TEXTURE_CONTENT_FUNCTION(renderer_copy_texture_content_function);
 
-enum CHANNEL_MASK
-{
-    Channel_R    = 0x1,
-    Channel_G    = 0x2,
-    Channel_B    = 0x4,
-    Channel_A    = 0x8,
-    Channel_RGBA = 0xF,
-};
+#define RENDERER_CLEAR_TEXTURE_CONTENT_FUNCTION(name) void name (Texture_ID texture, Flag8(CHANNEL_MASK) channel_mask, U32 clear_value)
+typedef RENDERER_CLEAR_TEXTURE_CONTENT_FUNCTION(renderer_clear_texture_content_function);
 
-enum FRAMEBUFFER_COPY_MODE
-{
-    FramebufferCopy_Hard,
-    FramebufferCopy_LinearBlend,
-};
-
-#define RENDERER_COPY_FRAMEBUFFER_CONTENT_FUNCTION(name) void name (Framebuffer_ID source, Framebuffer_ID dest, Flag8(CHANNEL_MASK) channel_mask, Enum8(FRAMEBUFFER_COPY_MODE) copy_mode)
-typedef RENDERER_COPY_FRAMEBUFFER_CONTENT_FUNCTION(renderer_copy_framebuffer_content_function);
-
-#define RENDERER_CLEAR_FRAMEBUFFER_CONTENT_FUNCTION(name) void name (Framebuffer_ID source, Flag8(CHANNEL_MASK) channel_mask, U32 clear_value)
-typedef RENDERER_CLEAR_FRAMEBUFFER_CONTENT_FUNCTION(renderer_clear_framebuffer_content_function);
-
-#define RENDERER_APPLY_SHADER_FUNCTION(name) void name (Shader_ID shader, GBuffer source, GBuffer dest)
+#define RENDERER_APPLY_SHADER_FUNCTION(name) void name (Shader_ID shader, Texture_Bundle source, Texture_Bundle dest)
 typedef RENDERER_APPLY_SHADER_FUNCTION(renderer_apply_shader_function);
-
-// TODO(soimn): Compute and immediate mode
 
 /// Object management
 #define RENDERER_FLUSH_ALL_OBJECTS_FUNCTION(name) void name (void)
 typedef RENDERER_FLUSH_ALL_OBJECTS_FUNCTION(renderer_flush_all_objects_function);
 
-#define RENDERER_CREATE_FRAMEBUFFER_FUNCTION(name) Framebuffer_ID name (/*FRAMEBUFFER STUFF*/)
-typedef RENDERER_CREATE_FRAMEBUFFER_FUNCTION(renderer_create_framebuffer_function);
-
-#define RENDERER_DESTROY_FRAMEBUFFER_FUNCTION(name) void name (Framebuffer_ID framebuffer)
-typedef RENDERER_DESTROY_FRAMEBUFFER_FUNCTION(renderer_destroy_framebuffer_function);
-
-#define RENDERER_RECREATE_MATERIAL_CACHE_FUNCTION(name) void name (U32 material_count)
-typedef RENDERER_RECREATE_MATERIAL_CACHE_FUNCTION(renderer_recreate_material_cahce_function);
-
-#define RENDERER_UPLOAD_MATERIALS_FUNCTION(name) U8 name (/*MATERIAL STUFF*/ U32 count)
+#define RENDERER_UPLOAD_MATERIALS_FUNCTION(name) U8 name (Material_Info* materials, U32 count)
 typedef RENDERER_UPLOAD_MATERIALS_FUNCTION(renderer_upload_materials_function);
 
-#define RENDERER_UPDATE_MATERIAL_CACHE_FUNCTION(name) U8 name (/*MATERIAL STUFF*/)
-typedef RENDERER_UPDATE_MATERIAL_CACHE_FUNCTION(renderer_update_material_cache_function);
+#define RENDERER_UPDATE_MATERIAL_FUNCTION(name) U8 name (Material_ID material, Material_Info data)
+typedef RENDERER_UPDATE_MATERIAL_FUNCTION(renderer_update_material_function);
 
-// TODO(soimn): Add / remove / update shaders
-// TODO(soimn): Add / remove meshes and textures
+#define RENDERER_UPLOAD_ALL_SHADERS_FUNCTION(name) U32 name (Shader_Info* shaders, U32 count)
+typedef RENDERER_UPLOAD_ALL_SHADERS_FUNCTION(renderer_upload_all_shaders_function);
+
+#define RENDERER_UPDATE_SHADER_FUNCTION(name) U32 name (Shader_ID shader, Shader_Info data)
+typedef RENDERER_UPDATE_SHADER_FUNCTION(renderer_update_shader_function);
+
+#define RENDERER_UPLOAD_MESHES_FUNCTION(name) U8 name (Mesh_Info* meshes, U32 count, Mesh_ID* mesh_ids)
+typedef RENDERER_UPLOAD_MESHES_FUNCTION(renderer_upload_meshes_function);
+
+#define RENDERER_REMOVE_MESHES_FUNCTION(name) void name (Mesh_ID mesh_id)
+typedef RENDERER_REMOVE_MESHES_FUNCTION(renderer_remove_meshes_function);
+
+#define RENDERER_UPLOAD_TEXTURES_FUNCTION(name) U8 name (Texture_Info* textures, U32 count, Texture_ID* texture_ids)
+typedef RENDERER_UPLOAD_TEXTURES_FUNCTION(renderer_upload_textures_function);
+
+#define RENDERER_REMOVE_TEXTURES_FUNCTION(name) void name (Texture_ID texture_id)
+typedef RENDERER_REMOVE_TEXTURES_FUNCTION(renderer_remove_textures_function);
+
+// TODO(soimn): Compute and immediate mode
 
 #define RENDERER_END_FRAME_FUNCTION(name) void name (void)
 typedef RENDERER_END_FRAME_FUNCTION(renderer_end_frame_function);
@@ -248,7 +289,7 @@ typedef RENDERER_END_FRAME_FUNCTION(renderer_end_frame_function);
 //    asset system then decides what to do. (e.g. queue an asset for loading and returning the default data for 
 //    that asset, or returning visually similar assets or lower quality versions when the asset is not present)
 // 3. Requests for allocations or transfer of data from cpu side to gpu side are accumulated and executed once 
-//    rendering work is done. This also gives the renderer a chance to batch allocations and reduce fragmentations
+//    rendering work is done. This also gives the renderer a chance to batch allocations and reduce fragmentation
 // 4. Commands are recorded between BeginFrame and EndFrame. These commands are pooled and sorted for future 
 //    issuing. Commands related to resource management are batched and executed when the time is right. Commands 
 //    related to drawing are sorted and split into several sequences of serialized commands which are synchronized 

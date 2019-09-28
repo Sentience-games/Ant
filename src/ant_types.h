@@ -75,3 +75,6 @@ struct Buffer
 };
 
 typedef Buffer String;
+
+/// Asset types
+typedef U32 Asset_ID;
