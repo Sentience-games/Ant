@@ -1343,13 +1343,17 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance,
             Memory_Arena persistent_memory  = {};
             persistent_memory.block_size    = KILOBYTES(4);
             
-            Memory_Arena frame_local_memory = {};
-            frame_local_memory.block_size   = MEGABYTES(4);
+            Memory_Arena renderer_memory = {};
+            renderer_memory.block_size   = KILOBYTES(4);
+            
+            Memory_Arena frame_memory = {};
+            frame_memory.block_size   = MEGABYTES(4);
             
             Game_Memory game_memory = {};
             
             game_memory.persistent_arena = &persistent_memory;
-            game_memory.frame_arena      = &frame_local_memory;
+            game_memory.renderer_arena   = &renderer_memory;
+            game_memory.frame_arena      = &frame_memory;
             
             game_memory.platform_api.Log                 = &Win32Log;
             game_memory.platform_api.AllocateMemoryBlock = &Win32AllocateMemoryBlock;
@@ -1375,10 +1379,12 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance,
             
             bool encountered_errors = false;
             
+            
+            //// SETUP
             do
             {
                 /// Set current working directory to /data
-                wchar_t* buffer = (wchar_t*) PushSize(&frame_local_memory, MEGABYTES(4), alignof(wchar_t));
+                wchar_t* buffer = (wchar_t*) PushSize(&frame_memory, MEGABYTES(4), alignof(wchar_t));
                 U32 buffer_size = MEGABYTES(4) / sizeof(wchar_t);
                 
                 U32 result = GetModuleFileNameW(0, buffer, buffer_size - 5);
@@ -1395,7 +1401,7 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance,
                         }
                     }
                     
-                    Copy(L"data\0", last_slash + 1, sizeof(L"data\0"));
+                    Copy(L"data", last_slash + 1, sizeof(L"data"));
                     
                     encountered_errors = !SetCurrentDirectoryW(buffer);
                 }
@@ -1434,8 +1440,14 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance,
                     encountered_errors = true;
                     break;
                 }
+                
+                /// Initialize renderer
+                
+                Win32InitRenderer(&game_memory.platform_api, RendererAPI_None, game_memory.renderer_arena, game_memory.frame_arena);
             } while (0);
             
+            
+            //// GAME LOOP
             if (!encountered_errors)
             {
                 bool running = true;
@@ -1451,7 +1463,7 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance,
                 
                 while (running)
                 {
-                    ResetArena(&frame_local_memory);
+                    ResetArena(&frame_memory);
                     
 #ifdef ANT_ENABLE_HOT_RELOAD
                     while (!Win32ReloadGameCode(&game_code));
@@ -1483,7 +1495,7 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance,
                         new_input->editor_mode = old_input->editor_mode;
                     }
                     
-                    Win32ProcessPendingMessages(window_handle, new_input, game_memory.keyboard_game_keymap, game_memory.keyboard_editor_keymap, &frame_local_memory);
+                    Win32ProcessPendingMessages(window_handle, new_input, game_memory.keyboard_game_keymap, game_memory.keyboard_editor_keymap, &frame_memory);
                     
                     if (!Pause)
                     {
@@ -1497,7 +1509,7 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance,
                     }
                     
                     
-                    ResetArena(&frame_local_memory);
+                    ResetArena(&frame_memory);
                     
                     CopyStruct(new_input, old_input);
                     ZeroStruct(new_input);

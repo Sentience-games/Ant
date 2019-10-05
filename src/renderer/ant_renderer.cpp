@@ -1,30 +1,5 @@
 #include "ant_renderer.h"
 
-enum RENDERER_API
-{
-    RendererAPI_None,
-    
-    RendererAPI_OpenGL,
-    RendererAPI_Vulkan,
-    RendererAPI_DirectX,
-};
-
-// TODO(soimn): How much global data is acceptable?
-global struct
-{
-    Enum8(RENDERER_API) api;
-    
-    // Functions
-    
-    struct GPU_Memory_Block* memory_blocks;
-    UMM memory_block_count;
-} RendererGlobals;
-
-// TODO(soimn): Store commands somehow
-// OPTIMIZATION TODO(soimn): Store and reuse framebuffer objects
-
-// TODO(soimn): Store a catalog of texture and mesh bindings indexed by IDs
-
 /// Render commands and batches
 struct Camera_Render_Info
 {
@@ -32,54 +7,63 @@ struct Camera_Render_Info
     M4 view_projection_matrix;
 };
 
-struct Render_Batch_Block
+struct Render_Batch
 {
-    void* data;
-    Render_Batch_Block* next;
-    U32 size;
+    Render_Request* first;
+    U32 push_index;
+    U32 capacity;
+    Camera_Render_Info camera_info;
+};
+
+struct Light_Batch
+{
+    // TODO(soimn): Find out how to deal with view frustum light clusters
+    Light* first;
+    U32 push_index;
     U32 capacity;
 };
 
-struct Render_Batch
+struct Render_Command
 {
-    Render_Batch_Block* first;
-    U32 block_count;
-    U32 total_request_count;
-    
-    Camera_Render_Info camera_info;
-    
-    void* light_data;
-    UMM light_data_size;
+    // TODO(soimn): What should this contain?
 };
 
 /// Memory management structures
 
-struct GPU_Memory_Free_List_Entry
+#define RENDERER_MAX_GPU_MEMORY_BLOCK_COUNT 24
+#define RENDERER_GPU_MEMORY_BLOCK_SIZE MEGABYTES(256)
+#define RENDERER_MIN_ALLOCATION_SIZE KILOBYTES(16)
+
+struct GPU_Free_List
 {
-    GPU_Memory_Free_List_Entry* next;
+    GPU_Free_List* next;
     U32 offset;
     U32 size;
 };
 
-#define RENDERER_GPU_MEMORY_BLOCK_SIZE MEGABYTES(256)
-#define RENDERER_MIN_ALLOCATION_SIZE KILOBYTES(16)
 struct GPU_Memory_Block
 {
     U64 handle;
+    U32 push_offset;
     
-    // TODO(soimn): How should the free list be stored
-    // NOTE(soimn): When the free list is empty there are no gaps between allocations, and the leading edge should 
-    //              be consolted when allocating.
-    GPU_Memory_Free_List_Entry* free_list;
-    U32 leading_edge;
-    
-    // NOTE(soimn): This is referenced when searching for a suitable memory block
+    // NOTE(soimn): The free list has a capacity of BLOCK_SIZE / MIN_ALLOCATION_SIZE, and each element is indexed //              by the integer result of the offset divided by the MIN_ALLOCATION_SIZE
+    U32 free_list_size;
+    GPU_Free_List* free_list;
+    GPU_Free_List* first_free;
     U32 largest_free;
     U32 smallest_free;
 };
 
-typedef U32 Vertex_Buffer;
-typedef U32 Index_Buffer;
+union GPU_Buffer
+{
+    struct
+    {
+        U32 block_index;
+        U32 block_offset;
+    };
+    
+    U64 handle;
+};
 
 struct Sub_Mesh
 {
@@ -93,40 +77,65 @@ struct Mesh
     Sub_Mesh* submeshes;
     U32 submesh_count;
     
-    Vertex_Buffer vertex_buffer;
-    Index_Buffer index_buffer;
+    GPU_Buffer vertex_buffer;
+    GPU_Buffer index_buffer;
 };
 
 struct Texture
 {
-    U64 handle;
-    V2 dimensions;
+    GPU_Buffer texture_buffer;
+    U32 width;
+    U32 height;
     Enum8(TEXTURE_TYPE) type;
     U8 mip_count;
 };
 
-// TODO(soimn): Fill this
 struct Material
 {
+    // TODO(soimn): A material is a buffer containing data relevant to the fragment shader,
+    //              find a way to represent this in a flexible way
 };
 
-internal U64
-RendererAllocateMemory(U32 size, U8 alignment)
-{
-    U64 result = 0;
-    
-    // TODO(soimn): Check all memory blocks
-    // TODO(soimn): if none exist, or there is no suitable space for allocation, allocate new block
-    // TODO(soimn): If the memory block limit has been reached, return a special value
-    
-    return result;
-}
 
-internal void
-RendererFreeMemory(U64 handle)
+struct Shader
 {
-    // TODO(soimn): Free the passed memory and defragmen the block, if possible
-}
+    // TODO(soimn): Fill this with management, and other relevant, information
+};
+
+/// Global data
+
+enum RENDERER_API
+{
+    RendererAPI_None,
+    
+    RendererAPI_OpenGL,
+    RendererAPI_Vulkan,
+    RendererAPI_DirectX,
+};
+
+// TODO(soimn): Is this really a good way of storing this information?
+global struct
+{
+    struct Memory_Arena* state_arena;
+    struct Memory_Arena* work_arena;
+    GPU_Memory_Block memory_blocks[RENDERER_MAX_GPU_MEMORY_BLOCK_COUNT];
+    
+    Bucket_Array commands;
+    
+    Bucket_Array mesh_array;
+    Bucket_Array sub_mesh_array;
+    Bucket_Array texture_array;
+    
+    Shader* shaders;
+    U32 shader_count;
+    
+    U32 material_count;
+    Material* materials;
+    
+    Enum8(RENDERER_API) api;
+    
+    // Functions
+} RendererGlobals;
 
 /// Camera related utility functions
 internal inline void

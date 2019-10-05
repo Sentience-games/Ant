@@ -17,12 +17,6 @@ struct Memory_Arena
 	U16 block_count;
 };
 
-struct Temporary_Memory
-{
-    Memory_Arena* arena;
-    Memory_Block* first_block;
-};
-
 inline U8*
 Align(void* ptr, U8 alignment)
 {
@@ -171,6 +165,100 @@ PushSize(Memory_Arena* arena, UMM size, U8 alignment = 1)
 
 #define PushStruct(arena, type) (type*) PushSize(arena, sizeof(type), alignof(type))
 #define PushArray(arena, type, count) (type*) PushSize(arena, (count) * (sizeof(type) + AlignOffset(((type*)0) + 1, alignof(type))), alignof(type))
+
+/// Memory management utility structures and functions
+
+struct Bucket_Array_Block
+{
+    Bucket_Array_Block* next;
+    U32 current_offset;
+    U32 current_space;
+};
+
+struct Bucket_Array
+{
+    Memory_Arena* arena;
+    Bucket_Array_Block* first_block;
+    Bucket_Array_Block* current_block;
+    U16 block_count;
+    U16 element_size;
+    U32 block_size;
+};
+
+#define BUCKET_ARRAY(arena, type, block_size) {arena, 0, 0, 0, sizeof(type), block_size}
+
+inline void*
+PushElement(Bucket_Array* array)
+{
+    void* result = 0;
+    
+    if (!array->current_block || !array->current_block->current_space)
+    {
+        UMM memory_block_size = sizeof(Bucket_Array_Block) + array->element_size * array->block_size;
+        
+        Bucket_Array_Block* new_block = (Bucket_Array_Block*)PushSize(array->arena, memory_block_size, alignof(Bucket_Array_Block));
+        
+        if (array->current_block)
+        {
+            array->current_block->next = new_block;
+        }
+        
+        array->current_block = array->current_block->next;
+        *array->current_block = {};
+    }
+    
+    result = (U8*)(array->current_block + 1) + array->element_size * array->current_block->current_offset;
+    ++array->current_block->current_offset;
+    --array->current_block->current_space;
+    
+    return result;
+}
+
+struct Bucket_Array_Iterator
+{
+    Bucket_Array_Block* current_block;
+    UMM current_index;
+    U32 current_offset;
+    U16 element_size;
+    void* current;
+};
+
+inline Bucket_Array_Iterator
+Iterate(Bucket_Array* array)
+{
+    Bucket_Array_Iterator iterator = {};
+    
+    iterator.current_block = array->first_block;
+    iterator.element_size  = array->element_size;
+    
+    iterator.current = (array->first_block ? array->first_block + 1 : 0);
+    
+    return iterator;
+}
+
+inline void
+Advance(Bucket_Array_Iterator* iterator)
+{
+    Assert(iterator->current);
+    
+    ++iterator->current_index;
+    ++iterator->current_offset;
+    iterator->current = (U8*)iterator->current + iterator->element_size;
+    
+    if (iterator->current_offset >= iterator->current_block->current_offset)
+    {
+        iterator->current_offset = 0;
+        iterator->current_block  = iterator->current_block->next;
+        
+        iterator->current = (iterator->current_block ? iterator->current_block + 1 : 0);
+    }
+}
+
+struct Temporary_Memory
+{
+    Memory_Arena* arena;
+    Memory_Block* first_block;
+};
 
 inline Temporary_Memory
 BeginTempMemory(Memory_Arena* arena)

@@ -21,5 +21,7 @@ GAME_UPDATE_AND_RENDER_FUNCTION(GameUpdateAndRender)
     Game_Controller_Input controller = GetController(input, 0);
     
     if (WasPressed(controller, Button_Test)) Platform->Log(Log_Info | Log_Verbose, "Game button pressed");
+    else if (WasHeld(controller, Button_Test)) Platform->Log(Log_Info | Log_Verbose, "Game button held");
     if (WasPressed(input->editor_buttons[EditorButton_Test])) Platform->Log(Log_Info | Log_Verbose, "Editor button pressed");
+    else if (WasHeld(input->editor_buttons[EditorButton_Test])) Platform->Log(Log_Info | Log_Verbose, "Editor button held");
 }

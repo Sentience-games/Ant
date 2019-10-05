@@ -1,10 +1,10 @@
 #pragma once
 
 #include "ant_shared.h"
+#include "math/vector.h"
 
 #include "ant_vfs.h"
-
-#include "math/vector.h"
+#include "renderer/ant_renderer.h"
 
 /// Logging
 enum LOG_OPTIONS
@@ -280,6 +280,7 @@ struct Game_Memory
     struct Game_State* state;
     
     struct Memory_Arena* persistent_arena;
+    struct Memory_Arena* renderer_arena;
     struct Memory_Arena* frame_arena;
     
     struct VFS* vfs;

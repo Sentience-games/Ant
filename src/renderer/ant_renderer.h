@@ -19,7 +19,7 @@ typedef U64 Camera_Filter;
 struct Mesh_Info
 {
     UMM total_memory_footprint;
-    Asset_ID asset;
+    Buffer mesh_data;
     
     struct
     {
@@ -84,7 +84,7 @@ enum TEXTURE_USAGE
 struct Texture_Info
 {
     UMM total_memory_footprint;
-    Asset_ID asset;
+    Buffer texture_data;
     
     U32 width;
     U32 height;
@@ -124,16 +124,7 @@ enum RENDERER_SHADER_STAGE
 
 struct Shader_Info
 {
-    struct
-    {
-        Buffer binary;
-        Enum32(RENDERER_SHADER_STAGE) stage;
-    }* shader_stages;
-    
-    U32 shader_stage_count;
-    
-    // TODO(soimn): Input requirements
-    // TODO(soimn): Output requirements
+    Buffer shader_data;
 };
 
 /// Lighting
@@ -213,6 +204,15 @@ struct Render_Request
     Material_Palette* materials;
 };
 
+//// COMMANDS
+// Commands are recorded in between the BeginFrame and EndFrame functions. The commands are recorded if their 
+// input criteria are met and the recording function is called, e.g. calling PushRequest with invalid parameters 
+// will result in the command not being recorded and an error code returned. Another example of such a failure 
+// state is calling UploadMeshes when there is no gpu side memory left, the command will not be recorded and an 
+// error code indicating that the there is not enough memory is returned.
+//
+// Pointers returned by command recording functions are only valid util EndFrame is called.
+
 //// COMMANDS START
 
 #define RENDERER_BEGIN_FRAME_FUNCTION(name) void name (void)
@@ -248,11 +248,13 @@ typedef RENDERER_APPLY_SHADER_FUNCTION(renderer_apply_shader_function);
 #define RENDERER_FLUSH_ALL_OBJECTS_FUNCTION(name) void name (void)
 typedef RENDERER_FLUSH_ALL_OBJECTS_FUNCTION(renderer_flush_all_objects_function);
 
+
 #define RENDERER_UPLOAD_MATERIALS_FUNCTION(name) U8 name (Material_Info* materials, U32 count)
 typedef RENDERER_UPLOAD_MATERIALS_FUNCTION(renderer_upload_materials_function);
 
 #define RENDERER_UPDATE_MATERIAL_FUNCTION(name) U8 name (Material_ID material, Material_Info data)
 typedef RENDERER_UPDATE_MATERIAL_FUNCTION(renderer_update_material_function);
+
 
 #define RENDERER_UPLOAD_ALL_SHADERS_FUNCTION(name) U32 name (Shader_Info* shaders, U32 count)
 typedef RENDERER_UPLOAD_ALL_SHADERS_FUNCTION(renderer_upload_all_shaders_function);
@@ -260,17 +262,37 @@ typedef RENDERER_UPLOAD_ALL_SHADERS_FUNCTION(renderer_upload_all_shaders_functio
 #define RENDERER_UPDATE_SHADER_FUNCTION(name) U32 name (Shader_ID shader, Shader_Info data)
 typedef RENDERER_UPDATE_SHADER_FUNCTION(renderer_update_shader_function);
 
-#define RENDERER_UPLOAD_MESHES_FUNCTION(name) U8 name (Mesh_Info* meshes, U32 count, Mesh_ID* mesh_ids)
-typedef RENDERER_UPLOAD_MESHES_FUNCTION(renderer_upload_meshes_function);
+// TODO(soimn): Is there a smarter way to do this?
+// NOTE(soimn):
+// Add*    - adds the object to the appropriate object table
+// Remove* - unloads the object data and removes the object from the object table
+// Load*   - loads the object data into gpu memory
+// Unload* - unloads the object data from gpu memory
+
+#define RENDERER_ADD_MESHES_FUNCTION(name) Mesh_ID name (Mesh_Info* meshes, U32 count)
+typedef RENDERER_ADD_MESHES_FUNCTION(renderer_add_meshes_function);
 
 #define RENDERER_REMOVE_MESHES_FUNCTION(name) void name (Mesh_ID mesh_id)
 typedef RENDERER_REMOVE_MESHES_FUNCTION(renderer_remove_meshes_function);
 
-#define RENDERER_UPLOAD_TEXTURES_FUNCTION(name) U8 name (Texture_Info* textures, U32 count, Texture_ID* texture_ids)
-typedef RENDERER_UPLOAD_TEXTURES_FUNCTION(renderer_upload_textures_function);
+#define RENDERER_LOAD_MESHES_FUNCTION(name) U8 name (Mesh_ID* mesh_ids, U32 count)
+typedef RENDERER_LOAD_MESHES_FUNCTION(renderer_load_meshes_function);
 
-#define RENDERER_REMOVE_TEXTURES_FUNCTION(name) void name (Texture_ID texture_id)
+#define RENDERER_UNLOAD_MESHES_FUNCTION(name) U8 name (Mesh_ID* mesh_ids, U32 count)
+typedef RENDERER_UNLOAD_MESHES_FUNCTION(renderer_unload_meshes_function);
+
+
+#define RENDERER_ADD_TEXTURES_FUNCTION(name) Texture_ID name (Texture_Info* textures, U32 count)
+typedef RENDERER_ADD_TEXTURES_FUNCTION(renderer_add_textures_function);
+
+#define RENDERER_REMOVE_TEXTURES_FUNCTION(name) void name (Texture_ID* texture_ids, U32 count)
 typedef RENDERER_REMOVE_TEXTURES_FUNCTION(renderer_remove_textures_function);
+
+#define RENDERER_LOAD_TEXTURES_FUNCTION(name) U8 name (Texture_Info* textures, U32 count)
+typedef RENDERER_LOAD_TEXTURES_FUNCTION(renderer_load_textures_function);
+
+#define RENDERER_UNLOAD_TEXTURES_FUNCTION(name) U8 name (Texture_ID* texture_ids, U32 count)
+typedef RENDERER_UNLOAD_TEXTURES_FUNCTION(renderer_unload_textures_function);
 
 // TODO(soimn): Compute and immediate mode
 
@@ -279,20 +301,8 @@ typedef RENDERER_END_FRAME_FUNCTION(renderer_end_frame_function);
 
 //// COMMANDS END
 
-//// DRAFT
-// 0. The renderer allocates a fixed chunk (could be several pools) of memory on the gpu side and suballocates 
-//    every time a resource is uploaded
-// 1. The renderer does *not* care about which mesh/texture/material is where or if it is resident at all,
-//    it views all objects as generic blocks of data and only "converts" the data to the required format when it
-//    is used. This is done to enable defragmenting of the gpu memory and easy handling of resources.
-// 2. Either the renderer, or the game, asks the asset system for the mesh/texture/material to be used and the 
-//    asset system then decides what to do. (e.g. queue an asset for loading and returning the default data for 
-//    that asset, or returning visually similar assets or lower quality versions when the asset is not present)
-// 3. Requests for allocations or transfer of data from cpu side to gpu side are accumulated and executed once 
-//    rendering work is done. This also gives the renderer a chance to batch allocations and reduce fragmentation
-// 4. Commands are recorded between BeginFrame and EndFrame. These commands are pooled and sorted for future 
-//    issuing. Commands related to resource management are batched and executed when the time is right. Commands 
-//    related to drawing are sorted and split into several sequences of serialized commands which are synchronized 
-//    when needed. This is done to enable drawing of independent objects while waiting on dependent objects (e.g. 
-//    Drawing the enitre scene and drawing the scene from a mirrors perspective at the same time, and then waiting 
-//    on both operations to finish before applying the mirrors reflection in the main image).
+//// COMMAND BUFFER SYNCHRONIZATION
+// Command buffers are only synchronized when necessary, e.g. rendering to a texture that is used in a render 
+// request in another command buffer that succeeds the command buffer in the intended order of execution. The 
+// intended execution order of the command buffers is determined by the submission order, and may be altered by 
+// the rendering backend when optimizing to maximize throughput.

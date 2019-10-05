@@ -2,7 +2,7 @@
 #include "renderer/ant_renderer.cpp"
 
 internal bool
-Win32InitRenderer(Platform_API* platform_api, Enum8(RENDERER_API) preferred_api)
+Win32InitRenderer(Platform_API* platform_api, Enum8(RENDERER_API) preferred_api, Memory_Arena* state_arena, Memory_Arena* work_arena)
 {
     bool succeeded = false;
     
@@ -14,6 +14,31 @@ Win32InitRenderer(Platform_API* platform_api, Enum8(RENDERER_API) preferred_api)
     {
         // TODO(soimn): Setup platform_api function calls and Renderer_API_Function_Table
         succeeded = true;
+    }
+    
+    if (selected_api != RendererAPI_None)
+    {
+        RendererGlobals = {};
+        RendererGlobals.api = selected_api;
+        
+        RendererGlobals.state_arena = state_arena;
+        RendererGlobals.work_arena  = work_arena;
+        
+        for (U32 i = 0; i < RENDERER_MAX_GPU_MEMORY_BLOCK_COUNT; ++i)
+        {
+            GPU_Memory_Block* current = &RendererGlobals.memory_blocks[i];
+            *current = {};
+            
+            U32 free_list_size = RENDERER_GPU_MEMORY_BLOCK_SIZE / RENDERER_MIN_ALLOCATION_SIZE;
+            current->free_list_size = free_list_size;
+            current->free_list = PushArray(state_arena, GPU_Free_List, free_list_size);
+        }
+        
+        RendererGlobals.commands = BUCKET_ARRAY(work_arena, Render_Command, 32);
+        
+        RendererGlobals.mesh_array     = BUCKET_ARRAY(state_arena, Mesh, 32);
+        RendererGlobals.sub_mesh_array = BUCKET_ARRAY(state_arena, Sub_Mesh, 32);
+        RendererGlobals.texture_array  = BUCKET_ARRAY(state_arena, Texture, 32);
     }
     
     return succeeded;
