@@ -29,6 +29,12 @@ AlignOffset(void* ptr, U8 alignment)
 	return (U8)((U8*) Align(ptr, alignment) - (U8*) ptr);
 }
 
+inline UMM
+RoundSize(UMM size, U8 alignment)
+{
+    return size + AlignOffset((U8*)size, alignment);
+}
+
 inline void
 Copy(void* source, void* dest, UMM size)
 {
@@ -170,6 +176,7 @@ PushSize(Memory_Arena* arena, UMM size, U8 alignment = 1)
 
 struct Bucket_Array_Block
 {
+    Bucket_Array_Block* prev;
     Bucket_Array_Block* next;
     U32 current_offset;
     U32 current_space;
@@ -185,7 +192,57 @@ struct Bucket_Array
     U32 block_size;
 };
 
-#define BUCKET_ARRAY(arena, type, block_size) {arena, 0, 0, 0, sizeof(type), block_size}
+inline Bucket_Array
+BucketArray(Memory_Arena* arena, UMM element_size, U32 block_size)
+{
+    Assert(element_size < U16_MAX);
+    
+    Bucket_Array array = {};
+    array.arena        = arena;
+    array.element_size = (U16)element_size;
+    array.block_size   = block_size;
+    
+    return array;
+}
+#define BUCKET_ARRAY(arena, type, block_size) BucketArray(arena, RoundSize(sizeof(type), alignof(type)), block_size)
+
+inline void*
+ElementAt(Bucket_Array* array, UMM index)
+{
+    UMM block_index  = index / array->block_size;
+    U32 block_offset = index % array->block_size;
+    
+    void* result = 0;
+    
+    if (block_index < array->block_count)
+    {
+        Bucket_Array_Block* block = 0;
+        
+        if (block_index <= array->block_count - block_index)
+        {
+            block = array->first_block;
+            
+            for (U32 i = 0; i < block_index; ++i)
+            {
+                block = block->next;
+            }
+        }
+        
+        else
+        {
+            block = array->current_block;
+            
+            for (U32 i = 0; i < array->block_count - block_index; ++i)
+            {
+                block = block->prev;
+            }
+        }
+        
+        result = (U8*)(block + 1) + array->element_size * block_offset;
+    }
+    
+    return result;
+}
 
 inline void*
 PushElement(Bucket_Array* array)
@@ -197,14 +254,15 @@ PushElement(Bucket_Array* array)
         UMM memory_block_size = sizeof(Bucket_Array_Block) + array->element_size * array->block_size;
         
         Bucket_Array_Block* new_block = (Bucket_Array_Block*)PushSize(array->arena, memory_block_size, alignof(Bucket_Array_Block));
+        *new_block = {};
         
         if (array->current_block)
         {
             array->current_block->next = new_block;
         }
         
-        array->current_block = array->current_block->next;
-        *array->current_block = {};
+        new_block->prev      = array->current_block;
+        array->current_block = new_block;
     }
     
     result = (U8*)(array->current_block + 1) + array->element_size * array->current_block->current_offset;
@@ -220,18 +278,32 @@ struct Bucket_Array_Iterator
     UMM current_index;
     U32 current_offset;
     U16 element_size;
+    B16 iterate_backwards;
     void* current;
 };
 
 inline Bucket_Array_Iterator
-Iterate(Bucket_Array* array)
+Iterate(Bucket_Array* array, bool iterate_backwards = false)
 {
     Bucket_Array_Iterator iterator = {};
     
-    iterator.current_block = array->first_block;
-    iterator.element_size  = array->element_size;
-    
-    iterator.current = (array->first_block ? array->first_block + 1 : 0);
+    if (array->current_block)
+    {
+        iterator.current_block = array->first_block;
+        iterator.element_size  = array->element_size;
+        iterator.iterate_backwards = iterate_backwards;
+        
+        if (!iterate_backwards)
+        {
+            iterator.current = array->first_block + 1;
+        }
+        
+        else
+        {
+            iterator.current_index = (array->block_count - 1) * array->block_size + array->current_block->current_offset;
+            iterator.current = (U8*)(array->current_block + 1) + array->element_size * array->current_block->current_offset;
+        }
+    }
     
     return iterator;
 }
@@ -241,16 +313,202 @@ Advance(Bucket_Array_Iterator* iterator)
 {
     Assert(iterator->current);
     
-    ++iterator->current_index;
-    ++iterator->current_offset;
-    iterator->current = (U8*)iterator->current + iterator->element_size;
-    
-    if (iterator->current_offset >= iterator->current_block->current_offset)
+    if (!iterator->iterate_backwards)
     {
-        iterator->current_offset = 0;
-        iterator->current_block  = iterator->current_block->next;
+        ++iterator->current_index;
+        ++iterator->current_offset;
+        iterator->current = (U8*)iterator->current + iterator->element_size;
         
-        iterator->current = (iterator->current_block ? iterator->current_block + 1 : 0);
+        if (iterator->current_offset >= iterator->current_block->current_offset)
+        {
+            iterator->current_offset = 0;
+            iterator->current_block  = iterator->current_block->next;
+            
+            iterator->current = (iterator->current_block ? iterator->current_block + 1 : 0);
+        }
+    }
+    
+    else
+    {
+        if (iterator->current_index)
+        {
+            UMM prev_index = iterator->current_index--;
+            U32 block_size = iterator->current_block->current_offset + iterator->current_block->current_space;
+            
+            if (prev_index / block_size != iterator->current_index / block_size)
+            {
+                iterator->current_block = iterator->current_block->prev;
+            }
+            
+            iterator->current = (U8*)(iterator->current_block + 1) + iterator->element_size * (iterator->current_index % block_size);
+        }
+        
+        else
+        {
+            iterator->current = 0;
+        }
+    }
+}
+
+struct Fixed_Bucket_Array
+{
+    Memory_Arena* arena;
+    U64** block_table;
+    U32 max_block_count;
+    U32 block_count;
+    U32 element_size;
+    U32 block_size;
+};
+
+inline Fixed_Bucket_Array
+FixedBucketArray(Memory_Arena* arena, UMM element_size, U32 block_size, U32 max_block_count)
+{
+    Assert(element_size < U16_MAX);
+    
+    Fixed_Bucket_Array array = {};
+    array.arena           = arena;
+    array.max_block_count = max_block_count;
+    array.element_size    = (U16)element_size;
+    array.block_size      = block_size;
+    
+    array.block_table = PushArray(arena, U64*, max_block_count);
+    
+    return array;
+}
+
+#define FIXED_BUCKET_ARRAY(arena, type, block_size, max_block_count) FixedBucketArray(arena, RoundSize(sizeof(type), alignof(type)), block_size, max_block_count)
+
+inline void*
+ElementAt(Fixed_Bucket_Array* array, UMM index)
+{
+    UMM block_index  = index / array->block_size;
+    U32 block_offset = index % array->block_size;
+    
+    void* result = 0;
+    
+    if (block_offset < array->block_count)
+    {
+        result = (U8*)(array->block_table[block_index] + 1) + array->element_size * block_offset;
+    }
+    
+    return result;
+}
+
+inline void*
+PushElement(Fixed_Bucket_Array* array)
+{
+    void* result = 0;
+    
+    if (!array->block_count)
+    {
+        if (array->max_block_count)
+        {
+            array->block_table[0] = (U64*)PushSize(array->arena, sizeof(U64) + array->element_size * array->block_size, alignof(U64));
+            ++array->block_count;
+            
+            result = array->block_table[0] + 1;
+            
+            *((U32*)array->block_table[0] + 0) = array->block_size - 1;
+            *((U32*)array->block_table[0] + 1) = 1;
+        }
+    }
+    
+    else
+    {
+        U32* current_offset = (U32*)array->block_table[array->block_count - 1] + 0;
+        U32* current_space  = (U32*)array->block_table[array->block_count - 1] + 1;
+        
+        if (*current_space)
+        {
+            result = (U8*)(array->block_table[array->block_count - 1] + 1) + array->element_size * *current_offset;
+            
+            --*current_space;
+            ++*current_offset;
+        }
+        
+        else if (array->block_count < array->max_block_count)
+        {
+            ++array->block_count;
+            
+            array->block_table[array->block_count - 1] = (U64*)PushSize(array->arena, sizeof(U64) + array->element_size * array->block_size, alignof(U64));
+            
+            result = array->block_table[array->block_count - 1] + 1;
+            
+            *((U32*)array->block_table[array->block_count - 1] + 0) = array->block_size - 1;
+            *((U32*)array->block_table[array->block_count - 1] + 1) = 1;
+        }
+    }
+    
+    return result;
+}
+
+struct Fixed_Bucket_Array_Iterator
+{
+    U64** block_table;
+    UMM current_index;
+    U32 block_count;
+    U32 block_size;
+    U32 element_size;
+    B32 iterate_backwards;
+    void* current;
+};
+
+inline Fixed_Bucket_Array_Iterator
+Iterate(Fixed_Bucket_Array* array, bool iterate_backwards = false)
+{
+    Fixed_Bucket_Array_Iterator iterator = {};
+    
+    if (array->block_count)
+    {
+        iterator.block_table  = array->block_table;
+        iterator.block_count  = array->block_count;
+        iterator.block_size   = array->block_size;
+        iterator.element_size = array->element_size;
+        iterator.iterate_backwards = iterate_backwards;
+        
+        if (!iterate_backwards)
+        {
+            iterator.current = array->block_table[0] + 1;
+        }
+        
+        else
+        {
+            U32* current_offset = (U32*)(array->block_table[array->block_count - 1]) + 1;
+            iterator.current_index = (array->block_count - 1) * array->block_size + *current_offset;
+            
+            U32 block_offset = iterator.current_index % array->block_size;
+            
+            iterator.current = (U64*)(array->block_table[array->block_count - 1] + 1) + array->element_size * block_offset;
+        }
+    }
+    
+    return iterator;
+}
+
+inline void
+Advance(Fixed_Bucket_Array_Iterator* iterator)
+{
+    ++iterator->current_index;
+    
+    iterator->current = 0;
+    
+    U32 block_offset = iterator->current_index % iterator->block_size;
+    
+    if (!iterator->iterate_backwards)
+    {
+        UMM block_index  = iterator->current_index / iterator->block_size;
+        
+        if (block_index < iterator->block_count)
+        {
+            iterator->current = (U8*)(iterator->block_table[block_index] + 1) + iterator->element_size * block_offset;
+        }
+    }
+    
+    else if (iterator->current_index)
+    {
+        --iterator->current_index;
+        
+        iterator->current = (U8*)(iterator->block_table[iterator->current_index / iterator->block_size] + 1) + iterator->element_size * block_offset;
     }
 }
 

@@ -90,16 +90,23 @@ struct Texture
     U8 mip_count;
 };
 
+// TODO(soimn): Every material has a dynamic input buffer associated with it, which is present on a per mesh 
+//              instance basis
 struct Material
 {
-    // TODO(soimn): A material is a buffer containing data relevant to the fragment shader,
-    //              find a way to represent this in a flexible way
+    Shader_ID shader;
+    U32 static_buffer_size;
+    U32 dynamic_buffer_size;
+    
+    // TODO(soimn): Texture bindings
 };
 
 
 struct Shader
 {
-    // TODO(soimn): Fill this with management, and other relevant, information
+    U64 handle;
+    bool is_postprocess_shader;
+    // TODO(soimn): Describe the input and outputs of this shader
 };
 
 /// Global data
