@@ -34,11 +34,9 @@ Win32InitRenderer(Platform_API* platform_api, Enum8(RENDERER_API) preferred_api,
             current->free_list = PushArray(state_arena, GPU_Free_List, free_list_size);
         }
         
-        RendererGlobals.commands = BUCKET_ARRAY(work_arena, Render_Command, 32);
-        
-        RendererGlobals.mesh_array     = BUCKET_ARRAY(state_arena, Mesh, 32);
-        RendererGlobals.sub_mesh_array = BUCKET_ARRAY(state_arena, Sub_Mesh, 32);
-        RendererGlobals.texture_array  = BUCKET_ARRAY(state_arena, Texture, 32);
+        RendererGlobals.commands           = BUCKET_ARRAY(work_arena, Render_Command, 32);
+        RendererGlobals.render_batch_array = BUCKET_ARRAY(work_arena, Render_Command, 8);
+        RendererGlobals.light_batch_array  = BUCKET_ARRAY(work_arena, Render_Command, 8);
     }
     
     return succeeded;

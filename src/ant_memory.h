@@ -350,6 +350,166 @@ Advance(Bucket_Array_Iterator* iterator)
     }
 }
 
+struct Free_List_Entry
+{
+    Free_List_Entry* next;
+    UMM size;
+};
+
+struct Free_List_Variable_Bucket_Array
+{
+    Free_List_Entry* free_list;
+    Bucket_Array bucket_array;
+};
+
+inline Free_List_Variable_Bucket_Array
+FreeListVariableBucketArray(Memory_Arena* arena, UMM base_element_size, U32 block_size)
+{
+    Assert(base_element_size < U16_MAX);
+    Assert(base_element_size >= sizeof(Free_List_Entry));
+    
+    Free_List_Variable_Bucket_Array array = {};
+    array.bucket_array.arena        = arena;
+    array.bucket_array.element_size = (U16)base_element_size;
+    array.bucket_array.block_size   = block_size;
+    
+    return array;
+}
+#define FREE_LIST_VARIABLE_BUCKET_ARRAY(arena, type, block_size) FreeListVariableBucketArray(arena, RoundSize(sizeof(type), alignof(type)), block_size)
+inline void*
+PushElement(Free_List_Variable_Bucket_Array* array, U32 count = 1)
+{
+    bool allocate_new = true;
+    
+    void* result = 0;
+    
+    Bucket_Array* bucket_array = &array->bucket_array;
+    
+    if (array->free_list)
+    {
+        Free_List_Entry* prev_scan = 0;
+        Free_List_Entry* scan      = array->free_list;
+        
+        Free_List_Entry* prev_best_fit = 0;
+        Free_List_Entry* best_fit      = 0;
+        
+        UMM best_fit_size = 0;
+        
+        while (scan)
+        {
+            if (scan->size >= count && (!best_fit || scan->size < best_fit_size))
+            {
+                prev_best_fit = prev_scan;
+                best_fit      = scan;
+                best_fit_size = scan->size;
+            }
+            
+            prev_scan = scan;
+            scan      = scan->next;
+        }
+        
+        if (best_fit)
+        {
+            prev_best_fit->next = best_fit->next;
+            
+            result = best_fit;
+        }
+    }
+    
+    if (allocate_new && count <= bucket_array->block_size)
+    {if (!bucket_array->current_block || bucket_array->current_block->current_space < count)
+        {
+            if (bucket_array->current_block)
+            {
+                U16 element_size = bucket_array->element_size;
+                U32 offset = bucket_array->current_block->current_offset;
+                U32 space  = bucket_array->current_block->current_space;
+                
+                bucket_array->current_block->current_offset += space;
+                bucket_array->current_block->current_space = 0;
+                
+                Free_List_Entry* new_entry = (Free_List_Entry*)((U8*)(bucket_array->current_block + 1) + element_size * offset);
+                
+                new_entry->next = array->free_list;
+                new_entry->size = space;
+                
+                array->free_list = new_entry;
+            }
+            
+            UMM block_size = bucket_array->element_size * bucket_array->block_size;
+            
+            Bucket_Array_Block* new_block = (Bucket_Array_Block*)PushSize(bucket_array->arena, block_size, alignof(Bucket_Array_Block));
+            *new_block = {};
+            
+            new_block->current_offset = count;
+            new_block->current_space  = bucket_array->block_size - count;
+            
+            if (bucket_array->current_block)
+            {
+                bucket_array->current_block->next = new_block;
+                new_block->prev = bucket_array->current_block;
+            }
+            
+            else
+            {
+                bucket_array->first_block = new_block;
+            }
+            
+            bucket_array->current_block = new_block;
+        }
+        
+        result = bucket_array->current_block + 1;
+    }
+    
+    return result;
+}
+
+inline void
+RemoveElement(Free_List_Variable_Bucket_Array* array, void* element, U32 size = 1)
+{
+    bool is_valid = false;
+    
+    U8* element_u8 = (U8*)element;
+    Bucket_Array* bucket_array = &array->bucket_array;
+    
+    Bucket_Array_Block* scan = bucket_array->first_block;
+    U16 element_size = bucket_array->element_size;
+    while (scan)
+    {
+        if (element_u8 >= (U8*)(scan + 1) && element_u8 < (U8*)(scan + 1) + element_size * scan->current_offset)
+        {
+            U32 offset = (U32)(element_u8 - (U8*)(scan + 1));
+            
+            if (offset % element_size == 0 && offset + size <= scan->current_offset)
+            {
+                is_valid = true;
+            }
+            
+            break;
+        }
+        
+        scan = scan->next;
+    }
+    
+    Assert(is_valid);
+    
+    if (is_valid)
+    {
+        Free_List_Entry* new_entry = (Free_List_Entry*)element;
+        
+        new_entry->next = array->free_list;
+        new_entry->size = size;
+        
+        array->free_list = new_entry;
+    }
+}
+
+inline Bucket_Array_Iterator
+Iterate(Free_List_Variable_Bucket_Array* array, bool iterate_backwards)
+{
+    return Iterate(&array->bucket_array, iterate_backwards);
+}
+
 struct Fixed_Bucket_Array
 {
     Memory_Arena* arena;

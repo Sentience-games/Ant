@@ -15,6 +15,18 @@ typedef U64 Material_ID;
 typedef U64 Shader_ID;
 typedef U64 Camera_Filter;
 
+/// STRUCTURES RELATED TO THE TRANSFER OF OBJECT DATA TO THE RENDERER BACKEND
+/// /////////////////////////////////////////////////////////////////////////
+
+enum RENDERER_OBJECT_TYPE
+{
+    RendererObj_None     = 0,
+    RendererObj_Mesh     = 0x1,
+    RendererObj_Texture  = 0x2,
+    RendererObj_Shader   = 0x4,
+    RendererObj_Material = 0x8,
+};
+
 /// Meshes
 struct Mesh_Info
 {
@@ -86,8 +98,8 @@ struct Texture_Info
     UMM total_memory_footprint;
     Buffer texture_data;
     
-    U32 width;
-    U32 height;
+    U16 width;
+    U16 height;
     Enum8(TEXTURE_FORMAT) format;
     Enum8(TEXTURE_FILTER) min_filter;
     Enum8(TEXTURE_FILTER) mag_filter;
@@ -163,6 +175,9 @@ struct Light
     };
 };
 
+/// STRUCTURES USED TO MANAGE THE RENDERING OF OBJECTS
+/// //////////////////////////////////////////////////
+
 /// Camera 
 enum RENDERER_CAMERA_PROJECTION_MODE
 {
@@ -203,6 +218,9 @@ struct Render_Request
     Mesh_ID mesh;
     Material_Palette* materials;
 };
+
+/// RENDERER COMMANDS
+/// /////////////////
 
 //// COMMANDS
 // Commands are recorded in between the BeginFrame and EndFrame functions. The commands are recorded if their 
@@ -245,13 +263,14 @@ typedef RENDERER_CLEAR_TEXTURE_CONTENT_FUNCTION(renderer_clear_texture_content_f
 typedef RENDERER_APPLY_SHADER_FUNCTION(renderer_apply_shader_function);
 
 /// Object management
-#define RENDERER_FLUSH_ALL_OBJECTS_FUNCTION(name) void name (void)
-typedef RENDERER_FLUSH_ALL_OBJECTS_FUNCTION(renderer_flush_all_objects_function);
+#define RENDERER_FLUSH_ALL_OBJECTS_OF_TYPE_FUNCTION(name) void name (Flag8(RENDERER_OBJECT_TYPE) type)
+typedef RENDERER_FLUSH_ALL_OBJECTS_OF_TYPE_FUNCTION(renderer_flush_all_objects_of_type_function);
 
 
 #define RENDERER_UPLOAD_MATERIALS_FUNCTION(name) U8 name (Material_Info* materials, U32 count)
 typedef RENDERER_UPLOAD_MATERIALS_FUNCTION(renderer_upload_materials_function);
 
+// TODO(soimn): Provide a smoother way of updating single property of the material
 #define RENDERER_UPDATE_MATERIAL_FUNCTION(name) U8 name (Material_ID material, Material_Info data)
 typedef RENDERER_UPDATE_MATERIAL_FUNCTION(renderer_update_material_function);
 
@@ -262,18 +281,11 @@ typedef RENDERER_UPLOAD_ALL_SHADERS_FUNCTION(renderer_upload_all_shaders_functio
 #define RENDERER_UPDATE_SHADER_FUNCTION(name) U32 name (Shader_ID shader, Shader_Info data)
 typedef RENDERER_UPDATE_SHADER_FUNCTION(renderer_update_shader_function);
 
-// TODO(soimn): Is there a smarter way to do this?
-// NOTE(soimn):
-// Add*    - adds the object to the appropriate object table
-// Remove* - unloads the object data and removes the object from the object table
-// Load*   - loads the object data into gpu memory
-// Unload* - unloads the object data from gpu memory
-
 #define RENDERER_ADD_MESHES_FUNCTION(name) Mesh_ID name (Mesh_Info* meshes, U32 count)
 typedef RENDERER_ADD_MESHES_FUNCTION(renderer_add_meshes_function);
 
-#define RENDERER_REMOVE_MESHES_FUNCTION(name) void name (Mesh_ID mesh_id)
-typedef RENDERER_REMOVE_MESHES_FUNCTION(renderer_remove_meshes_function);
+#define RENDERER_UPDATE_MESH_FUNCTION(name) void name (Mesh_ID mesh_id, Mesh_Info* mesh)
+typedef RENDERER_UPDATE_MESH_FUNCTION(renderer_update_mesh_function);
 
 #define RENDERER_LOAD_MESHES_FUNCTION(name) U8 name (Mesh_ID* mesh_ids, U32 count)
 typedef RENDERER_LOAD_MESHES_FUNCTION(renderer_load_meshes_function);
@@ -285,8 +297,8 @@ typedef RENDERER_UNLOAD_MESHES_FUNCTION(renderer_unload_meshes_function);
 #define RENDERER_ADD_TEXTURES_FUNCTION(name) Texture_ID name (Texture_Info* textures, U32 count)
 typedef RENDERER_ADD_TEXTURES_FUNCTION(renderer_add_textures_function);
 
-#define RENDERER_REMOVE_TEXTURES_FUNCTION(name) void name (Texture_ID* texture_ids, U32 count)
-typedef RENDERER_REMOVE_TEXTURES_FUNCTION(renderer_remove_textures_function);
+#define RENDERER_UPDATE_TEXTURE_FUNCTION(name) void name (Texture_ID texture_id, Texture_Info* texture)
+typedef RENDERER_UPDATE_TEXTURE_FUNCTION(renderer_update_texture_function);
 
 #define RENDERER_LOAD_TEXTURES_FUNCTION(name) U8 name (Texture_Info* textures, U32 count)
 typedef RENDERER_LOAD_TEXTURES_FUNCTION(renderer_load_textures_function);
