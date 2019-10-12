@@ -12,6 +12,26 @@ PLATFORM_LOG_FUNCTION(Win32Log)
 {
     char buffer[1024] = {};
     
+    char module[14] = {};
+    
+    if ((log_options & Log_Platform) && !(log_options & Log_Renderer))
+    {
+        String platform_string = CONST_STRING("[PLATFORM] ");
+        Copy(platform_string.data, module, platform_string.size);
+    }
+    
+    else if ((log_options & Log_Renderer) && !(log_options & Log_Platform))
+    {
+        String renderer_string = CONST_STRING("[RENDERER] ");
+        Copy(renderer_string.data, module, renderer_string.size);
+    }
+    
+    else
+    {
+        String game_string = CONST_STRING("[GAME] ");
+        Copy(game_string.data, module, game_string.size);
+    }
+    
     va_list arg_list;
     va_start(arg_list, &message);
     
@@ -41,11 +61,9 @@ PLATFORM_LOG_FUNCTION(Win32Log)
         MessageBoxA(0, buffer, APPLICATION_NAME, prompt);
     }
     
-    else
-    {
-        OutputDebugStringA(buffer);
-        OutputDebugStringA("\n");
-    }
+    OutputDebugStringA(module);
+    OutputDebugStringA(buffer);
+    OutputDebugStringA("\n");
 }
 
 
@@ -806,18 +824,18 @@ Win32ReloadGameCode(Win32_Game_Code* game_code)
                     game_code->is_valid = true;
                     succeeded           = true;
                     
-                    Win32Log(Log_Info, "Successfully loaded new game code");
+                    Win32Log(Log_Platform | Log_Info, "Successfully loaded new game code");
                 }
                 
                 else
                 {
-                    Win32Log(Log_Fatal | Log_MessagePrompt, "Failed to load game code entry points. Win32 error code %u", GetLastError());
+                    Win32Log(Log_Platform | Log_Fatal | Log_MessagePrompt, "Failed to load game code entry points. Win32 error code %u", GetLastError());
                 }
             }
             
             else
             {
-                Win32Log(Log_Fatal | Log_MessagePrompt, "Failed to load game code dll. Win32 error code: %u", GetLastError());
+                Win32Log(Log_Platform | Log_Fatal | Log_MessagePrompt, "Failed to load game code dll. Win32 error code: %u", GetLastError());
             }
         }
         
@@ -1091,7 +1109,7 @@ Win32MainWindowProc(HWND window_handle, UINT msg_code,
 #ifdef ANT_DEBUG
         INVALID_CODE_PATH;
 #else
-        Win32Log(Log_Fatal | Log_MessagePrompt, "Input reached Win32MainWindowProc!");
+        Win32Log(Log_Platform | Log_Fatal | Log_MessagePrompt, "Input reached Win32MainWindowProc!");
 #endif
 #endif
         break;
@@ -1211,11 +1229,16 @@ Win32ProcessPendingMessages(HWND window_handle, Platform_Game_Input* new_input, 
                         
                         if (platform_keycode != Key_Invalid)
                         {
-                            if (new_input->editor_mode)
+                            if (alt_down && !(platform_keycode == Key_LAlt || platform_keycode == Key_RAlt) && platform_keycode == Key_F4)
+                            {
+                                new_input->quit_requested = true;
+                            }
+                            
+                            else if (new_input->editor_mode)
                             {
                                 if (alt_down && platform_keycode == Key_E && !is_down)
                                 {
-                                    Win32Log(Log_Info | Log_Verbose, "Exited editor");
+                                    Win32Log(Log_Platform | Log_Info | Log_Verbose, "Exited editor");
                                     new_input->editor_mode = false;
                                 }
                                 
@@ -1242,14 +1265,9 @@ Win32ProcessPendingMessages(HWND window_handle, Platform_Game_Input* new_input, 
                             
                             else if (alt_down && !(platform_keycode == Key_LAlt || platform_keycode == Key_RAlt))
                             {
-                                if (platform_keycode == Key_F4)
+                                if (platform_keycode == Key_P && !is_down)
                                 {
-                                    new_input->quit_requested = true;
-                                }
-                                
-                                else if (platform_keycode == Key_P && !is_down)
-                                {
-                                    Win32Log(Log_Info | Log_Verbose, "The game loop was %spaused", (Pause ? "un" : ""));
+                                    Win32Log(Log_Platform | Log_Info | Log_Verbose, "The game loop was %spaused", (Pause ? "un" : ""));
                                     Pause = !Pause;
                                 }
                                 
@@ -1260,7 +1278,7 @@ Win32ProcessPendingMessages(HWND window_handle, Platform_Game_Input* new_input, 
                                 
                                 else if (platform_keycode == Key_E && !is_down)
                                 {
-                                    Win32Log(Log_Info | Log_Verbose, "Entered editor");
+                                    Win32Log(Log_Platform | Log_Info | Log_Verbose, "Entered editor");
                                     new_input->editor_mode = true;
                                 }
                             }
@@ -1408,7 +1426,7 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance,
                 
                 if (encountered_errors)
                 {
-                    Win32Log(Log_Fatal | Log_MessagePrompt, "Failed to set current working directory. Win32 error code: %u", GetLastError());
+                    Win32Log(Log_Platform | Log_Fatal | Log_MessagePrompt, "Failed to set current working directory. Win32 error code: %u", GetLastError());
                     break;
                 }
                 
@@ -1436,7 +1454,7 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance,
                 // TODO(soimn): Win32 message loop WM_*KEY* fallback
                 if (RegisterRawInputDevices(device, 2, sizeof(RAWINPUTDEVICE)) == FALSE)
                 {
-                    Win32Log(Log_Fatal | Log_MessagePrompt, "Failed to register RawInput devices. Win32 error code: %u", GetLastError());
+                    Win32Log(Log_Platform | Log_Fatal | Log_MessagePrompt, "Failed to register RawInput devices. Win32 error code: %u", GetLastError());
                     encountered_errors = true;
                     break;
                 }
@@ -1523,12 +1541,12 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance,
         
         else
         {
-            Win32Log(Log_Fatal | Log_MessagePrompt, "Failed to create a window. Win32 error code: %u", GetLastError());
+            Win32Log(Log_Platform | Log_Fatal | Log_MessagePrompt, "Failed to create a window. Win32 error code: %u", GetLastError());
         }
     }
     
     else
     {
-        Win32Log(Log_Fatal | Log_MessagePrompt, "Failed to register window class. Win32 error code: %u", GetLastError());
+        Win32Log(Log_Platform | Log_Fatal | Log_MessagePrompt, "Failed to register window class. Win32 error code: %u", GetLastError());
     }
 }

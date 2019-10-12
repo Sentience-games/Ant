@@ -46,6 +46,18 @@
 
 #include "ant_types.h"
 
+enum GET_OR_SET
+{
+    GET = 0,
+    SET = 1,
+};
+
+enum FORWARD_OR_BACKWARD
+{
+    FORWARD  = 0,
+    BACKWARD = 1,
+};
+
 /// 
 /// Shared utility functions
 /// 

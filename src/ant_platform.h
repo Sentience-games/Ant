@@ -16,9 +16,12 @@ enum LOG_OPTIONS
     
     Log_MessagePrompt = 0x20,
     Log_Verbose       = 0x40,
+    
+    Log_Platform = 0x100,
+    Log_Renderer = 0x200,
 };
 
-#define PLATFORM_LOG_FUNCTION(name) void name (U8 log_options, const char* message, ...)
+#define PLATFORM_LOG_FUNCTION(name) void name (U16 log_options, const char* message, ...)
 typedef PLATFORM_LOG_FUNCTION(platform_log_function);
 
 #define LOG_INFO(message, ...) Platform->Log(Log_Info, message, ##__VA_ARGS__)

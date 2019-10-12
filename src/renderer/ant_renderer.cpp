@@ -83,6 +83,8 @@ struct Sub_Mesh
 
 struct Mesh
 {
+    UMM memory_footprint;
+    
     Sub_Mesh* submeshes;
     U32 submesh_count;
     
@@ -92,12 +94,23 @@ struct Mesh
 
 struct Texture
 {
+    UMM memory_footprint;
+    
     GPU_Buffer texture_buffer;
-    U64 sampler_handle;
+    
     U16 width;
     U16 height;
     Enum8(TEXTURE_TYPE) type;
     U8 mip_count;
+    U8 layer_count;
+    
+    Enum8(TEXTURE_USAGE) current_usage;
+};
+
+struct Texture_View
+{
+    U64 sampler_handle;
+    Texture_View_Info info;
 };
 
 enum RENDERER_SHADER_FIELD_FORMAT
@@ -135,10 +148,11 @@ struct Shader
     Texture_ID output[RENDERER_MAX_SHADER_OUTPUT_TEXTURE_COUNT];
 };
 
+#define RENDERER_MAX_MATERIAL_BOUND_TEXTURE_COUNT 8
 struct Material
 {
     Buffer static_data;
-    Texture_ID* bound_textures;
+    Texture_View bound_textures[RENDERER_MAX_MATERIAL_BOUND_TEXTURE_COUNT];
     U32 bound_texture_count;
     U32 dynamic_buffer_size;
     
@@ -163,8 +177,9 @@ struct Renderer_Settings
     U16 backbuffer_width;
     U16 backbuffer_height;
     bool enable_vsync;
+    bool allow_partial_push_to_batches;
     
-    // TODO(soimn): Add settings for built in post processing
+    // TODO(soimn): Add settings for built in post processing, texture handling and other optional functionality
 };
 
 // TODO(soimn): Is this really a good way of storing this information?
@@ -176,26 +191,33 @@ global struct
     struct Memory_Arena* work_arena;
     GPU_Memory_Block memory_blocks[RENDERER_MAX_GPU_MEMORY_BLOCK_COUNT];
     
+    /// Stored on state arena
+    Bucket_Array mesh_storage;
+    Free_List_Variable_Bucket_Array sub_mesh_storage;
+    
+    Free_List_Bucket_Array temporal_mesh_storage;
+    Free_List_Variable_Bucket_Array temporal_sub_mesh_storage;
+    
+    Bucket_Array texture_storage;
+    Bucket_Array texture_view_storage;
+    
+    Free_List_Bucket_Array temporal_texture_storage;
+    Free_List_Bucket_Array temporal_texture_view_storage;
+    
+    Bucket_Array shader_storage;
+    
+    Bucket_Array material_storage;
+    B32 material_cache_outdated;
+    U32 max_dynamic_material_buffer_size;
+    
+    Free_List_Bucket_Array temporal_material_storage;
+    B32 temporal_material_cache_outdated;
+    U32 max_temporal_dynamic_material_buffer_size;
+    
+    /// Stored on work arena
     Bucket_Array commands;
     Bucket_Array render_batch_array;
     Bucket_Array light_batch_array;
-    
-    U32 max_dynamic_material_storage_size;
-    
-    Mesh* static_mesh_array;
-    U32 static_mesh_array_size;
-    U32 static_texture_array_size;
-    Texture* static_texture_array;
-    
-    Free_List_Variable_Bucket_Array sub_mesh_storage;
-    
-    // TODO(soimn): runtime generated mesh storage and handling
-    
-    Shader* shaders;
-    U32 shader_count;
-    
-    U32 material_count;
-    Material* materials;
     
     Enum8(RENDERER_API) api;
     
