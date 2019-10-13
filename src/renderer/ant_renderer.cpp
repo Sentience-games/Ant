@@ -11,22 +11,15 @@ struct Camera_Render_Info
 
 struct Render_Batch
 {
-    Render_Request* first;
-    U32 push_index;
-    U32 capacity;
+    Bucket_Array requests;
     Camera_Render_Info camera_info;
-    
-    // TODO(soimn): Dynamic material data storage
-    void* dynamic_material_data;
-    U32 dynamic_material_data_size;
+    Bucket_Array dynamic_material_data;
 };
 
 struct Light_Batch
 {
     // TODO(soimn): Find out how to deal with view frustum light clusters
-    Light* first;
-    U32 push_index;
-    U32 capacity;
+    Bucket_Array lights;
 };
 
 struct Render_Command
@@ -38,10 +31,6 @@ struct Render_Command
 /// Memory management structures
 /// ////////////////////////////
 
-#define RENDERER_MAX_GPU_MEMORY_BLOCK_COUNT 32
-#define RENDERER_GPU_MEMORY_BLOCK_SIZE MEGABYTES(256)
-#define RENDERER_MIN_ALLOCATION_SIZE KILOBYTES(16)
-
 struct GPU_Free_List
 {
     GPU_Free_List* next;
@@ -52,15 +41,15 @@ struct GPU_Free_List
 struct GPU_Memory_Block
 {
     U64 handle;
-    U32 push_offset;
     
-    // TODO(soimn): Find a better way of storing the free list that does not consume as much space
-    // NOTE(soimn): The free list has a capacity of BLOCK_SIZE / MIN_ALLOCATION_SIZE, and each element is indexed //              by the integer result of the offset divided by the MIN_ALLOCATION_SIZE
-    U32 free_list_size;
-    GPU_Free_List* free_list;
-    GPU_Free_List* first_free;
+    U32 offset;
+    U32 space;
+    
     U32 largest_free;
     U32 smallest_free;
+    
+    Free_List_Bucket_Array free_list;
+    GPU_Free_List* first_free;
 };
 
 union GPU_Buffer
@@ -83,7 +72,8 @@ struct Sub_Mesh
 
 struct Mesh
 {
-    UMM memory_footprint;
+    U32 memory_footprint;
+    B32 is_loaded;
     
     Sub_Mesh* submeshes;
     U32 submesh_count;
@@ -92,9 +82,16 @@ struct Mesh
     GPU_Buffer index_buffer;
 };
 
+struct Transient_Mesh
+{
+    Mesh mesh;
+    U64 marker;
+};
+
 struct Texture
 {
-    UMM memory_footprint;
+    U32 memory_footprint;
+    B32 is_loaded;
     
     GPU_Buffer texture_buffer;
     
@@ -105,6 +102,12 @@ struct Texture
     U8 layer_count;
     
     Enum8(TEXTURE_USAGE) current_usage;
+};
+
+struct Transient_Texture
+{
+    Texture texture;
+    U64 marker;
 };
 
 struct Texture_View
@@ -183,26 +186,29 @@ struct Renderer_Settings
 };
 
 // TODO(soimn): Is this really a good way of storing this information?
+// TODO(soimn): Profile and see if there is a problem with everything being stored in interleaved blocks
+// TODO(soimn): Should the transient/persistent notion be removed and all objects treated equally, despite 
+//              lifetime differences?
 global struct
 {
     Renderer_Settings settings;
     
     struct Memory_Arena* state_arena;
     struct Memory_Arena* work_arena;
-    GPU_Memory_Block memory_blocks[RENDERER_MAX_GPU_MEMORY_BLOCK_COUNT];
+    Bucket_Array memory_blocks;
     
     /// Stored on state arena
     Bucket_Array mesh_storage;
     Free_List_Variable_Bucket_Array sub_mesh_storage;
     
-    Free_List_Bucket_Array temporal_mesh_storage;
-    Free_List_Variable_Bucket_Array temporal_sub_mesh_storage;
+    Free_List_Bucket_Array transient_mesh_storage;
+    Free_List_Variable_Bucket_Array transient_sub_mesh_storage;
     
     Bucket_Array texture_storage;
     Bucket_Array texture_view_storage;
     
-    Free_List_Bucket_Array temporal_texture_storage;
-    Free_List_Bucket_Array temporal_texture_view_storage;
+    Free_List_Bucket_Array transient_texture_storage;
+    Free_List_Bucket_Array transient_texture_view_storage;
     
     Bucket_Array shader_storage;
     
@@ -210,9 +216,9 @@ global struct
     B32 material_cache_outdated;
     U32 max_dynamic_material_buffer_size;
     
-    Free_List_Bucket_Array temporal_material_storage;
-    B32 temporal_material_cache_outdated;
-    U32 max_temporal_dynamic_material_buffer_size;
+    Free_List_Bucket_Array transient_material_storage;
+    B32 transient_material_cache_outdated;
+    U32 max_transient_dynamic_material_buffer_size;
     
     /// Stored on work arena
     Bucket_Array commands;
@@ -223,7 +229,6 @@ global struct
     
     // Functions
 } RendererGlobals;
-
 
 
 /// UTILITY FUNCTIONS
@@ -284,3 +289,91 @@ GetCameraRenderInfo(Camera camera)
     
     return result;
 };
+
+inline Mesh*
+RendererGetMesh(Mesh_ID id)
+{
+    Mesh* result = 0;
+    
+    if ((id & 0x7FFFFFFF) == id)
+    {
+        result = (Mesh*)ElementAt(&RendererGlobals.mesh_storage, id);
+    }
+    
+    else
+    {
+        id &= 0x7FFFFFFF;
+        
+        Free_List_Bucket_Array* transient_mesh_storage = &RendererGlobals.transient_mesh_storage;
+        
+        if (transient_mesh_storage->block_count)
+        {
+            UMM element_count = (transient_mesh_storage->block_count - 1) * transient_mesh_storage->block_size + transient_mesh_storage->current_block->offset;
+            
+            if (id < element_count)
+            {
+                UMM block_index  = element_count / transient_mesh_storage->block_size;
+                U32 block_offset = element_count % transient_mesh_storage->block_size;
+                
+                Free_List_Bucket_Array_Block* scan = transient_mesh_storage->first_block;
+                for (U32 i = 0; i < block_index; ++i)
+                {
+                    scan = scan->next;
+                }
+                
+                Transient_Mesh* entry = (Transient_Mesh*)((U8*)(scan + 1) + transient_mesh_storage->element_size * block_offset);
+                
+                if (entry->marker == U64_MAX)
+                {
+                    result = &entry->mesh;
+                }
+            }
+        }
+    }
+    
+    return result;
+}
+
+inline Texture*
+RendererGetTexture(Texture_ID id)
+{
+    Texture* result = 0;
+    
+    if ((id & 0x7FFFFFFF) == id)
+    {
+        result = (Texture*)ElementAt(&RendererGlobals.texture_storage, id);
+    }
+    
+    else
+    {
+        id &= 0x7FFFFFFF;
+        
+        Free_List_Bucket_Array* transient_texture_storage = &RendererGlobals.transient_texture_storage;
+        
+        if (transient_texture_storage->block_count)
+        {
+            UMM element_count = (transient_texture_storage->block_count - 1) * transient_texture_storage->block_size + transient_texture_storage->current_block->offset;
+            
+            if (id < element_count)
+            {
+                UMM block_index  = element_count / transient_texture_storage->block_size;
+                U32 block_offset = element_count % transient_texture_storage->block_size;
+                
+                Free_List_Bucket_Array_Block* scan = transient_texture_storage->first_block;
+                for (U32 i = 0; i < block_index; ++i)
+                {
+                    scan = scan->next;
+                }
+                
+                Transient_Texture* entry = (Transient_Texture*)((U8*)(scan + 1) + transient_texture_storage->element_size * block_offset);
+                
+                if (entry->marker == U64_MAX)
+                {
+                    result = &entry->texture;
+                }
+            }
+        }
+    }
+    
+    return result;
+}

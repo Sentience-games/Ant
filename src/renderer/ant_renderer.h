@@ -19,15 +19,6 @@ typedef U64 Camera_Filter;
 /// STRUCTURES RELATED TO THE TRANSFER OF OBJECT DATA TO THE RENDERER BACKEND
 /// /////////////////////////////////////////////////////////////////////////
 
-enum RENDERER_OBJECT_TYPE
-{
-    RendererObj_None     = 0,
-    RendererObj_Mesh     = 0x1,
-    RendererObj_Texture  = 0x2,
-    RendererObj_Shader   = 0x4,
-    RendererObj_Material = 0x8,
-};
-
 /// Meshes
 struct Mesh_Info
 {
@@ -149,11 +140,15 @@ enum RENDERER_SHADER_STAGE
     ShaderStage_Vertex,
     ShaderStage_Geometry,
     ShaderStage_Fragment,
+    
+    RENDERER_SHADER_STAGE_COUNT
 };
 
 struct Shader_Info
 {
-    Buffer shader_data;
+    // TODO(soimn): Find out when and how the shader code should be compiled, and what data should be made 
+    //              available
+    Buffer shader_stage_data[RENDERER_SHADER_STAGE_COUNT];
 };
 
 /// Lighting
@@ -223,7 +218,7 @@ struct Camera
 #define RENDERER_MAX_TEXTURE_BUNDLE_TEXTURE_COUNT 4
 struct Texture_Bundle
 {
-    // TODO(soimn): Fill this
+    ///////// HANDLE TO RUNTIME TEXTURE VIEWS
 };
 
 /// Render request data
@@ -263,13 +258,13 @@ enum RENDERER_ERROR_CODE
 typedef RENDERER_BEGIN_FRAME_FUNCTION(renderer_begin_frame_function);
 
 /// Batching and rendering
-#define RENDERER_GET_RENDER_BATCH_FUNCTION(name) Render_Batch* name (Camera camera, U32 max_request_count)
+#define RENDERER_GET_RENDER_BATCH_FUNCTION(name) Render_Batch* name (Camera camera, U32 block_size)
 typedef RENDERER_GET_RENDER_BATCH_FUNCTION(renderer_get_render_batch_function);
 
 #define RENDERER_PUSH_REQUESTS_FUNCTION(name) U8 name (Render_Batch* batch, Render_Request* requests, U32 request_count)
 typedef RENDERER_PUSH_REQUESTS_FUNCTION(renderer_push_requests_function);
 
-#define RENDERER_GET_LIGHT_BATCH_FUNCTION(name) Light_Batch* name (Camera camera, U32 max_light_count)
+#define RENDERER_GET_LIGHT_BATCH_FUNCTION(name) Light_Batch* name (Camera camera, U32 block_size)
 typedef RENDERER_GET_LIGHT_BATCH_FUNCTION(renderer_get_light_batch_function);
 
 #define RENDERER_PUSH_LIGHTS_FUNCTION(name) Flag8(RENDERER_ERROR_CODE) name (Light_Batch* batch, Light* lights, U32 light_count)
@@ -286,12 +281,63 @@ typedef RENDERER_RENDER_BATCH_FUNCTION(renderer_render_batch_function);
 
 /// Object management
 
-// TODO(soimn):
-// Add mesh, load / unload mesh, add / remove temporal mesh, load(?) / unload(?) temporal mesh, modify mesh
-// Add texture, load / unload texture, add / remove temporal texture, load(?) / unload(?) temporal texture, modify 
-//     texture
-// Add material, add / remove temporal material, modify material
-// Add shader, modify shader
+// Mesh management
+#define RENDERER_ADD_MESHES_FUNCTION(name) Flag8(RENDERER_ERROR_CODE) name (Mesh_Info* mesh_infos, U32 count, Mesh_ID* out_first_id)
+typedef RENDERER_ADD_MESHES_FUNCTION(renderer_add_meshes_function);
+
+#define RENDERER_LOAD_MESH_FUNCTION(name) Flag8(RENDERER_ERROR_CODE) name (Mesh_ID mesh_id)
+typedef RENDERER_LOAD_MESH_FUNCTION(renderer_load_mesh_function);
+
+#define RENDERER_UNLOAD_MESH_FUNCTION(name) void name (Mesh_ID mesh_id)
+typedef RENDERER_UNLOAD_MESH_FUNCTION(renderer_unload_mesh_function);
+
+#define RENDERER_MODIFY_MESH_FUNCTION(name) Flag8(RENDERER_ERROR_CODE) name (Mesh_ID mesh_id, Mesh_Info* mesh_info, Enum8(GET_OR_SET) operation)
+typedef RENDERER_MODIFY_MESH_FUNCTION(renderer_modify_mesh_function);
+
+#define RENDERER_ADD_TRANSIENT_MESH_FUNCTION(name) Flag8(RENDERER_ERROR_CODE) name (Mesh_Info mesh_info, Mesh_ID* out_id)
+typedef RENDERER_ADD_TRANSIENT_MESH_FUNCTION(renderer_add_transient_mesh_function);
+
+#define RENDERER_REMOVE_TRANSIENT_MESH_FUNCTION(name) void name (Mesh_ID mesh_id)
+typedef RENDERER_REMOVE_TRANSIENT_MESH_FUNCTION(renderer_remove_transient_mesh_function);
+
+// Texture management
+#define RENDERER_ADD_TEXTURES_FUNCTION(name) Flag8(RENDERER_ERROR_CODE) name (Texture_Info* texture_infos, U32 count, Texture_ID* out_first_id)
+typedef RENDERER_ADD_TEXTURES_FUNCTION(renderer_add_textures_function);
+
+#define RENDERER_LOAD_TEXTURE_FUNCTION(name) Flag8(RENDERER_ERROR_CODE) name (Texture_ID texture_id)
+typedef RENDERER_LOAD_TEXTURE_FUNCTION(renderer_load_texture_function);
+
+#define RENDERER_UNLOAD_TEXTURE_FUNCTION(name) void name (Texture_ID texture_id)
+typedef RENDERER_UNLOAD_TEXTURE_FUNCTION(renderer_unload_texture_function);
+
+#define RENDERER_MODIFY_TEXTURE_FUNCTION(name) Flag8(RENDERER_ERROR_CODE) name (Texture_ID texture_id, Texture_Info* texture_info, Enum8(GET_OR_SET) operation)
+typedef RENDERER_MODIFY_TEXTURE_FUNCTION(renderer_modify_texture_function);
+
+#define RENDERER_ADD_TRANSIENT_TEXTURE_FUNCTION(name) Flag8(RENDERER_ERROR_CODE) name (Texture_Info texture_info, Texture_ID* out_id)
+typedef RENDERER_ADD_TRANSIENT_TEXTURE_FUNCTION(renderer_add_transient_texture_function);
+
+#define RENDERER_REMOVE_TRANSIENT_TEXTURE_FUNCTION(name) void name (Texture_ID texture_id)
+typedef RENDERER_REMOVE_TRANSIENT_TEXTURE_FUNCTION(renderer_remove_transient_texture_function);
+
+// Material management
+#define RENDERER_ADD_MATERIALS_FUNCTION(name) Flag8(RENDERER_ERROR_CODE) name (Material_Info* material_infos, U32 count, Material_ID* out_first_id)
+typedef RENDERER_ADD_MATERIALS_FUNCTION(renderer_add_materials_function);
+
+#define RENDERER_MODIFY_MATERIAL_FUNCTION(name) Flag8(RENDERER_ERROR_CODE) name (Material_ID material_id, Material_Info* material_info, Enum8(GET_OR_SET) operation)
+typedef RENDERER_MODIFY_MATERIAL_FUNCTION(renderer_modify_material_function);
+
+#define RENDERER_ADD_TRANSIENT_MATERIAL_FUNCTION(name) Flag8(RENDERER_ERROR_CODE) name (Material_Info material_info, Material_ID* out_id)
+typedef RENDERER_ADD_TRANSIENT_MATERIAL_FUNCTION(renderer_add_transient_material_function);
+
+#define RENDERER_REMOVE_TRANSIENT_MATERIAL_FUNCTION(name) void name (Material_ID material_id)
+typedef RENDERER_REMOVE_TRANSIENT_MATERIAL_FUNCTION(renderer_remove_transient_material_function);
+
+// Shader management
+#define RENDERER_ADD_SHADERS_FUNCTION(name) Flag8(RENDERER_ERROR_CODE) name (Shader_Info* shader_infos, U32 count, Shader_ID* out_first_id)
+typedef RENDERER_ADD_SHADERS_FUNCTION(renderer_add_shaders_function);
+
+#define RENDERER_MODIFY_SHADER_FUNCTION(name) Flag8(RENDERER_ERROR_CODE) name (Shader_ID shader_id, Shader_Info* shader_info, Enum8(GET_OR_SET) operation)
+typedef RENDERER_MODIFY_SHADER_FUNCTION(renderer_modify_shader_function);
 
 // TODO(soimn): Compute and immediate mode
 

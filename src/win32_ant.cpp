@@ -1461,7 +1461,7 @@ WinMain(HINSTANCE instance, HINSTANCE prev_instance,
                 
                 /// Initialize renderer
                 
-                Win32InitRenderer(&game_memory.platform_api, RendererAPI_None, game_memory.renderer_arena, game_memory.frame_arena);
+                Win32InitRenderer(&game_memory.platform_api, RendererAPI_None, game_memory.renderer_arena, game_memory.frame_arena, {});
             } while (0);
             
             

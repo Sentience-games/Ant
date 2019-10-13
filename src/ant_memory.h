@@ -231,8 +231,6 @@ ElementAt(Bucket_Array* array, UMM index)
         
         else if (block_index <= array->block_count / 2)
         {
-            /// Traversing from first and forwards
-            
             for (U32 i = 0; i < block_index, scan; ++i)
             {
                 scan = scan->next;
@@ -241,8 +239,6 @@ ElementAt(Bucket_Array* array, UMM index)
         
         else
         {
-            /// Traversing from current and backwards
-            
             scan = array->current_block;
             
             for (U32 i = 0; i < array->block_count - (block_index + 1), scan; ++i)
@@ -325,6 +321,8 @@ Iterate(Bucket_Array* array, Enum8(FORWARD_OR_BACKWARD) direction = FORWARD)
         
         else
         {
+            Assert(direction == BACKWARD);
+            
             iterator.current_block = array->current_block;
             
             U32 offset = array->current_block->offset - 1;
