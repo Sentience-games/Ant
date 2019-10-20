@@ -354,20 +354,13 @@ Advance(Bucket_Array_Iterator* iterator)
     }
 }
 
-struct Free_List_Bucket_Array_Block
-{
-    Free_List_Bucket_Array_Block* next;
-    U32 offset;
-    U32 space;
-};
-
 struct Free_List_Bucket_Array
 {
     void** free_list;
     
     Memory_Arena* arena;
-    Free_List_Bucket_Array_Block* first_block;
-    Free_List_Bucket_Array_Block* current_block;
+    Bucket_Array_Block* first_block;
+    Bucket_Array_Block* current_block;
     
     U32 element_size;
     U32 block_size;
@@ -390,6 +383,13 @@ FreeListBucketArray(Memory_Arena* arena, UMM element_size, U32 block_size)
 
 #define FREE_LIST_BUCKET_ARRAY(arena, type, block_size) FreeListBucketArray(arena, RoundSize(sizeof(type), alignof(type)), block_size)
 
+// NOTE(soimn): This does not check if the element is freed or not
+inline void*
+ElementAt(Free_List_Bucket_Array* array, UMM index)
+{
+    return ElementAt((Bucket_Array*)&array->arena, index);
+}
+
 inline void*
 PushElement(Free_List_Bucket_Array* array)
 {
@@ -407,8 +407,8 @@ PushElement(Free_List_Bucket_Array* array)
         {
             Assert(array->block_count < U32_MAX);
             
-            UMM block_size = sizeof(Free_List_Bucket_Array_Block) + array->element_size * array->block_size;
-            Free_List_Bucket_Array_Block* new_block = (Free_List_Bucket_Array_Block*)PushSize(array->arena, block_size, alignof(Free_List_Bucket_Array_Block));
+            UMM block_size = sizeof(Bucket_Array_Block) + array->element_size * array->block_size;
+            Bucket_Array_Block* new_block = (Bucket_Array_Block*)PushSize(array->arena, block_size, alignof(Bucket_Array_Block));
             *new_block = {};
             
             if (array->first_block)
@@ -441,7 +441,7 @@ RemoveElement(Free_List_Bucket_Array* array, void* element)
     if (element)
     {
         U8* element_u8 = (U8*)element;
-        Free_List_Bucket_Array_Block* scan = array->first_block;
+        Bucket_Array_Block* scan = array->first_block;
         
         while (scan)
         {

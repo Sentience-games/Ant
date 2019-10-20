@@ -23,7 +23,8 @@ typedef U64 Camera_Filter;
 struct Mesh_Info
 {
     UMM memory_footprint;
-    // TODO(soimn): Link to asset data
+    
+    Buffer mesh_data;
     
     struct
     {
@@ -87,7 +88,8 @@ enum TEXTURE_USAGE
 struct Texture_Info
 {
     UMM memory_footprint;
-    // TODO(soimn): Link to asset data
+    
+    Buffer texture_data;
     
     U16 width;
     U16 height;
@@ -135,6 +137,14 @@ struct Material_Palette
 
 /// Shaders
 
+enum RENDERER_SHADER_ENCODING
+{
+    ShaderEncoding_GLSL,
+    ShaderEncoding_HLSL,
+    
+    RENDERER_SHADER_ENCODING_COUNT
+};
+
 enum RENDERER_SHADER_STAGE
 {
     ShaderStage_Vertex,
@@ -144,11 +154,40 @@ enum RENDERER_SHADER_STAGE
     RENDERER_SHADER_STAGE_COUNT
 };
 
+#define RENDERER_MAX_SHADER_INPUT_FIELD_COUNT 16
+
+enum RENDERER_SHADER_FIELD_TYPE
+{
+    RendererShaderField_Float,
+    RendererShaderField_Vec2,
+    RendererShaderField_Vec3,
+    RendererShaderField_Vec4,
+    
+    RendererShaderField_Float_16,
+    RendererShaderField_Vec2_16,
+    RendererShaderField_Vec3_16,
+    RendererShaderField_Vec4_16,
+    
+    RendererShaderField_Int,
+    RendererShaderField_IVec2,
+    RendererShaderField_IVec3,
+    RendererShaderField_IVec4,
+    
+    RendererShaderField_Uint,
+    RendererShaderField_UVec2,
+    RendererShaderField_UVec3,
+    RendererShaderField_UVec4,
+    
+    RendererShaderField_Sampler,
+};
+
 struct Shader_Info
 {
-    // TODO(soimn): Find out when and how the shader code should be compiled, and what data should be made 
-    //              available
-    Buffer shader_stage_data[RENDERER_SHADER_STAGE_COUNT];
+    Buffer shader_stage_data[RENDERER_SHADER_ENCODING_COUNT][RENDERER_SHADER_STAGE_COUNT];
+    
+    B32 is_post_process_shader;
+    Enum8(RENDERER_SHADER_FIELD_TYPE) input_data[RENDERER_MAX_SHADER_INPUT_FIELD_COUNT];
+    U32 output_framebuffer_count;
 };
 
 /// Lighting
@@ -215,10 +254,10 @@ struct Camera
 
 /// Texture handling for rendering
 
-#define RENDERER_MAX_TEXTURE_BUNDLE_TEXTURE_COUNT 4
+#define RENDERER_MAX_TEXTURE_BUNDLE_TEXTURE_COUNT 8
 struct Texture_Bundle
 {
-    ///////// HANDLE TO RUNTIME TEXTURE VIEWS
+    Texture_View_ID texture_views[RENDERER_MAX_TEXTURE_BUNDLE_TEXTURE_COUNT];
 };
 
 /// Render request data
@@ -237,17 +276,17 @@ struct Render_Request
 
 enum RENDERER_ERROR_CODE
 {
-    Renderer_UnknownError = 0x0,
-    Renderer_Success      = 0x1,
-    Renderer_OutOfMemory  = 0x2,
-    Renderer_InvalidID    = 0x4,
+    Renderer_UnknownError      = 0x0,
+    Renderer_Success           = 0x1,
+    Renderer_OutOfMemory       = 0x2,
+    Renderer_InvalidObjectInfo = 0x4,
 };
 
 //// COMMANDS
 // Commands are recorded in between the BeginFrame and EndFrame functions. The commands are recorded if their 
 // input criteria are met and the recording function is called, e.g. calling PushRequest with invalid parameters 
 // will result in the command not being recorded and an error code returned. Another example of such a failure 
-// state is calling UploadMeshes when there is no gpu side memory left, the command will not be recorded and an 
+// state is calling LoadMesh when there is no gpu side memory left, the command will not be recorded and an 
 // error code indicating that the there is not enough memory is returned.
 //
 // Pointers returned by command recording functions are only valid util EndFrame is called.
@@ -285,6 +324,9 @@ typedef RENDERER_RENDER_BATCH_FUNCTION(renderer_render_batch_function);
 #define RENDERER_ADD_MESHES_FUNCTION(name) Flag8(RENDERER_ERROR_CODE) name (Mesh_Info* mesh_infos, U32 count, Mesh_ID* out_first_id)
 typedef RENDERER_ADD_MESHES_FUNCTION(renderer_add_meshes_function);
 
+#define RENDERER_REMOVE_MESH_FUNCTION(name) void name (Mesh_ID mesh_id)
+typedef RENDERER_REMOVE_MESH_FUNCTION(renderer_remove_mesh_function);
+
 #define RENDERER_LOAD_MESH_FUNCTION(name) Flag8(RENDERER_ERROR_CODE) name (Mesh_ID mesh_id)
 typedef RENDERER_LOAD_MESH_FUNCTION(renderer_load_mesh_function);
 
@@ -294,15 +336,12 @@ typedef RENDERER_UNLOAD_MESH_FUNCTION(renderer_unload_mesh_function);
 #define RENDERER_MODIFY_MESH_FUNCTION(name) Flag8(RENDERER_ERROR_CODE) name (Mesh_ID mesh_id, Mesh_Info* mesh_info, Enum8(GET_OR_SET) operation)
 typedef RENDERER_MODIFY_MESH_FUNCTION(renderer_modify_mesh_function);
 
-#define RENDERER_ADD_TRANSIENT_MESH_FUNCTION(name) Flag8(RENDERER_ERROR_CODE) name (Mesh_Info mesh_info, Mesh_ID* out_id)
-typedef RENDERER_ADD_TRANSIENT_MESH_FUNCTION(renderer_add_transient_mesh_function);
-
-#define RENDERER_REMOVE_TRANSIENT_MESH_FUNCTION(name) void name (Mesh_ID mesh_id)
-typedef RENDERER_REMOVE_TRANSIENT_MESH_FUNCTION(renderer_remove_transient_mesh_function);
-
 // Texture management
 #define RENDERER_ADD_TEXTURES_FUNCTION(name) Flag8(RENDERER_ERROR_CODE) name (Texture_Info* texture_infos, U32 count, Texture_ID* out_first_id)
 typedef RENDERER_ADD_TEXTURES_FUNCTION(renderer_add_textures_function);
+
+#define RENDERER_REMOVE_TEXTURE_FUNCTION(name) void name (Texture_ID texture_id)
+typedef RENDERER_REMOVE_TEXTURE_FUNCTION(renderer_remove_texture_function);
 
 #define RENDERER_LOAD_TEXTURE_FUNCTION(name) Flag8(RENDERER_ERROR_CODE) name (Texture_ID texture_id)
 typedef RENDERER_LOAD_TEXTURE_FUNCTION(renderer_load_texture_function);
@@ -313,12 +352,6 @@ typedef RENDERER_UNLOAD_TEXTURE_FUNCTION(renderer_unload_texture_function);
 #define RENDERER_MODIFY_TEXTURE_FUNCTION(name) Flag8(RENDERER_ERROR_CODE) name (Texture_ID texture_id, Texture_Info* texture_info, Enum8(GET_OR_SET) operation)
 typedef RENDERER_MODIFY_TEXTURE_FUNCTION(renderer_modify_texture_function);
 
-#define RENDERER_ADD_TRANSIENT_TEXTURE_FUNCTION(name) Flag8(RENDERER_ERROR_CODE) name (Texture_Info texture_info, Texture_ID* out_id)
-typedef RENDERER_ADD_TRANSIENT_TEXTURE_FUNCTION(renderer_add_transient_texture_function);
-
-#define RENDERER_REMOVE_TRANSIENT_TEXTURE_FUNCTION(name) void name (Texture_ID texture_id)
-typedef RENDERER_REMOVE_TRANSIENT_TEXTURE_FUNCTION(renderer_remove_transient_texture_function);
-
 // Material management
 #define RENDERER_ADD_MATERIALS_FUNCTION(name) Flag8(RENDERER_ERROR_CODE) name (Material_Info* material_infos, U32 count, Material_ID* out_first_id)
 typedef RENDERER_ADD_MATERIALS_FUNCTION(renderer_add_materials_function);
@@ -326,15 +359,13 @@ typedef RENDERER_ADD_MATERIALS_FUNCTION(renderer_add_materials_function);
 #define RENDERER_MODIFY_MATERIAL_FUNCTION(name) Flag8(RENDERER_ERROR_CODE) name (Material_ID material_id, Material_Info* material_info, Enum8(GET_OR_SET) operation)
 typedef RENDERER_MODIFY_MATERIAL_FUNCTION(renderer_modify_material_function);
 
-#define RENDERER_ADD_TRANSIENT_MATERIAL_FUNCTION(name) Flag8(RENDERER_ERROR_CODE) name (Material_Info material_info, Material_ID* out_id)
-typedef RENDERER_ADD_TRANSIENT_MATERIAL_FUNCTION(renderer_add_transient_material_function);
-
-#define RENDERER_REMOVE_TRANSIENT_MATERIAL_FUNCTION(name) void name (Material_ID material_id)
-typedef RENDERER_REMOVE_TRANSIENT_MATERIAL_FUNCTION(renderer_remove_transient_material_function);
-
 // Shader management
+// TODO(soimn): Add error log messages
 #define RENDERER_ADD_SHADERS_FUNCTION(name) Flag8(RENDERER_ERROR_CODE) name (Shader_Info* shader_infos, U32 count, Shader_ID* out_first_id)
 typedef RENDERER_ADD_SHADERS_FUNCTION(renderer_add_shaders_function);
+
+#define RENDERER_REMOVE_SHADER_FUNCTION(name) void name (Shader_ID shader_id)
+typedef RENDERER_REMOVE_SHADER_FUNCTION(renderer_remove_shader_function);
 
 #define RENDERER_MODIFY_SHADER_FUNCTION(name) Flag8(RENDERER_ERROR_CODE) name (Shader_ID shader_id, Shader_Info* shader_info, Enum8(GET_OR_SET) operation)
 typedef RENDERER_MODIFY_SHADER_FUNCTION(renderer_modify_shader_function);
