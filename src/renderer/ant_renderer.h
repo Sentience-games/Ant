@@ -123,10 +123,13 @@ struct Texture_View_Info
 /// Materials
 struct Material_Info
 {
-    Buffer data;
+    Buffer static_material_data;
+    U32 static_data_field_count;
+    
     Buffer default_dynamic_data;
-    Texture_View_Info* textures;
-    U32 texture_count;
+    
+    String material_field_names[RENDERER_MAX_SHADER_INPUT_FIELD_COUNT];
+    Enum8(RENDERER_SHADER_FIELD_TYPE) material_field_format[RENDERER_MAX_SHADER_INPUT_FIELD_COUNT];
 };
 
 struct Material_Palette
