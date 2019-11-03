@@ -212,17 +212,17 @@ BucketArray(Memory_Arena* arena, UMM element_size, U32 block_size)
 #define BUCKET_ARRAY(arena, type, block_size) BucketArray(arena, RoundSize(sizeof(type), alignof(type)), block_size)
 
 inline void*
-ElementAt(Bucket_Array* array, UMM index)
+ElementAt(Bucket_Array* array, IMM index)
 {
     void* result = 0;
     
     UMM array_size = (array->block_count - 1) * array->block_size + array->current_block->offset;
-    if (index < array_size)
+    if (index > 0 && (UMM)index < array_size)
     {
         Bucket_Array_Block* scan = array->first_block;
         
-        UMM block_index  = index / array->block_size;
-        U32 block_offset = index % array->block_size;
+        UMM block_index  = (UMM)index / array->block_size;
+        U32 block_offset = (UMM)index % array->block_size;
         
         if (block_index == array->block_count - 1)
         {
@@ -385,7 +385,7 @@ FreeListBucketArray(Memory_Arena* arena, UMM element_size, U32 block_size)
 
 // NOTE(soimn): This does not check if the element is freed or not
 inline void*
-ElementAt(Free_List_Bucket_Array* array, UMM index)
+ElementAt(Free_List_Bucket_Array* array, IMM index)
 {
     return ElementAt((Bucket_Array*)&array->arena, index);
 }

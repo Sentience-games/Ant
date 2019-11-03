@@ -39,7 +39,8 @@ Sqrt(F32 num, U8 precision = 5)
 {
     F32 result = num / 2.0f;
     
-    U32 num_iterations = (num < 10.0f ? precision : (num < 1000.0f ? 2 * precision : 4 * precision));
+    F32 abs_num = Abs(num);
+    U32 num_iterations = (abs_num < 10.0f ? precision : (abs_num < 1000.0f ? 2 * precision : 4 * precision));
     
     for (U32 i = 0; i < num_iterations; ++i)
     {

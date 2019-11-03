@@ -66,8 +66,6 @@ PLATFORM_LOG_FUNCTION(Win32Log)
     OutputDebugStringA("\n");
 }
 
-
-
 /// Memory
 
 PLATFORM_ALLOCATE_MEMORY_BLOCK_FUNCTION(Win32AllocateMemoryBlock)

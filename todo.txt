@@ -4,3 +4,12 @@ Set viewport dimensions and implement restricted resizing of the window. This se
 
 /// INPUT
 Mouse position, hot plugging devices, WM_*KEY* fallback, get key name, controller input, device recognition, controller assignment and proper input timing
+
+/// Asset management and rendering
+Ensure the asset data is in memory before any load functions are called in the renderer api
+What should happen to the materials when a shader is removed?
+What should happen to the resources currently loaded on a rendering device loss error?
+How should compressed textures be handled?
+Where should the current usage of each texture be stored in order to enable usage lookup at stage t when synchronizing?
+Find out how the shader code should be transmitted to the renderer and how shaders and other objects can be reloaded if lost
+Find out how to access individual fields in a material in a robust and nice way

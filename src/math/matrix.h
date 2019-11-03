@@ -399,7 +399,7 @@ PerspectiveMatrix(F32 aspect_ratio, F32 fov, F32 near, F32 far)
     
     result.m.k.w = -1.0f;
     
-    // NOTE(soimn): Inverse - computed by Wolfram
+    // NOTE(soimn): Inverse - computed by Wolfram|Alpha
     result.inv.i.x = tan_fov;
     result.inv.j.y = tan_fov / aspect_ratio;
     
@@ -426,7 +426,7 @@ OrthographicMatrix(F32 aspect_ratio, F32 fov, F32 near, F32 far)
     result.m.w.z = near / (near - far);
     result.m.w.w = 1.0f;
     
-    // NOTE(soimn): Inverse - computed by Wolfram
+    // NOTE(soimn): Inverse - computed by Wolfram|Alpha
     result.inv.i.x = tan_fov;
     result.inv.j.y = tan_fov / aspect_ratio;
     
